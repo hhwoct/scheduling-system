@@ -1,0 +1,382 @@
+using System.Net;
+using System.Text;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
+using ShiftScheduling.Api.Application.Auth;
+using ShiftScheduling.Api.Application.Common;
+using ShiftScheduling.Api.Application.Employees;
+using ShiftScheduling.Api.Application.EmployeeSkills;
+using ShiftScheduling.Api.Application.RuleConfigs;
+using ShiftScheduling.Api.Application.Security;
+using ShiftScheduling.Api.Application.ShiftTemplates;
+using ShiftScheduling.Api.Application.Workstations;
+using ShiftScheduling.Api.Infrastructure;
+using ShiftScheduling.Api.Infrastructure.Audit;
+using ShiftScheduling.Api.Infrastructure.Middlewares;
+using ShiftScheduling.Api.Infrastructure.Persistence;
+
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection(JwtOptions.SectionName));
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<ICurrentUser, CurrentUser>();
+builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
+builder.Services.AddSingleton<IPasswordService, BcryptPasswordService>();
+builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<IAuditLogService, AuditLogService>();
+builder.Services.AddScoped<IEmployeeService, EmployeeService>();
+builder.Services.AddScoped<IEmployeeSkillService, EmployeeSkillService>();
+builder.Services.AddScoped<IWorkstationService, WorkstationService>();
+builder.Services.AddScoped<IShiftTemplateService, ShiftTemplateService>();
+builder.Services.AddScoped<IRuleConfigService, RuleConfigService>();
+
+var connectionString = builder.Configuration.GetConnectionString("ShiftMvp");
+if (string.IsNullOrWhiteSpace(connectionString))
+{
+    throw new InvalidOperationException("缺少数据库连接字符串 ConnectionStrings:ShiftMvp");
+}
+
+builder.Services.AddDbContext<ShiftSchedulingDbContext>(options =>
+    options.UseMySql(connectionString, new MySqlServerVersion(new Version(8, 0, 36))));
+
+var jwtOptions = builder.Configuration.GetSection(JwtOptions.SectionName).Get<JwtOptions>()
+    ?? throw new InvalidOperationException("缺少 JWT 配置");
+if (string.IsNullOrWhiteSpace(jwtOptions.Issuer) || string.IsNullOrWhiteSpace(jwtOptions.Audience))
+{
+    throw new InvalidOperationException("Jwt:Issuer 和 Jwt:Audience 不能为空");
+}
+
+if (Encoding.UTF8.GetByteCount(jwtOptions.SigningKey) < 32)
+{
+    throw new InvalidOperationException("Jwt:SigningKey 至少需要 32 字节，请通过 User Secrets 或环境变量配置");
+}
+
+if (jwtOptions.ExpireMinutes is < 5 or > 1440)
+{
+    throw new InvalidOperationException("Jwt:ExpireMinutes 必须在 5 到 1440 分钟之间");
+}
+
+var signingKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtOptions.SigningKey));
+
+builder.Services
+    .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            RequireExpirationTime = true,
+            ValidIssuer = jwtOptions.Issuer,
+            ValidAudience = jwtOptions.Audience,
+            IssuerSigningKey = signingKey,
+            ClockSkew = TimeSpan.FromMinutes(2)
+        };
+
+        options.Events = new JwtBearerEvents
+        {
+            OnTokenValidated = async context =>
+            {
+                var userIdValue = context.Principal?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+                if (!long.TryParse(userIdValue, out var userId))
+                {
+                    context.Fail("令牌缺少有效用户标识");
+                    return;
+                }
+
+                var dbContext = context.HttpContext.RequestServices.GetRequiredService<ShiftSchedulingDbContext>();
+                var userExists = await dbContext.Users
+                    .AsNoTracking()
+                    .AnyAsync(x => x.Id == userId && x.Status == 1, context.HttpContext.RequestAborted);
+
+                if (!userExists)
+                {
+                    context.Fail("用户不存在或已被停用");
+                }
+            },
+            OnChallenge = async context =>
+            {
+                if (context.Response.HasStarted)
+                {
+                    return;
+                }
+
+                context.HandleResponse();
+                await ApiResponseWriter.WriteErrorAsync(
+                    context.HttpContext,
+                    HttpStatusCode.Unauthorized,
+                    "未登录或登录已失效",
+                    "UNAUTHORIZED");
+            },
+            OnForbidden = context => ApiResponseWriter.WriteErrorAsync(
+                context.HttpContext,
+                HttpStatusCode.Forbidden,
+                "没有权限执行此操作",
+                "FORBIDDEN")
+        };
+    });
+
+builder.Services.AddAuthorization();
+builder.Services.AddOpenApi();
+
+var app = builder.Build();
+
+app.UseMiddleware<ApiExceptionMiddleware>();
+
+if (app.Environment.IsDevelopment())
+{
+    app.MapOpenApi();
+}
+
+app.UseAuthentication();
+app.UseAuthorization();
+
+var api = app.MapGroup("/api");
+
+api.MapGet("/health", () => ApiResponse.Ok(new { status = "UP", service = "ShiftScheduling.Api" }, "后端服务运行正常"));
+
+api.MapPost("/auth/login", async (LoginRequest request, IAuthService authService, CancellationToken cancellationToken) =>
+{
+    var result = await authService.LoginAsync(request, cancellationToken);
+    return ApiResponse.Ok(result, "登录成功");
+});
+
+api.MapGet("/auth/me", async (IAuthService authService, CancellationToken cancellationToken) =>
+{
+    var result = await authService.GetCurrentUserAsync(cancellationToken);
+    return ApiResponse.Ok(result, "获取当前用户成功");
+}).RequireAuthorization();
+
+api.MapGet("/stores/current", async (ShiftSchedulingDbContext dbContext, ICurrentUser currentUser, CancellationToken cancellationToken) =>
+{
+    var storeId = currentUser.StoreId
+        ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
+    var store = await dbContext.Stores
+        .AsNoTracking()
+        .Where(x => x.Id == storeId && x.Status == 1)
+        .Select(x => new { x.Id, x.Code, x.Name, x.Address, x.MaxEmployeeCount, x.Status })
+        .FirstOrDefaultAsync(cancellationToken);
+
+    if (store is null)
+    {
+        throw new NotFoundException("门店不存在");
+    }
+
+    return ApiResponse.Ok(store, "获取当前门店成功");
+}).RequireAuthorization();
+
+// ============ 员工管理 ============
+api.MapGet("/employees", async (
+    ICurrentUser currentUser,
+    IEmployeeService employeeService,
+    int page = 1,
+    int pageSize = 20,
+    string? name = null,
+    string? employeeNo = null,
+    string? department = null,
+    int? status = null,
+    CancellationToken cancellationToken = default) =>
+{
+    var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
+    if (page < 1 || pageSize is < 1 or > 100)
+    {
+        throw new BusinessException("分页参数不正确", "INVALID_PAGINATION");
+    }
+
+    var result = await employeeService.QueryAsync(
+        new EmployeeQueryRequest(page, pageSize, name, employeeNo, department, status),
+        cancellationToken);
+
+    return ApiResponse.Ok(result, "获取员工列表成功");
+}).RequireAuthorization();
+
+api.MapGet("/employees/{id:long}", async (
+    long id,
+    IEmployeeService employeeService,
+    CancellationToken cancellationToken) =>
+{
+    var result = await employeeService.GetByIdAsync(id, cancellationToken);
+    return ApiResponse.Ok(result, "获取员工详情成功");
+}).RequireAuthorization();
+
+api.MapPost("/employees", async (
+    EmployeeUpsertRequest request,
+    ICurrentUser currentUser,
+    IEmployeeService employeeService,
+    CancellationToken cancellationToken) =>
+{
+    var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
+    var result = await employeeService.CreateAsync(
+        request,
+        storeId,
+        currentUser.UserId ?? 0,
+        currentUser.Nickname ?? currentUser.Username ?? "匿名",
+        cancellationToken);
+
+    return ApiResponse.Ok(result, "新增员工成功");
+}).RequireAuthorization();
+
+api.MapPut("/employees/{id:long}", async (
+    long id,
+    EmployeeUpsertRequest request,
+    ICurrentUser currentUser,
+    IEmployeeService employeeService,
+    CancellationToken cancellationToken) =>
+{
+    var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
+    var result = await employeeService.UpdateAsync(
+        id,
+        request,
+        storeId,
+        currentUser.UserId ?? 0,
+        currentUser.Nickname ?? currentUser.Username ?? "匿名",
+        cancellationToken);
+
+    return ApiResponse.Ok(result, "编辑员工成功");
+}).RequireAuthorization();
+
+api.MapDelete("/employees/{id:long}", async (
+    long id,
+    ICurrentUser currentUser,
+    IEmployeeService employeeService,
+    CancellationToken cancellationToken) =>
+{
+    var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
+    await employeeService.DeactivateAsync(
+        id,
+        storeId,
+        currentUser.UserId ?? 0,
+        currentUser.Nickname ?? currentUser.Username ?? "匿名",
+        cancellationToken);
+
+    return ApiResponse.Ok(true, "停用员工成功");
+}).RequireAuthorization();
+
+// ============ 员工技能 ============
+api.MapGet("/employees/{employeeId:long}/skills", async (
+    long employeeId,
+    ICurrentUser currentUser,
+    IEmployeeSkillService employeeSkillService,
+    CancellationToken cancellationToken) =>
+{
+    var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
+    var result = await employeeSkillService.GetByEmployeeAsync(employeeId, storeId, cancellationToken);
+    return ApiResponse.Ok(result, "获取员工技能成功");
+}).RequireAuthorization();
+
+api.MapPut("/employees/{employeeId:long}/skills", async (
+    long employeeId,
+    EmployeeSkillSaveRequest request,
+    ICurrentUser currentUser,
+    IEmployeeSkillService employeeSkillService,
+    CancellationToken cancellationToken) =>
+{
+    var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
+    await employeeSkillService.SaveAsync(
+        employeeId,
+        request,
+        storeId,
+        currentUser.UserId ?? 0,
+        currentUser.Nickname ?? currentUser.Username ?? "匿名",
+        cancellationToken);
+
+    return ApiResponse.Ok(true, "保存员工技能成功");
+}).RequireAuthorization();
+
+// ============ 工作站 ============
+api.MapGet("/workstations", async (
+    ICurrentUser currentUser,
+    IWorkstationService workstationService,
+    bool includeInactive = false,
+    CancellationToken cancellationToken = default) =>
+{
+    var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
+    var result = await workstationService.ListAllAsync(storeId, includeInactive, cancellationToken);
+    return ApiResponse.Ok(result, "获取工作站列表成功");
+}).RequireAuthorization();
+
+api.MapPut("/workstations/{id:long}", async (
+    long id,
+    WorkstationUpdateRequest request,
+    ICurrentUser currentUser,
+    IWorkstationService workstationService,
+    CancellationToken cancellationToken) =>
+{
+    var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
+    var result = await workstationService.UpdateAsync(
+        id,
+        request,
+        storeId,
+        currentUser.UserId ?? 0,
+        currentUser.Nickname ?? currentUser.Username ?? "匿名",
+        cancellationToken);
+
+    return ApiResponse.Ok(result, "编辑工作站成功");
+}).RequireAuthorization();
+
+// ============ 班次模板 ============
+api.MapGet("/shift-templates", async (
+    ICurrentUser currentUser,
+    IShiftTemplateService shiftTemplateService,
+    CancellationToken cancellationToken) =>
+{
+    var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
+    var result = await shiftTemplateService.ListAllAsync(storeId, cancellationToken);
+    return ApiResponse.Ok(result, "获取班次列表成功");
+}).RequireAuthorization();
+
+api.MapPut("/shift-templates/{id:long}", async (
+    long id,
+    ShiftTemplateUpdateRequest request,
+    ICurrentUser currentUser,
+    IShiftTemplateService shiftTemplateService,
+    CancellationToken cancellationToken) =>
+{
+    var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
+    var result = await shiftTemplateService.UpdateAsync(
+        id,
+        request,
+        storeId,
+        currentUser.UserId ?? 0,
+        currentUser.Nickname ?? currentUser.Username ?? "匿名",
+        cancellationToken);
+
+    return ApiResponse.Ok(result, "编辑班次成功");
+}).RequireAuthorization();
+
+// ============ 规则配置 ============
+api.MapGet("/rules", async (
+    ICurrentUser currentUser,
+    IRuleConfigService ruleConfigService,
+    CancellationToken cancellationToken) =>
+{
+    var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
+    var result = await ruleConfigService.ListAllAsync(storeId, cancellationToken);
+    return ApiResponse.Ok(result, "获取规则配置成功");
+}).RequireAuthorization();
+
+api.MapPut("/rules/{id:long}", async (
+    long id,
+    RuleConfigUpdateRequest request,
+    ICurrentUser currentUser,
+    IRuleConfigService ruleConfigService,
+    CancellationToken cancellationToken) =>
+{
+    var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
+    var result = await ruleConfigService.UpdateAsync(
+        id,
+        request,
+        storeId,
+        currentUser.UserId ?? 0,
+        currentUser.Nickname ?? currentUser.Username ?? "匿名",
+        cancellationToken);
+
+    return ApiResponse.Ok(result, "保存规则配置成功");
+}).RequireAuthorization();
+
+app.Run();
+
+public partial class Program;
