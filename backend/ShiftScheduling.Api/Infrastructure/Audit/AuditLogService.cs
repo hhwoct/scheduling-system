@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using ShiftScheduling.Api.Infrastructure.Persistence;
 using ShiftScheduling.Api.Infrastructure.Persistence.Entities;
 
@@ -5,11 +6,11 @@ namespace ShiftScheduling.Api.Infrastructure.Audit;
 
 public sealed class AuditLogService : IAuditLogService
 {
-    private readonly ShiftSchedulingDbContext _dbContext;
+    private readonly IDbContextFactory<ShiftSchedulingDbContext> _dbContextFactory;
 
-    public AuditLogService(ShiftSchedulingDbContext dbContext)
+    public AuditLogService(IDbContextFactory<ShiftSchedulingDbContext> dbContextFactory)
     {
-        _dbContext = dbContext;
+        _dbContextFactory = dbContextFactory;
     }
 
     public async Task WriteAsync(
@@ -24,7 +25,9 @@ public sealed class AuditLogService : IAuditLogService
         string? remark,
         CancellationToken cancellationToken)
     {
-        _dbContext.AuditLogs.Add(new AuditLogEntity
+        // 使用独立的 DbContext 写入审计日志，避免与业务事务共用 ChangeTracker
+        await using var auditDbContext = await _dbContextFactory.CreateDbContextAsync(cancellationToken);
+        auditDbContext.AuditLogs.Add(new AuditLogEntity
         {
             StoreId = storeId,
             OperatorUserId = operatorUserId,
@@ -38,6 +41,6 @@ public sealed class AuditLogService : IAuditLogService
             CreatedAt = DateTime.Now
         });
 
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        await auditDbContext.SaveChangesAsync(cancellationToken);
     }
 }

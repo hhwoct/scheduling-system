@@ -45,6 +45,12 @@ if (string.IsNullOrWhiteSpace(connectionString))
 builder.Services.AddDbContext<ShiftSchedulingDbContext>(options =>
     options.UseMySql(connectionString, new MySqlServerVersion(new Version(8, 0, 36))));
 
+// 审计日志使用独立的 DbContext，避免与业务变更共用 ChangeTracker
+// 注意：工厂注册为 Scoped（与 AuditLogService 生命周期一致），不能是 Singleton（会与 Scoped 的 DbContextOptions 冲突）
+builder.Services.AddDbContextFactory<ShiftSchedulingDbContext>(
+    options => options.UseMySql(connectionString, new MySqlServerVersion(new Version(8, 0, 36))),
+    ServiceLifetime.Scoped);
+
 var jwtOptions = builder.Configuration.GetSection(JwtOptions.SectionName).Get<JwtOptions>()
     ?? throw new InvalidOperationException("缺少 JWT 配置");
 if (string.IsNullOrWhiteSpace(jwtOptions.Issuer) || string.IsNullOrWhiteSpace(jwtOptions.Audience))
@@ -664,7 +670,18 @@ api.MapPut("/notifications/{id:long}/read", async (
 {
     var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
 
-    var notification = await db.Notifications.FirstOrDefaultAsync(x => x.Id == id && x.StoreId == storeId, ct)
+    // 员工只能标记自己的通知；管理端可标记门店内任意通知
+    var query = db.Notifications.Where(x => x.Id == id && x.StoreId == storeId);
+    if (currentUser.Role == "EMPLOYEE" || currentUser.Role == "STORE_MANAGER")
+    {
+        var emp = await db.Employees.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.EmployeeNo == currentUser.Username && x.Status == 1, ct);
+        if (emp == null)
+            throw new NotFoundException("员工档案不存在");
+        query = query.Where(x => x.ReceiverEmployeeId == emp.Id || x.ReceiverEmployeeId == null);
+    }
+
+    var notification = await query.FirstOrDefaultAsync(ct)
         ?? throw new NotFoundException("通知不存在");
 
     notification.IsRead = 1;

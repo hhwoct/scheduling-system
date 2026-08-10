@@ -118,28 +118,21 @@ public sealed class AuthService : IAuthService
             .FirstOrDefaultAsync(x => x.Username == username && x.Status == 1, cancellationToken)
             ?? throw new InvalidCredentialsException("用户名或验证信息不正确");
 
-        // 验证信息校验（防任意重置）
-        if (user.Role == "EMPLOYEE")
+        // 验证信息校验（防任意重置）：手机号必须与目标账户自己的员工档案一致
+        // 说明：
+        //  - SYSTEM_ADMIN（如 admin）无员工档案，不允许通过忘记密码自助重置（需线下处理）
+        //  - EMPLOYEE / STORE_MANAGER（店长 E001）账号：将用户名作为工号关联员工档案，验证手机号与档案一致
+        if (user.Role == "SYSTEM_ADMIN")
         {
-            // 员工账号：验证手机号与员工档案一致
-            var emp = await _dbContext.Employees
-                .AsNoTracking()
-                .FirstOrDefaultAsync(x => x.EmployeeNo == username && x.Status == 1, cancellationToken);
-            if (emp is null || emp.Phone != request.VerifyInfo)
-            {
-                throw new InvalidCredentialsException("用户名或验证信息不正确");
-            }
+            throw new BusinessException("系统管理员账号不支持自助重置密码，请联系超级管理员", "FORGOT_PASSWORD_NOT_ALLOWED");
         }
-        else
+
+        var employee = await _dbContext.Employees
+            .AsNoTracking()
+            .FirstOrDefaultAsync(x => x.EmployeeNo == username && x.StoreId == user.StoreId && x.Status == 1, cancellationToken);
+        if (employee is null || employee.Phone != request.VerifyInfo)
         {
-            // 管理员/门店经理：验证手机号属于该门店任何在职员工（防止随意重置）
-            var empExists = await _dbContext.Employees
-                .AsNoTracking()
-                .AnyAsync(x => x.StoreId == user.StoreId && x.Phone == request.VerifyInfo && x.Status == 1, cancellationToken);
-            if (!empExists)
-            {
-                throw new InvalidCredentialsException("用户名或验证信息不正确");
-            }
+            throw new InvalidCredentialsException("用户名或验证信息不正确");
         }
 
         user.PasswordHash = _passwordService.Hash(request.NewPassword);
