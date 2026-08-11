@@ -14,6 +14,11 @@ export const useAuthStore = defineStore('auth', {
   actions: {
     async login(username, password) {
       const res = await loginApi({ username, password })
+      // 安全加固：验证响应结构包含 token 和 user 才存储，否则视为无效响应
+      if (!res || !res.token || !res.user || !res.user.role) {
+        this.logout()
+        throw new Error('登录响应格式异常，请稍后重试')
+      }
       this.token = res.token
       this.user = res.user
       this.role = res.user.role
@@ -22,10 +27,19 @@ export const useAuthStore = defineStore('auth', {
       return res
     },
     async fetchCurrentUser() {
-      this.user = await getCurrentUser()
-      this.role = this.user.role
-      localStorage.setItem('shift_role', this.user.role || '')
-      return this.user
+      try {
+        this.user = await getCurrentUser()
+        if (!this.user || !this.user.role) {
+          throw new Error('用户信息无效')
+        }
+        this.role = this.user.role
+        localStorage.setItem('shift_role', this.user.role || '')
+        return this.user
+      } catch (e) {
+        // 获取当前用户失败时清除旧状态，避免残留脏数据
+        this.logout()
+        throw e
+      }
     },
     logout() {
       this.token = ''

@@ -20,6 +20,10 @@ public sealed class ApiExceptionMiddleware
         {
             await _next(context);
         }
+        catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
+        {
+            // 客户端取消请求：不写入响应，避免无意义错误
+        }
         catch (UnauthorizedBusinessException ex)
         {
             await ApiResponseWriter.WriteErrorAsync(context, HttpStatusCode.Unauthorized, ex.Message, ex.ErrorCode);

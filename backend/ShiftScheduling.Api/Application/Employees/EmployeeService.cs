@@ -82,18 +82,21 @@ public sealed class EmployeeService : IEmployeeService
     {
         Validate(request);
 
+        // 查重前先 Trim，避免"E001"与"E001 "被当作不同值
+        var normalizedEmployeeNo = request.EmployeeNo.Trim();
+
         var exists = await _dbContext.Employees
-            .AnyAsync(x => x.StoreId == storeId && x.EmployeeNo == request.EmployeeNo, cancellationToken);
+            .AnyAsync(x => x.StoreId == storeId && x.EmployeeNo == normalizedEmployeeNo, cancellationToken);
 
         if (exists)
         {
-            throw new BusinessException($"员工工号 {request.EmployeeNo} 已存在", "EMPLOYEE_NO_EXISTS");
+            throw new BusinessException($"员工工号 {normalizedEmployeeNo} 已存在", "EMPLOYEE_NO_EXISTS");
         }
 
         var employee = new EmployeeEntity
         {
             StoreId = storeId,
-            EmployeeNo = request.EmployeeNo.Trim(),
+            EmployeeNo = normalizedEmployeeNo,
             Name = request.Name.Trim(),
             Phone = request.Phone,
             Department = request.Department.Trim(),
@@ -133,6 +136,9 @@ public sealed class EmployeeService : IEmployeeService
     {
         Validate(request);
 
+        // 查重前先 Trim，避免"E001"与"E001 "被当作不同值
+        var normalizedEmployeeNo = request.EmployeeNo.Trim();
+
         var employee = await _dbContext.Employees
             .FirstOrDefaultAsync(x => x.Id == id && x.StoreId == storeId, cancellationToken);
 
@@ -142,16 +148,16 @@ public sealed class EmployeeService : IEmployeeService
         }
 
         var duplicate = await _dbContext.Employees
-            .AnyAsync(x => x.StoreId == storeId && x.EmployeeNo == request.EmployeeNo && x.Id != id, cancellationToken);
+            .AnyAsync(x => x.StoreId == storeId && x.EmployeeNo == normalizedEmployeeNo && x.Id != id, cancellationToken);
 
         if (duplicate)
         {
-            throw new BusinessException($"员工工号 {request.EmployeeNo} 已被其他员工使用", "EMPLOYEE_NO_EXISTS");
+            throw new BusinessException($"员工工号 {normalizedEmployeeNo} 已被其他员工使用", "EMPLOYEE_NO_EXISTS");
         }
 
         var beforeContent = System.Text.Json.JsonSerializer.Serialize(new { employee.EmployeeNo, employee.Name, employee.Department, employee.MaxWeeklyHours });
 
-        employee.EmployeeNo = request.EmployeeNo.Trim();
+        employee.EmployeeNo = normalizedEmployeeNo;
         employee.Name = request.Name.Trim();
         employee.Phone = request.Phone;
         employee.Department = request.Department.Trim();

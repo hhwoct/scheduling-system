@@ -32,7 +32,7 @@
               end-placeholder="结束日期"
               style="width: 260px"
             />
-            <el-button type="primary" :loading="loading" @click="loadData">查询</el-button>
+            <el-button type="primary" :loading="loading" @click="loadData(1)">查询</el-button>
           </div>
         </div>
       </template>

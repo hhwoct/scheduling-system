@@ -168,12 +168,35 @@ async function loadReport() {
   }
 }
 
+// CSV 注入防护：转义逗号/引号/换行，并中性化 Excel 公式前缀(=, +, -, @)
+function csvEscape(value) {
+  let v = String(value ?? '')
+  // 公式注入防护：若以 =, +, -, @, \t, \r 开头，在前面加单引号
+  if (/^[=+\-@\t\r]/.test(v)) {
+    v = "'" + v
+  }
+  // 特殊字符转义：包含逗号/引号/换行时用双引号包裹，内部引号翻倍
+  if (/[",\n\r]/.test(v)) {
+    v = '"' + v.replace(/"/g, '""') + '"'
+  }
+  return v
+}
+
 async function exportCsv() {
   exporting.value = true
   try {
-    const csv = [['工号', '姓名', '部门', '日期', '状态', '班次', '工时'].join(',')]
+    const headers = ['工号', '姓名', '部门', '日期', '状态', '班次', '工时'].map(csvEscape).join(',')
+    const csv = [headers]
     rows.value.forEach(r => {
-      csv.push([r.employeeNo, r.employeeName, r.department, r.workDate, r.isRestDay === 1 ? '休息' : '上班', r.shiftCode || '', r.workHours || ''].join(','))
+      csv.push([
+        csvEscape(r.employeeNo),
+        csvEscape(r.employeeName),
+        csvEscape(r.department),
+        csvEscape(r.workDate),
+        csvEscape(r.isRestDay === 1 ? '休息' : '上班'),
+        csvEscape(r.shiftCode),
+        csvEscape(r.workHours)
+      ].join(','))
     })
     const blob = new Blob(['\uFEFF' + csv.join('\n')], { type: 'text/csv;charset=utf-8;' })
     const url = URL.createObjectURL(blob)
