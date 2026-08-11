@@ -77,11 +77,18 @@ async function loadData() {
 
 async function handleReview(row, approved) {
   const action = approved ? '批准' : '驳回'
-  const { value: remark } = await ElMessageBox.prompt(`请输入${action}意见（可留空）`, `${action}换班申请 #${row.id}`, {
-    confirmButtonText: '确定',
-    cancelButtonText: '取消',
-    inputPlaceholder: '审批意见...'
-  }).catch(() => ({ value: '' }))
+  let remark
+  try {
+    const result = await ElMessageBox.prompt(`请输入${action}意见（可留空）`, `${action}换班申请 #${row.id}`, {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      inputPlaceholder: '审批意见...'
+    })
+    remark = result.value
+  } catch {
+    // 用户取消：不提交审批
+    return
+  }
   await reviewSwap(row.id, { approved, remark: remark || undefined })
   loadData()
 }

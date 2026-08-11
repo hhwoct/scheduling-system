@@ -118,13 +118,13 @@ public sealed class AuthService : IAuthService
             .FirstOrDefaultAsync(x => x.Username == username && x.Status == 1, cancellationToken)
             ?? throw new InvalidCredentialsException("用户名或验证信息不正确");
 
-        // 验证信息校验（防任意重置）：手机号必须与目标账户自己的员工档案一致
-        // 说明：
-        //  - SYSTEM_ADMIN（如 admin）无员工档案，不允许通过忘记密码自助重置（需线下处理）
-        //  - EMPLOYEE / STORE_MANAGER（店长 E001）账号：将用户名作为工号关联员工档案，验证手机号与档案一致
-        if (user.Role == "SYSTEM_ADMIN")
+        // 验证信息校验（防任意重置 + 防用户枚举）：
+        //  - 统一返回"用户名或验证信息不正确"，不区分用户存在/不存在/角色，避免枚举有效账号
+        //  - 只有 EMPLOYEE / STORE_MANAGER（店长）账号可通过工号关联员工档案并验证手机号
+        //  - SYSTEM_ADMIN 无员工档案，无法通过手机号验证，自然无法自助重置
+        if (user.Role != "EMPLOYEE" && user.Role != "STORE_MANAGER")
         {
-            throw new BusinessException("系统管理员账号不支持自助重置密码，请联系超级管理员", "FORGOT_PASSWORD_NOT_ALLOWED");
+            throw new InvalidCredentialsException("用户名或验证信息不正确");
         }
 
         var employee = await _dbContext.Employees
