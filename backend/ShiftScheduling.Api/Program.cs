@@ -160,6 +160,10 @@ builder.Services.AddAuthorization(options =>
     // 管理端策略：仅系统管理员与门店经理可访问管理接口
     options.AddPolicy("AdminOnly", policy =>
         policy.RequireRole("SYSTEM_ADMIN", "STORE_MANAGER"));
+
+    // 系统管理员专属策略：仅 SYSTEM_ADMIN 可修改关键配置（如排班规则）
+    options.AddPolicy("SystemAdminOnly", policy =>
+        policy.RequireRole("SYSTEM_ADMIN"));
 });
 builder.Services.AddOpenApi();
 
@@ -498,7 +502,7 @@ api.MapPut("/rules/{id:long}", async (
         cancellationToken);
 
     return ApiResponse.Ok(result, "保存规则配置成功");
-}).RequireAuthorization("AdminOnly");
+}).RequireAuthorization("SystemAdminOnly");
 
 // ============ 排班业务 ============
 api.MapPost("/schedules/generate", async (

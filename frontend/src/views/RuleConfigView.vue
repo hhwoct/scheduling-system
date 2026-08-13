@@ -6,31 +6,37 @@
         <el-table-column prop="ruleKey" label="规则 Key" width="200" />
         <el-table-column label="值" width="160">
           <template #default="{ row }">
-            <el-input v-model="row.ruleValue" size="small" style="width: 120px" />
+            <el-input v-model="row.ruleValue" size="small" style="width: 120px" :disabled="!isSystemAdmin" />
           </template>
         </el-table-column>
         <el-table-column prop="remark" label="说明" />
         <el-table-column label="启用" width="80">
           <template #default="{ row }">
-            <el-switch v-model="row.status" :active-value="1" :inactive-value="0" />
+            <el-switch v-model="row.status" :active-value="1" :inactive-value="0" :disabled="!isSystemAdmin" />
           </template>
         </el-table-column>
       </el-table>
       <div style="margin-top: 16px; text-align: right">
-        <el-button type="primary" :loading="saving" @click="handleSave">保存全部</el-button>
+        <el-button v-if="isSystemAdmin" type="primary" :loading="saving" @click="handleSave">保存全部</el-button>
+        <el-alert v-else type="info" :closable="false" show-icon title="仅系统管理员可修改排班规则，当前为只读模式" />
       </div>
     </el-card>
   </div>
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
+import { useAuthStore } from '../stores/auth'
 import { getRules, updateRule } from '../api/rules'
 
 const loading = ref(false)
 const saving = ref(false)
 const list = ref([])
+
+const authStore = useAuthStore()
+// 仅系统管理员（admin）可修改规则；店长（STORE_MANAGER）只读
+const isSystemAdmin = computed(() => authStore.role === 'SYSTEM_ADMIN')
 
 async function loadData() {
   loading.value = true
