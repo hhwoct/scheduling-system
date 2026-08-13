@@ -122,9 +122,9 @@
           <el-col :span="6"><el-card shadow="hover"><div class="stat-num" style="color:#e6a23c">{{ issueStats.warnCount }}</div><div class="stat-label">警告级别</div></el-card></el-col>
           <el-col :span="6"><el-card shadow="hover"><div class="stat-num" style="color:#67c23a">{{ issueStats.daysCount }}</div><div class="stat-label">影响天数</div></el-card></el-col>
         </el-row>
-        <el-row :gutter="16" style="margin-bottom: 16px" align="stretch">
-          <el-col :span="9">
-            <el-card header="问题分析" style="height: 100%">
+        <el-row :gutter="16" style="margin-bottom: 16px">
+          <el-col :span="24">
+            <el-card header="问题分析">
               <div style="display: flex; align-items: flex-start; gap: 12px; flex-wrap: wrap">
                 <div style="display: flex; align-items: center; gap: 8px">
                   <svg viewBox="0 0 200 200" width="220" height="220">
@@ -148,8 +148,10 @@
               </div>
             </el-card>
           </el-col>
-          <el-col :span="15">
-            <el-card header="排班合理度趋势" style="height: 100%">
+        </el-row>
+        <el-row :gutter="16" style="margin-bottom: 16px">
+          <el-col :span="24">
+            <el-card header="排班合理度趋势">
               <div v-if="rationalityData.length" class="area-chart-wrap" style="padding: 2px 6px 6px">
                 <svg :viewBox="`0 0 ${rationalityData.length * 80 + 40} 300`" width="100%" height="290" preserveAspectRatio="xMidYMid meet">
                   <!-- Y轴网格线 -->
