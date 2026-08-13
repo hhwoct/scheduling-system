@@ -100,11 +100,18 @@ public sealed class ShiftAllocator
                 }
             }
 
-            // 剩余员工分配到需求缺口最大的班次
+            // 剩余员工分配到需求缺口最大的班次。
+            // 修复：仅当当天仍有需求缺口时才补充人员；需求已满足后，
+            // 多余员工（如兼职）当天不排班（空闲），避免超配排班。
             var unassigned = workingEmployees.Where(e => !assignedToday.Contains(e.Id)).ToList();
+            var outstandingDemand = remaining.Values.Sum();
             foreach (var employee in unassigned)
             {
+                if (outstandingDemand <= 0)
+                    break;   // 当天需求已全部满足，不再安排多余员工
+
                 var bestShift = input.ShiftTemplates
+                    .Where(s => ShiftHasOutstandingDemand(s, remaining))
                     .Where(s => HasSkillForShift(employee.Id, s, skillsByEmployee))
                     .OrderByDescending(s => ShiftDemandScore(s, remaining))
                     .ThenBy(s => SchedulingTimeHelper.GetShiftHours(s.StartTime, s.EndTime, s.IsCrossDay))
@@ -118,7 +125,11 @@ public sealed class ShiftAllocator
                     weeklyHours[employee.Id] =
                         weeklyHours.GetValueOrDefault(employee.Id) + SchedulingTimeHelper.GetShiftHours(bestShift.StartTime, bestShift.EndTime, bestShift.IsCrossDay);
 
+                    var before = outstandingDemand;
                     DecrementRemaining(bestShift, targetWs, remaining);
+                    outstandingDemand = remaining.Values.Sum();
+                    if (outstandingDemand <= 0 || outstandingDemand >= before)
+                        break;  // 不再有缺口（或无法再减少）则停止补充
                 }
             }
         }
@@ -196,6 +207,18 @@ public sealed class ShiftAllocator
             max = Math.Max(max, dayRequirements.GetValueOrDefault((workstationId, slot)));
         }
         return max;
+    }
+
+    /// <summary>
+    /// 该班次覆盖的时段内是否仍有未被满足的需求缺口。
+    /// remaining 键 = (工作站, 时段)。
+    /// </summary>
+    private static bool ShiftHasOutstandingDemand(
+        ShiftTemplateInput shift,
+        IReadOnlyDictionary<(long WorkstationId, TimeSpan Slot), int> remaining)
+    {
+        var slots = SchedulingTimeHelper.GetShiftSlots(shift.StartTime, shift.EndTime, shift.IsCrossDay);
+        return shift.WorkstationIds.Any(ws => slots.Any(slot => remaining.GetValueOrDefault((ws, slot)) > 0));
     }
 
     /// <summary>
