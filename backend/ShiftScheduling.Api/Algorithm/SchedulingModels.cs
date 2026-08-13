@@ -6,7 +6,8 @@ public sealed record EmployeeInput(
     string Name,
     string Department,
     string? PrimaryPosition,
-    decimal MaxWeeklyHours);
+    decimal MaxWeeklyHours,
+    int IsParttime = 0);
 
 public sealed record SkillInput(long EmployeeId, long WorkstationId, int SkillScore);
 

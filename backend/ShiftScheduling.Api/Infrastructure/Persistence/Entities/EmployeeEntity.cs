@@ -22,6 +22,8 @@ public sealed class EmployeeEntity
 
     public int Status { get; set; }
 
+    public int IsParttime { get; set; }
+
     public DateTime CreatedAt { get; set; }
 
     public DateTime UpdatedAt { get; set; }

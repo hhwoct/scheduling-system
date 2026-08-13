@@ -55,6 +55,7 @@ public sealed class EmployeeService : IEmployeeService
                 x.HireDate,
                 x.PrimaryPosition,
                 x.MaxWeeklyHours,
+                x.IsParttime,
                 x.Status))
             .ToListAsync(cancellationToken);
 
@@ -106,6 +107,7 @@ public sealed class EmployeeService : IEmployeeService
             PrimaryPosition = request.PrimaryPosition,
             MaxWeeklyHours = request.MaxWeeklyHours,
             Status = 1,
+            IsParttime = 0,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         };
@@ -258,6 +260,7 @@ public sealed class EmployeeService : IEmployeeService
             employee.HireDate,
             employee.PrimaryPosition,
             employee.MaxWeeklyHours,
+            employee.IsParttime,
             employee.Status,
             employee.CreatedAt,
             employee.UpdatedAt);

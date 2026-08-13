@@ -72,7 +72,8 @@ public sealed class SchedulingEngine
                 x.Name,
                 x.Department,
                 x.PrimaryPosition,
-                x.MaxWeeklyHours))
+                x.MaxWeeklyHours,
+                x.IsParttime))
             .ToListAsync(cancellationToken);
 
         var skills = await _dbContext.EmployeeSkills

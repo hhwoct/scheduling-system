@@ -22,7 +22,9 @@
 
       <el-table :data="list" v-loading="loading" border stripe>
         <el-table-column prop="employeeNo" label="工号" width="100" />
-        <el-table-column prop="name" label="姓名" width="120" />
+        <el-table-column label="姓名" width="140">
+          <template #default="{ row }">{{ row.name }}<el-tag v-if="row.isParttime === 1" type="warning" size="small" style="margin-left:4px">兼</el-tag></template>
+        </el-table-column>
         <el-table-column prop="department" label="部门" width="100" />
         <el-table-column prop="primaryPosition" label="主岗" />
         <el-table-column prop="phone" label="手机号" width="140" />

@@ -9,6 +9,7 @@ public sealed record EmployeeListItem(
     DateTime? HireDate,
     string? PrimaryPosition,
     decimal MaxWeeklyHours,
+    int IsParttime,
     int Status);
 
 public sealed record EmployeeDetail(
@@ -20,6 +21,7 @@ public sealed record EmployeeDetail(
     DateTime? HireDate,
     string? PrimaryPosition,
     decimal MaxWeeklyHours,
+    int IsParttime,
     int Status,
     DateTime CreatedAt,
     DateTime UpdatedAt);
