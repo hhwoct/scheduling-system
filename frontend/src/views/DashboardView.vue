@@ -5,6 +5,7 @@
         <el-card shadow="hover">
           <div class="stat-value">{{ stats.employeeCount ?? '--' }}</div>
           <div class="stat-label">员工数量</div>
+          <div class="stat-sub-label">{{ stats.fullTimeCount != null ? `${stats.fullTimeCount}全职 + ${stats.partTimeCount}兼职` : '' }}</div>
         </el-card>
       </el-col>
       <el-col :span="8">
@@ -58,6 +59,8 @@ onMounted(async () => {
 
   if (statsRes.status === 'fulfilled' && statsRes.value?.data) {
     stats.employeeCount = statsRes.value.data.employeeCount
+    stats.fullTimeCount = statsRes.value.data.fullTimeCount
+    stats.partTimeCount = statsRes.value.data.partTimeCount
     stats.shiftCount = statsRes.value.data.shiftCount
     stats.workstationCount = statsRes.value.data.workstationCount
   } else {
@@ -84,5 +87,10 @@ onMounted(async () => {
 .stat-label {
   margin-top: 8px;
   color: #909399;
+}
+.stat-sub-label {
+  margin-top: 4px;
+  font-size: 13px;
+  color: #67c23a;
 }
 </style>

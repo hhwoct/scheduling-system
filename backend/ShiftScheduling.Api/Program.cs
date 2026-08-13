@@ -269,10 +269,12 @@ api.MapGet("/dashboard/stats", async (
     var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
 
     var employeeCount = await dbContext.Employees.CountAsync(x => x.StoreId == storeId && x.Status == 1, cancellationToken);
+    var fullTimeCount = await dbContext.Employees.CountAsync(x => x.StoreId == storeId && x.Status == 1 && x.IsParttime == 0, cancellationToken);
+    var partTimeCount = await dbContext.Employees.CountAsync(x => x.StoreId == storeId && x.Status == 1 && x.IsParttime == 1, cancellationToken);
     var shiftCount = await dbContext.ShiftTemplates.CountAsync(x => x.StoreId == storeId && x.Status == 1, cancellationToken);
     var workstationCount = await dbContext.Workstations.CountAsync(x => x.StoreId == storeId && x.Status == 1, cancellationToken);
 
-    return ApiResponse.Ok(new { employeeCount, shiftCount, workstationCount }, "获取统计数据成功");
+    return ApiResponse.Ok(new { employeeCount, fullTimeCount, partTimeCount, shiftCount, workstationCount }, "获取统计数据成功");
 }).RequireAuthorization("AdminOnly");
 
 // ============ 员工管理 ============
