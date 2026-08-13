@@ -1047,6 +1047,57 @@ api.MapGet("/leave-requests/mine", async (
     return ApiResponse.Ok(result, "获取我的请假成功");
 }).RequireAuthorization();
 
+// 员工：提前返岗（缩短已批准请假，仅本人可操作）
+api.MapPut("/leave-requests/{id:long}/early-return", async (
+    long id,
+    EarlyReturnRequest request,
+    ICurrentUser currentUser,
+    ShiftSchedulingDbContext db,
+    IAuditLogService audit,
+    CancellationToken ct) =>
+{
+    var username = currentUser.Username;
+    var emp = await db.Employees.AsNoTracking().FirstOrDefaultAsync(x => x.EmployeeNo == username && x.StoreId == currentUser.StoreId && x.Status == 1, ct)
+        ?? throw new NotFoundException("员工档案不存在");
+
+    var leave = await db.LeaveRequests.FirstOrDefaultAsync(x => x.Id == id && x.EmployeeId == emp.Id && x.StoreId == emp.StoreId, ct)
+        ?? throw new NotFoundException("请假申请不存在");
+
+    // 仅已批准的请假允许提前返岗
+    if (leave.Status != "APPROVED")
+        throw new BusinessException("仅已批准的请假可以提前返岗", "LEAVE_NOT_APPROVED");
+
+    if (request.ReturnDate <= leave.StartDate)
+        throw new BusinessException("返岗日期必须晚于请假开始日期", "INVALID_RETURN_DATE");
+
+    if (request.ReturnDate >= leave.EndDate)
+        throw new BusinessException("返岗日期必须早于原请假结束日期", "INVALID_RETURN_DATE");
+
+    var oldEnd = leave.EndDate;
+    leave.EndDate = request.ReturnDate;
+    leave.UpdatedAt = DateTime.UtcNow;
+    await db.SaveChangesAsync(ct);
+
+    await audit.WriteAsync(leave.StoreId, currentUser.UserId, currentUser.Nickname, "EARLY_RETURN_LEAVE", "LEAVE_REQUEST", leave.Id,
+        oldEnd.ToString("yyyy-MM-dd"), request.ReturnDate.ToString("yyyy-MM-dd"),
+        $"{emp.Name} 提前返岗：请假结束日期从 {oldEnd:yyyy-MM-dd} 改为 {request.ReturnDate:yyyy-MM-dd}", ct);
+
+    // 通知管理员
+    db.Notifications.Add(new NotificationEntity
+    {
+        StoreId = leave.StoreId,
+        ReceiverUserId = null,
+        ReceiverEmployeeId = null,
+        NotificationType = "LEAVE_EARLY_RETURN",
+        Title = "员工提前返岗",
+        Content = $"{WebUtility.HtmlEncode(emp.Name)}({WebUtility.HtmlEncode(emp.EmployeeNo)}) 提前返岗，请假从 {leave.StartDate:yyyy-MM-dd} 至 {leave.EndDate:yyyy-MM-dd}",
+        CreatedAt = DateTime.UtcNow
+    });
+    await db.SaveChangesAsync(ct);
+
+    return ApiResponse.Ok(new { leave.Id, leave.StartDate, leave.EndDate, leave.Status }, "已更新为提前返岗");
+}).RequireAuthorization();
+
 // 管理员：请假审批列表
 api.MapGet("/leave-requests/review", async (
     ICurrentUser currentUser,
@@ -1608,6 +1659,7 @@ app.Run();
 
 // ===== 请假 DTO =====
 public sealed record LeaveRequestCreate(string? LeaveType, DateOnly StartDate, DateOnly EndDate, string? Reason);
+public sealed record EarlyReturnRequest(DateOnly ReturnDate);
 public sealed record LeaveReviewRequest(bool Approved, string? Remark);
 
 // ===== 换班 DTO =====

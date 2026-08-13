@@ -38,7 +38,8 @@ export const API_ROUTES = {
     BASE: '/leave-requests',
     MINE: '/leave-requests/mine',
     REVIEW: '/leave-requests/review',
-    REVIEW_DETAIL: (id) => `/leave-requests/${encodeURIComponent(id)}/review`
+    REVIEW_DETAIL: (id) => `/leave-requests/${encodeURIComponent(id)}/review`,
+    EARLY_RETURN: (id) => `/leave-requests/${encodeURIComponent(id)}/early-return`
   },
   SWAP: {
     BASE: '/shift-swaps',

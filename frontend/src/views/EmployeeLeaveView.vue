@@ -63,6 +63,11 @@
         <el-table-column label="审批意见" min-width="120">
           <template #default="{ row }">{{ row.reviewRemark || '--' }}</template>
         </el-table-column>
+        <el-table-column label="操作" width="110" fixed="right">
+          <template #default="{ row }">
+            <el-button v-if="row.status === 'APPROVED'" link type="primary" @click="handleEarlyReturn(row)">提前返岗</el-button>
+          </template>
+        </el-table-column>
       </el-table>
     </el-card>
   </div>
@@ -71,8 +76,8 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
-import { ElMessage } from 'element-plus'
-import { getMyLeaves, submitLeave } from '../api/leave'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { getMyLeaves, submitLeave, earlyReturnLeave } from '../api/leave'
 
 const route = useRoute()
 const employeeNo = computed(() => route.query.employeeNo || localStorage.getItem('shift_preview_employee_no') || '')
@@ -158,6 +163,23 @@ async function handleSubmit() {
     loadMine()
   } finally {
     submitting.value = false
+  }
+}
+
+async function handleEarlyReturn(row) {
+  try {
+    const { value } = await ElMessageBox.prompt(
+      `提前返岗：将请假 ${row.startDate} ~ ${row.endDate} 的结束日期提前到哪一天？\n（请输入 YYYY-MM-DD 格式，须晚于 ${row.startDate} 且早于 ${row.endDate}）`,
+      '提前返岗',
+      { inputPlaceholder: 'YYYY-MM-DD', inputPattern: /^\d{4}-\d{2}-\d{2}$/, inputErrorMessage: '日期格式不正确' }
+    )
+    const newEnd = value.trim()
+    if (!newEnd) { ElMessage.warning('请输入返岗日期'); return }
+    await earlyReturnLeave(row.id, newEnd)
+    ElMessage.success('已更新为提前返岗')
+    loadMine()
+  } catch (e) {
+    // 用户取消
   }
 }
 

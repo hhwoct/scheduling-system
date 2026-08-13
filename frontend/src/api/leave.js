@@ -20,3 +20,8 @@ export function getLeaveReviewList(status) {
 export function reviewLeave(id, data) {
   return request.put(API_ROUTES.LEAVE.REVIEW_DETAIL(id), data).then(res => res.data)
 }
+
+// 员工：提前返岗（缩短已批准请假）
+export function earlyReturnLeave(id, returnDate) {
+  return request.put(API_ROUTES.LEAVE.EARLY_RETURN(id), { returnDate }).then(res => res.data)
+}
