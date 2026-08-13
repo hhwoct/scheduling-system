@@ -155,16 +155,16 @@
                   <!-- Y轴网格线 -->
                   <line v-for="tick in yTicks" :key="'grid'+tick" :x1="40" :y1="Y(tick)" :x2="rationalityData.length * 80 + 30" :y2="Y(tick)" stroke="#ebeef5" stroke-width="1" />
                   <!-- Y轴标签 -->
-                  <text v-for="tick in yTicks" :key="'ylbl'+tick" x="36" :y="Y(tick) + 4" text-anchor="end" font-size="10" fill="#909399">{{ tick }}%</text>
+                  <text v-for="tick in yTicks" :key="'ylbl'+tick" x="36" :y="Y(tick) + 4" text-anchor="end" font-size="13" font-weight="bold" fill="#606266">{{ tick }}%</text>
                   <!-- X轴标签 -->
-                  <text v-for="(d, i) in rationalityData" :key="'xlbl'+i" :x="40 + i * 80 + 25" y="285" text-anchor="middle" font-size="10" fill="#909399">{{ d.date.substring(5) }}</text>
+                  <text v-for="(d, i) in rationalityData" :key="'xlbl'+i" :x="40 + i * 80 + 25" y="285" text-anchor="end" font-size="13" font-weight="bold" fill="#606266" :transform="`rotate(-35 ${40 + i * 80 + 25} 285)`">{{ d.date.substring(5) }}</text>
                   <!-- 填色区域 -->
                   <path :d="areaPath" fill="rgba(64,158,255,0.15)" />
                   <!-- 曲线 -->
                   <path :d="linePath" fill="none" stroke="#409eff" stroke-width="2.5" />
                   <!-- 数据点 -->
                   <circle v-for="(d, i) in rationalityData" :key="'dot'+i" :cx="40 + i * 80 + 25" :cy="Y(d.pct)" r="4" fill="#fff" stroke="#409eff" stroke-width="2" style="cursor: pointer" @click="filterTableByDate(d.date)" />
-                  <text v-for="(d, i) in rationalityData" :key="'v'+i" :x="40 + i * 80 + 25" :y="Y(d.pct) - 8" text-anchor="middle" font-size="10" fill="#303133" font-weight="600">{{ Math.round(d.pct) }}%</text>
+                  <text v-for="(d, i) in rationalityData" :key="'v'+i" :x="40 + i * 80 + 25" :y="Y(d.pct) - 10" text-anchor="middle" font-size="13" fill="#303133" font-weight="bold">{{ Math.round(d.pct) }}%</text>
                   <text v-if="dateFilter" x="50%" y="14" text-anchor="middle" font-size="10" fill="#409eff" style="cursor:pointer" @click="dateFilter=''">✕ 清除日期筛选</text>
                 </svg>
               </div>
