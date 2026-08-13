@@ -123,6 +123,69 @@ public sealed class RestDayAllocator
             }
         }
 
+        // ============================================================
+        // 修复：强制保证"连续工作天数 ≤ MaxConsecutiveWorkDays"
+        // 原逻辑里 max_consecutive_work_days 只用于事后预警，不约束休息分配，
+        // 导致连续工作总比上限多一天。这里在休息分配后主动打断超限连续段。
+        // ============================================================
+        var maxConsecutive = input.MaxConsecutiveWorkDays;
+        if (maxConsecutive > 0)
+        {
+            // 每个员工已分配的休息日集合
+            var restSetByEmp = assignments
+                .GroupBy(x => x.EmployeeId)
+                .ToDictionary(g => g.Key, g => g.Select(x => x.WorkDate).ToHashSet());
+
+            foreach (var employee in input.Employees)
+            {
+                if (!restSetByEmp.TryGetValue(employee.Id, out var restSet))
+                {
+                    restSet = new HashSet<DateOnly>();
+                    restSetByEmp[employee.Id] = restSet;
+                }
+
+                var streak = 0;
+                DateOnly? streakStart = null;
+
+                for (var i = 0; i < allDays.Count; i++)
+                {
+                    var day = allDays[i];
+                    if (restSet.Contains(day.WorkDate))
+                    {
+                        streak = 0;
+                        streakStart = null;
+                        continue;
+                    }
+
+                    if (streakStart is null)
+                        streakStart = day.WorkDate;
+                    streak++;
+
+                    // 连续工作达到上限：下一天必须休息，否则连续天数将超过上限
+                    if (streak >= maxConsecutive && i + 1 < allDays.Count)
+                    {
+                        var nextDay = allDays[i + 1];
+                        // 若下一天是高峰日且员工高峰日不能休，则该段无法强制打断（现实约束）
+                        if (CanRestOnPeakDay(employee.Department) || !IsPeakDay(nextDay))
+                        {
+                            if (!restSet.Contains(nextDay.WorkDate))
+                            {
+                                assignments.Add(new RestDayAssignment(employee.Id, nextDay.WorkDate));
+                                restSet.Add(nextDay.WorkDate);
+                                restDayCounts[employee.Id] = restDayCounts.GetValueOrDefault(employee.Id) + 1;
+                                restCountByDate[nextDay.WorkDate] = restCountByDate.GetValueOrDefault(nextDay.WorkDate) + 1;
+                                // 跳到下下天继续
+                                streak = 0;
+                                streakStart = null;
+                                i++; // for 循环会再 +1
+                                continue;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         return assignments;
     }
 
