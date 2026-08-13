@@ -88,7 +88,7 @@ public sealed class ShiftTemplateService : IShiftTemplateService
         template.IsCrossDay = request.IsCrossDay;
         template.Priority = request.Priority;
         template.Status = request.Status;
-        template.UpdatedAt = DateTime.Now;
+        template.UpdatedAt = DateTime.UtcNow;
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 

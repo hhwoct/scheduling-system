@@ -78,6 +78,9 @@ const actionType = ref('')
 const dateRange = ref(null)
 const errorMsg = ref('')
 
+// P3-25: 请求序号防止旧响应覆盖
+let requestSeq = 0
+
 const actionNames = {
   LOGIN: '登录',
   CREATE_EMPLOYEE: '新增员工',
@@ -102,6 +105,7 @@ function actionName(type) {
 }
 
 async function loadData(current = 1) {
+  const seq = ++requestSeq
   page.value = current
   loading.value = true
   errorMsg.value = ''
@@ -113,12 +117,19 @@ async function loadData(current = 1) {
       params.endDate = dateRange.value[1]
     }
     const res = await request.get('/audit-logs', { params }).then(r => r.data)
-    list.value = res.items
-    total.value = res.total
+    // 只应用最新请求的结果
+    if (seq === requestSeq) {
+      list.value = res.items
+      total.value = res.total
+    }
   } catch (e) {
-    errorMsg.value = '查询失败：' + (e.message || '网络错误')
+    if (seq === requestSeq) {
+      errorMsg.value = '查询失败：' + (e.message || '网络错误')
+    }
   } finally {
-    loading.value = false
+    if (seq === requestSeq) {
+      loading.value = false
+    }
   }
 }
 

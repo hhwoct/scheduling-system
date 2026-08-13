@@ -53,6 +53,33 @@
             </div>
           </div>
         </div>
+
+        <!-- 兼职替补需求色块：低技能岗位缺口 -->
+        <div v-if="weekPartTimeNeeds.length" class="parttime-block" style="margin-top: 16px">
+          <div class="parttime-title">
+            <span class="parttime-badge">兼</span>
+            兼职替补需求（低技能岗位缺口，建议寻找兼职人员临时填补）
+          </div>
+          <div class="parttime-table">
+            <div class="parttime-row parttime-header">
+              <div class="parttime-ws-col">岗位</div>
+              <div v-for="d in weekDays" :key="d.date" class="parttime-day-col">{{ d.date.substring(5) }}</div>
+            </div>
+            <div v-for="need in weekPartTimeNeeds" :key="need.workstationName + (need.days || '')" class="parttime-row">
+              <div class="parttime-ws-col">{{ need.workstationName }}</div>
+              <div
+                v-for="d in weekDays"
+                :key="d.date"
+                class="parttime-day-col"
+                :class="{ active: hasPartTimeNeed(need.workstationName, d.date) }"
+                :title="hasPartTimeNeed(need.workstationName, d.date) ? `${need.workstationName} ${d.date} 缺口，建议找兼职替补` : ''"
+              ></div>
+            </div>
+          </div>
+          <div class="parttime-legend">
+            <span class="legend-box parttime-legend-box"></span> 该日该低技能岗位存在缺口 → 建议寻找兼职人员临时替补
+          </div>
+        </div>
       </div>
 
       <div v-if="viewMode === 'month'" v-loading="loading">
@@ -61,7 +88,7 @@
             <div v-for="w in ['周一','周二','周三','周四','周五','周六','周日']" :key="w" class="cal-header-cell">{{ w }}</div>
           </div>
           <div v-for="(week, wi) in weeks" :key="wi" class="cal-week">
-            <div v-for="day in week" :key="day.date || '__empty'" class="cal-cell" :class="{ 'is-empty': !day.date, 'is-selected': day.date === selectedDate }" @click="day.date && selectDate(day.date)">
+            <div v-for="(day, di) in week" :key="day.date || `empty-${wi}-${di}`" class="cal-cell" :class="{ 'is-empty': !day.date, 'is-selected': day.date === selectedDate }" @click="day.date && selectDate(day.date)">
               <template v-if="day.date">
                 <div class="cal-day-num">{{ day.dayNum }}</div>
                 <div class="cal-work">{{ day.workCount }} 上班</div>
@@ -75,7 +102,7 @@
           <el-divider content-position="left">{{ selectedDate }}</el-divider>
           <div v-loading="dailyLoading" class="matrix-wrap"><div class="matrix">
             <div class="m-row m-header"><div class="m-ws-col">工作站</div><div v-for="slot in slots" :key="slot.key" class="m-slot-col" :title="slot.display"><span v-if="isHour(slot)">{{ slot.display }}</span></div></div>
-            <div v-for="ws in dailyWorkstations" :key="ws" class="m-row"><div class="m-ws-col">{{ ws }}</div><div v-for="slot in slots" :key="slot.key" class="m-slot-col" :class="cellClass(ws, slot)"><div v-if="dailySlotIssues(ws, slot).length" class="gap-flag">缺</div><div v-for="emp in dailyCellUsers(ws, slot)" :key="emp.employeeId" class="emp-chip"><div class="emp-name">{{ emp.employeeName }}</div><div class="emp-shift">{{ emp.shiftCode || '--' }}</div></div></div></div>
+            <div v-for="ws in dailyWorkstations" :key="ws" class="m-row"><div class="m-ws-col">{{ ws }}<el-tag v-if="wsLowSkill(ws)" type="success" size="small" style="margin-left:4px">兼</el-tag></div><div v-for="slot in slots" :key="slot.key" class="m-slot-col" :class="cellClass(ws, slot)"><div v-if="dailySlotIssues(ws, slot).length" class="gap-flag" :class="{ 'gap-flag-low': lowSkillGapIssues(ws, slot).length > 0 }" :title="gapTooltip(ws, slot)">{{ lowSkillGapIssues(ws, slot).length > 0 ? '兼' : '缺' }}</div><div v-for="emp in dailyCellUsers(ws, slot)" :key="emp.employeeId" class="emp-chip"><div class="emp-name">{{ emp.employeeName }}</div><div class="emp-shift">{{ emp.shiftCode || '--' }}</div></div></div></div>
           </div></div>
         </div>
       </div>
@@ -84,7 +111,7 @@
         <el-date-picker v-model="dayDate" type="date" value-format="YYYY-MM-DD" style="width: 150px; margin-bottom: 12px" placeholder="选择日期" @change="loadDay" />
         <div v-if="dayDate" class="matrix-wrap"><div class="matrix">
           <div class="m-row m-header"><div class="m-ws-col">工作站</div><div v-for="slot in slots" :key="slot.key" class="m-slot-col" :title="slot.display"><span v-if="isHour(slot)">{{ slot.display }}</span></div></div>
-          <div v-for="ws in dailyWorkstations" :key="ws" class="m-row"><div class="m-ws-col">{{ ws }}</div><div v-for="slot in slots" :key="slot.key" class="m-slot-col" :class="cellClass(ws, slot)"><div v-if="dailySlotIssues(ws, slot).length" class="gap-flag">缺</div><div v-for="emp in dailyCellUsers(ws, slot)" :key="emp.employeeId" class="emp-chip"><div class="emp-name">{{ emp.employeeName }}</div><div class="emp-shift">{{ emp.shiftCode || '--' }}</div></div></div></div>
+          <div v-for="ws in dailyWorkstations" :key="ws" class="m-row"><div class="m-ws-col">{{ ws }}<el-tag v-if="wsLowSkill(ws)" type="success" size="small" style="margin-left:4px">兼</el-tag></div><div v-for="slot in slots" :key="slot.key" class="m-slot-col" :class="cellClass(ws, slot)"><div v-if="dailySlotIssues(ws, slot).length" class="gap-flag" :class="{ 'gap-flag-low': lowSkillGapIssues(ws, slot).length > 0 }" :title="gapTooltip(ws, slot)">{{ lowSkillGapIssues(ws, slot).length > 0 ? '兼' : '缺' }}</div><div v-for="emp in dailyCellUsers(ws, slot)" :key="emp.employeeId" class="emp-chip"><div class="emp-name">{{ emp.employeeName }}</div><div class="emp-shift">{{ emp.shiftCode || '--' }}</div></div></div></div>
         </div></div>
       </div>
 
@@ -96,7 +123,7 @@
           <el-col :span="6"><el-card shadow="hover"><div class="stat-num" style="color:#67c23a">{{ issueStats.daysCount }}</div><div class="stat-label">影响天数</div></el-card></el-col>
         </el-row>
         <el-row :gutter="16" style="margin-bottom: 16px" align="stretch">
-          <el-col :span="14">
+          <el-col :span="9">
             <el-card header="问题分析" style="height: 100%">
               <div style="display: flex; align-items: flex-start; gap: 12px; flex-wrap: wrap">
                 <div style="display: flex; align-items: center; gap: 8px">
@@ -121,7 +148,7 @@
               </div>
             </el-card>
           </el-col>
-          <el-col :span="10">
+          <el-col :span="15">
             <el-card header="排班合理度趋势" style="height: 100%">
               <div v-if="rationalityData.length" class="area-chart-wrap" style="padding: 2px 6px 6px">
                 <svg :viewBox="`0 0 ${rationalityData.length * 80 + 40} 300`" width="100%" height="290" preserveAspectRatio="none">
@@ -160,7 +187,7 @@
 <script setup>
 import { onMounted, ref, computed } from 'vue'
 import { useRoute } from 'vue-router'
-import { getMonthView, getWeekView, getDailyView, getScheduleIssues, getSchedules } from '../api/schedules'
+import { getMonthView, getWeekView, getDailyView, getScheduleIssues, getScheduleRationality, getSchedules } from '../api/schedules'
 
 const route = useRoute()
 const planId = ref(route.query.planId || '')
@@ -181,6 +208,10 @@ const dailyLoading = ref(false)
 const dayDate = ref('')
 const issuesList = ref([])
 const issuesLoading = ref(false)
+const rationalityList = ref([])
+// 周视图：低技能岗位兼职替补需求（岗位×日期 → 是否有缺口）
+const weekPartTimeNeeds = ref([])
+const weekPartTimeMap = ref({})
 
 function weekdayName(i) { return ['周一','周二','周三','周四','周五','周六','周日'][i] }
 function fmt(t) { return t ? String(t).substring(0, 5) : '--' }
@@ -195,11 +226,49 @@ const slots = computed(() => Array.from({ length: SLOT_COUNT }, (_, i) => {
   const key = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`
   return { key, display: isNext ? key + '+1' : key, isNextDay: isNext }
 }))
-const dailyWorkstations = computed(() => Array.from(new Set(dailyRows.value.map(r => r.workstationName).filter(Boolean))))
+// P3-11: 缺口岗位也显示
+const dailyWorkstations = computed(() => {
+  const set = new Set()
+  dailyRows.value.forEach(r => {
+    if (r.workstationName) set.add(r.workstationName)
+  })
+  dailyIssues.value
+    .filter(i => i.issueType === 'STAFFING_GAP' && i.workDate === (selectedDate.value || dayDate.value))
+    .forEach(i => {
+      if (i.workstationName) set.add(i.workstationName)
+    })
+  return Array.from(set)
+})
 function isHour(s) { return s.key.endsWith(':00') }
 function dailyCellUsers(ws, slot) { return dailyRows.value.filter(r => r.workstationName === ws && String(r.timeSlot).substring(0,5) === slot.key) }
-function dailySlotIssues(ws, slot) { return dailyIssues.value.filter(i => i.issueType === 'STAFFING_GAP' && i.workstationName === ws && i.timeSlot && String(i.timeSlot).substring(0,5) === slot.key) }
-function cellClass(ws, slot) { return [dailyCellUsers(ws,slot).length > 0 && 'has-employee', slot.isNextDay && 'next-day', dailySlotIssues(ws,slot).length > 0 && 'has-gap'].filter(Boolean).join(' ') }
+// P3-12: 缺口按日期过滤
+function dailySlotIssues(ws, slot) {
+  const currentDate = selectedDate.value || dayDate.value
+  return dailyIssues.value.filter(i => i.issueType === 'STAFFING_GAP' && i.workDate === currentDate && i.workstationName === ws && i.timeSlot && String(i.timeSlot).substring(0,5) === slot.key)
+}
+// 低技能岗位缺口：绿色标记 + 兼职建议
+function lowSkillGapIssues(ws, slot) {
+  return dailySlotIssues(ws, slot).filter(i => i.isLowSkill)
+}
+// 判断工作站是否低技能岗位
+function wsLowSkill(ws) {
+  return dailyIssues.value.some(i => i.workstationName === ws && i.isLowSkill)
+}
+// 缺口提示：低技能岗位显示兼职建议
+function gapTooltip(ws, slot) {
+  const low = lowSkillGapIssues(ws, slot)
+  if (low.length > 0) {
+    return '该岗位技术含量低，建议寻找兼职人员临时填补'
+  }
+  return '岗位缺口'
+}
+function cellClass(ws, slot) {
+  return [
+    dailyCellUsers(ws,slot).length > 0 && 'has-employee',
+    slot.isNextDay && 'next-day',
+    dailySlotIssues(ws,slot).length > 0 && (lowSkillGapIssues(ws, slot).length > 0 ? 'has-gap-low-skill' : 'has-gap')
+  ].filter(Boolean).join(' ')
+}
 
 async function loadAll() {
   loading.value = true; errorMsg.value = ''
@@ -212,14 +281,76 @@ async function loadAll() {
   finally { loading.value = false }
 }
 
-async function loadIssues() { if (!planId.value) return; issuesLoading.value = true; try { issuesList.value = await getScheduleIssues(planId.value) } finally { issuesLoading.value = false } }
+// 回退：从缺口描述计算每日合理度（缺N人/需求M）
+function computeRationalityFromIssues(issues) {
+  const demandByDate = {}
+  const missingByDate = {}
+  ;(issues || []).filter(i => i.issueType === 'STAFFING_GAP' && i.workDate).forEach(i => {
+    const d = i.workDate
+    const desc = i.description || ''
+    const mDemand = desc.match(/需求\s*(\d+)/)
+    const mMissing = desc.match(/缺\s*(\d+)\s*人/)
+    const demand = mDemand ? parseInt(mDemand[1]) : 0
+    const missing = mMissing ? parseInt(mMissing[1]) : 0
+    demandByDate[d] = (demandByDate[d] || 0) + demand
+    missingByDate[d] = (missingByDate[d] || 0) + missing
+  })
+  return Object.keys(demandByDate).sort().map(d => {
+    const demand = demandByDate[d] || 1
+    const missing = missingByDate[d] || 0
+    return { date: d, pct: Math.max(0, Math.min(100, Math.round((1 - missing / demand) * 100))) }
+  })
+}
+
+async function loadIssues() {
+  if (!planId.value) return
+  issuesLoading.value = true
+  try {
+    const issues = (await getScheduleIssues(planId.value)) || []
+    issuesList.value = issues
+    // 优先使用后端 /rationality 端点；404/失败时回退从缺口描述解析（兼容未升级的后端）
+    try {
+      const rationality = await getScheduleRationality(planId.value)
+      rationalityList.value = rationality || []
+    } catch (e) {
+      rationalityList.value = computeRationalityFromIssues(issues)
+    }
+  } finally { issuesLoading.value = false }
+}
+
+function getToday() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
 
 async function loadWeek() {
   if (!planId.value) { errorMsg.value = '请输入计划ID'; return }
-  if (!weekStart.value) { const ps = await getSchedules({ page: 1, pageSize: 1 }); const p = ps.items?.find(x => x.id == planId.value); weekStart.value = p?.startDate || '2026-08-01' }
+  if (!weekStart.value) { const ps = await getSchedules({ page: 1, pageSize: 1 }); const p = ps.items?.find(x => x.id == planId.value); weekStart.value = p?.startDate || getToday() }
   weekRows.value = await getWeekView(planId.value, weekStart.value)
   const firstRow = weekRows.value[0]
   weekDays.value = firstRow?.days?.map(d => ({ date: d.workDate, weekday: new Date(d.workDate + 'T00:00:00').getDay() === 0 ? 6 : new Date(d.workDate + 'T00:00:00').getDay() - 1 })) || []
+
+  // 加载低技能岗位缺口 → 生成兼职替补需求色块
+  try {
+    const iss = await getScheduleIssues(planId.value)
+    const lowSkillGaps = (iss || []).filter(i => i.issueType === 'STAFFING_GAP' && i.isLowSkill && i.workDate && i.workstationName)
+    const map = {}
+    const wsSet = new Set()
+    lowSkillGaps.forEach(i => {
+      map[`${i.workstationName}|${i.workDate}`] = true
+      wsSet.add(i.workstationName)
+    })
+    weekPartTimeMap.value = map
+    weekPartTimeNeeds.value = Array.from(wsSet).map(ws => ({ workstationName: ws }))
+  } catch (e) {
+    weekPartTimeNeeds.value = []
+    weekPartTimeMap.value = {}
+  }
+}
+
+// 该低技能岗位在该日是否有兼职缺口
+function hasPartTimeNeed(ws, date) {
+  return !!weekPartTimeMap.value[`${ws}|${date}`]
 }
 
 async function loadMonth() { if (!planId.value) { errorMsg.value = '请输入计划ID'; return }; monthRows.value = await getMonthView(planId.value); buildCalendar() }
@@ -232,7 +363,15 @@ function onModeChange() { selectedDate.value = ''; dailyRows.value = []; loadAll
 
 function buildCalendar() {
   if (!monthRows.value.length) { weeks.value = []; return }
-  const days = monthRows.value[0].days.map(d => d.workDate).sort()
+  // P3-10: 从所有行收集日期
+  const daySet = new Set()
+  monthRows.value.forEach(row => {
+    (row.days || []).forEach(d => {
+      if (d?.workDate) daySet.add(d.workDate)
+    })
+  })
+  const days = Array.from(daySet).sort()
+  if (days.length === 0) { weeks.value = []; return }
   const stats = {}; days.forEach(d => { stats[d] = { w: 0, r: 0, s: new Set() } })
   monthRows.value.forEach(row => row.days.forEach(d => { if (d.isRestDay === 1) stats[d.workDate].r++; else { stats[d.workDate].w++; if (d.shiftCode) stats[d.workDate].s.add(d.shiftCode) } }))
   const fd = new Date(days[0] + 'T00:00:00'), ld = new Date(days[days.length - 1] + 'T00:00:00')
@@ -252,7 +391,20 @@ function buildCalendar() {
   weeks.value = ws
 }
 
-function selectPlan(row) { if (!row) return; planId.value = row.id; viewMode.value = 'week'; loadAll() }
+// P3-39: 切换计划时重置所有状态
+function selectPlan(row) {
+  if (!row) return
+  planId.value = row.id
+  weekStart.value = row.startDate || ''
+  selectedDate.value = ''
+  dayDate.value = ''
+  dailyRows.value = []
+  dailyIssues.value = []
+  monthRows.value = []
+  issuesList.value = []
+  viewMode.value = 'week'
+  loadAll()
+}
 
 async function loadPlans() { plansLoading.value = true; try { const res = await getSchedules({ page: 1, pageSize: 100 }); plans.value = res.items || [] } finally { plansLoading.value = false } }
 
@@ -270,10 +422,20 @@ const typePieData = computed(() => {
 const typePieOffset = computed(() => { let sum = 0; return typePieData.value.map(s => { const v = -sum * 502.65; sum += s.pct; return v }) })
 const typePieLabels = computed(() => { const r = 63; let cum = -Math.PI / 2; return typePieData.value.map(s => { const half = s.pct * Math.PI; const mid = cum + half; const x = 100 + r * Math.cos(mid); const y = 100 + r * Math.sin(mid); cum += s.pct * 2 * Math.PI; return { x: Math.round(x), y: Math.round(y), count: s.count } }) })
 
+// P3-32: 用完整总数计算比例，再取前8，并补「其他」段使环形闭合
 const wsPieData = computed(() => {
   const map = {}; issuesList.value.filter(i => i.issueType === 'STAFFING_GAP').forEach(i => { const ws = i.workstationName || '未知'; map[ws] = (map[ws] || 0) + 1 })
-  const entries = Object.entries(map).sort((a,b) => b[1]-a[1]).slice(0, 8); const total = entries.reduce((s,[,c]) => s+c, 0) || 1
-  return entries.map(([name, count], idx) => ({ name, count, pct: count / total, color: COLORS_ARR[idx % COLORS_ARR.length] }))
+  const allEntries = Object.entries(map).sort((a,b) => b[1]-a[1])
+  const total = allEntries.reduce((s,[,c]) => s+c, 0) || 1
+  const top = allEntries.slice(0, 8)
+  const topSum = top.reduce((s,[,c]) => s + c, 0)
+  const result = top.map(([name, count], idx) => ({ name, count, pct: count / total, color: COLORS_ARR[idx % COLORS_ARR.length] }))
+  // 补「其他」段：前8之外的计数归入一段，保证比例总和=100%，环形闭合
+  const restCount = total - topSum
+  if (allEntries.length > 8 && restCount > 0) {
+    result.push({ name: '其他', count: restCount, pct: restCount / total, color: '#c0c4cc' })
+  }
+  return result
 })
 const wsPieOffset = computed(() => { let sum = 0; return wsPieData.value.map(s => { const v = -sum * 502.65; sum += s.pct; return v }) })
 const wsTotal = computed(() => wsPieData.value.reduce((s, d) => s + d.count, 0))
@@ -314,26 +476,13 @@ const dailyBars = computed(() => {
   return entries.map(([date, count], idx) => ({ date, count, pct: Math.round(count / max * 100), color: COLORS_ARR[idx % COLORS_ARR.length] }))
 })
 
+// 合理度 = 已满足需求 ÷ 总需求 × 100（量纲统一为“人”）
+// 合理度：使用后端返回的每日 Rationality（实际排班覆盖 ÷ 需求）
 const rationalityData = computed(() => {
-  const gapByDate = {}
-  const demandByDate = {}
-  issuesList.value.filter(i => i.issueType === 'STAFFING_GAP').forEach(i => {
-    const d = i.workDate || '?'
-    gapByDate[d] = (gapByDate[d] || 0) + 1
-  })
-  // 从问题描述中提取需求总数 "缺 1 人（需求 2，实际 0）"
-  issuesList.value.filter(i => i.issueType === 'STAFFING_GAP').forEach(i => {
-    const d = i.workDate || '?'
-    const m = (i.description || '').match(/需求\s*(\d+)/)
-    if (m) demandByDate[d] = (demandByDate[d] || 0) + parseInt(m[1])
-  })
-  const dates = [...new Set(issuesList.value.filter(i => i.workDate).map(i => i.workDate))].sort()
-  return dates.map(d => {
-    const gap = gapByDate[d] || 0
-    const demand = demandByDate[d] || 1
-    const pct = Math.max(0, 100 - (gap / demand) * 100)
-    return { date: d, pct }
-  })
+  if (rationalityList.value && rationalityList.value.length) {
+    return rationalityList.value.map(r => ({ date: r.date, pct: r.pct }))
+  }
+  return []
 })
 const yTicks = [0, 25, 50, 75, 100]
 function Y(pct) { return 270 - (pct / 125) * 250 }
@@ -412,7 +561,9 @@ onMounted(() => { loadPlans(); if (planId.value) loadAll() })
 .has-employee { background: #ecf5ff; }
 .next-day { background: #fdf6ec; }
 .has-gap { box-shadow: inset 0 0 0 2px #f56c6c; }
+.has-gap-low-skill { box-shadow: inset 0 0 0 2px #67c23a; background: #f0f9eb; }
 .gap-flag { position: absolute; top: 1px; right: 1px; background: #f56c6c; color: #fff; font-size: 10px; border-radius: 2px; padding: 0 3px; line-height: 14px; }
+.gap-flag-low { background: #67c23a; }
 .emp-chip { background: #409eff; color: #fff; border-radius: 3px; padding: 2px 4px; margin-bottom: 2px; font-size: 11px; }
 .emp-chip .emp-name { font-weight: 600; }
 .emp-chip .emp-shift { opacity: 0.85; font-size: 10px; }
@@ -433,4 +584,17 @@ onMounted(() => { loadPlans(); if (planId.value) loadAll() })
 .bar-val { width: 24px; font-size: 11px; color: #303133; font-weight: 600; flex-shrink: 0; }
 .mini-pie { display: flex; flex-direction: column; align-items: center; }
 .mini-legend { margin-top: 4px; }
+.parttime-block { border: 1px solid #67c23a; border-radius: 6px; padding: 12px; background: #f0f9eb; }
+.parttime-title { display: flex; align-items: center; gap: 6px; font-weight: 600; color: #303133; margin-bottom: 10px; }
+.parttime-badge { display: inline-block; background: #67c23a; color: #fff; border-radius: 3px; font-size: 12px; padding: 0 6px; line-height: 18px; }
+.parttime-table { border: 1px solid #c2e7b0; border-radius: 4px; overflow: hidden; }
+.parttime-row { display: flex; border-bottom: 1px solid #e8f5e0; }
+.parttime-row:last-child { border-bottom: none; }
+.parttime-header { background: #f0f9eb; font-weight: 600; }
+.parttime-ws-col { width: 90px; flex-shrink: 0; padding: 5px 8px; border-right: 1px solid #e8f5e0; font-size: 12px; }
+.parttime-day-col { flex: 1; min-height: 20px; padding: 3px; border-right: 1px solid #e8f5e0; font-size: 11px; text-align: center; color: #909399; }
+.parttime-day-col:last-child { border-right: none; }
+.parttime-day-col.active { background: #67c23a; }
+.parttime-legend { margin-top: 8px; display: flex; align-items: center; gap: 6px; font-size: 12px; color: #606266; }
+.parttime-legend-box { background: #67c23a; }
 </style>

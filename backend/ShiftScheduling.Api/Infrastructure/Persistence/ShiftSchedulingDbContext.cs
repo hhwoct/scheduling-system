@@ -67,11 +67,12 @@ public sealed class ShiftSchedulingDbContext : DbContext
             entity.HasKey(x => x.Id);
             entity.Property(x => x.Id).HasColumnName("id");
             entity.Property(x => x.StoreId).HasColumnName("store_id");
-            entity.Property(x => x.Username).HasColumnName("username");
-            entity.Property(x => x.PasswordHash).HasColumnName("password_hash");
-            entity.Property(x => x.Nickname).HasColumnName("nickname");
-            entity.Property(x => x.Role).HasColumnName("role");
+            entity.Property(x => x.Username).HasColumnName("username").HasMaxLength(50).IsRequired();
+            entity.Property(x => x.PasswordHash).HasColumnName("password_hash").HasMaxLength(100).IsRequired();
+            entity.Property(x => x.Nickname).HasColumnName("nickname").HasMaxLength(50);
+            entity.Property(x => x.Role).HasColumnName("role").HasMaxLength(20);
             entity.Property(x => x.Status).HasColumnName("status");
+            entity.Property(x => x.PasswordVersion).HasColumnName("password_version");
             entity.Property(x => x.CreatedAt).HasColumnName("created_at");
             entity.Property(x => x.UpdatedAt).HasColumnName("updated_at");
         });
@@ -82,10 +83,10 @@ public sealed class ShiftSchedulingDbContext : DbContext
             entity.HasKey(x => x.Id);
             entity.Property(x => x.Id).HasColumnName("id");
             entity.Property(x => x.StoreId).HasColumnName("store_id");
-            entity.Property(x => x.EmployeeNo).HasColumnName("employee_no");
-            entity.Property(x => x.Name).HasColumnName("name");
-            entity.Property(x => x.Phone).HasColumnName("phone");
-            entity.Property(x => x.Department).HasColumnName("department");
+            entity.Property(x => x.EmployeeNo).HasColumnName("employee_no").HasMaxLength(20).IsRequired();
+            entity.Property(x => x.Name).HasColumnName("name").HasMaxLength(50).IsRequired();
+            entity.Property(x => x.Phone).HasColumnName("phone").HasMaxLength(30);
+            entity.Property(x => x.Department).HasColumnName("department").HasMaxLength(50);
             entity.Property(x => x.HireDate).HasColumnName("hire_date");
             entity.Property(x => x.PrimaryPosition).HasColumnName("primary_position");
             entity.Property(x => x.MaxWeeklyHours).HasColumnName("max_weekly_hours").HasPrecision(5, 2);
@@ -103,6 +104,7 @@ public sealed class ShiftSchedulingDbContext : DbContext
             entity.Property(x => x.Code).HasColumnName("code");
             entity.Property(x => x.Name).HasColumnName("name");
             entity.Property(x => x.SortOrder).HasColumnName("sort_order");
+            entity.Property(x => x.IsLowSkill).HasColumnName("is_low_skill");
             entity.Property(x => x.Remark).HasColumnName("remark");
             entity.Property(x => x.Status).HasColumnName("status");
             entity.Property(x => x.CreatedAt).HasColumnName("created_at");
@@ -162,6 +164,7 @@ public sealed class ShiftSchedulingDbContext : DbContext
             entity.Property(x => x.ValueType).HasColumnName("value_type");
             entity.Property(x => x.Remark).HasColumnName("remark");
             entity.Property(x => x.Status).HasColumnName("status");
+            entity.Property(x => x.Version).HasColumnName("version");
             entity.Property(x => x.CreatedAt).HasColumnName("created_at");
             entity.Property(x => x.UpdatedAt).HasColumnName("updated_at");
         });

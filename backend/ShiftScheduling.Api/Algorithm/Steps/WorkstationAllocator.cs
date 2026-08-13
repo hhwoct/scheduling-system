@@ -25,6 +25,11 @@ public sealed class WorkstationAllocator
 
         var shiftById = input.ShiftTemplates.ToDictionary(s => s.Id);
 
+        // P3-14 修复：缓存每个班次的时段列表，避免 IsActiveInSlot 重复重建
+        var shiftSlotsCache = input.ShiftTemplates.ToDictionary(
+            s => s.Id,
+            s => SchedulingTimeHelper.GetShiftSlots(s.StartTime, s.EndTime, s.IsCrossDay));
+
         var shiftsByDate = shiftAssignments
             .GroupBy(x => x.WorkDate)
             .ToDictionary(g => g.Key, g => g.ToList());
@@ -41,7 +46,7 @@ public sealed class WorkstationAllocator
                 continue;
             }
 
-            var dayResult = AllocateForDate(input, date, dayShifts, skillsByEmployee, shiftById);
+            var dayResult = AllocateForDate(input, date, dayShifts, skillsByEmployee, shiftById, shiftSlotsCache);
             assignments.AddRange(dayResult.Assignments);
             issueCollector?.AddRange(dayResult.Issues);
         }
@@ -54,7 +59,8 @@ public sealed class WorkstationAllocator
         DateParameterInput date,
         IReadOnlyList<ShiftAssignment> dayShifts,
         IReadOnlyDictionary<long, Dictionary<long, int>> skillsByEmployee,
-        IReadOnlyDictionary<long, ShiftTemplateInput> shiftById)
+        IReadOnlyDictionary<long, ShiftTemplateInput> shiftById,
+        IReadOnlyDictionary<long, IReadOnlyList<TimeSpan>> shiftSlotsCache)
     {
         var dayType = date.DayType;
         var requirements = input.StaffingRequirements
@@ -74,7 +80,7 @@ public sealed class WorkstationAllocator
         {
             var slotReqs = requirements[slot];
             var activeShifts = dayShifts
-                .Where(s => IsActiveInSlot(s, slot, shiftById))
+                .Where(s => IsActiveInSlot(s, slot, shiftById, shiftSlotsCache))
                 .ToList();
 
             var assignedEmployeesThisSlot = new HashSet<long>();
@@ -139,7 +145,7 @@ public sealed class WorkstationAllocator
 
         foreach (var block in gapBlocks)
         {
-            BorrowForBlock(assignments, block, dayShifts, requirements, skillsByEmployee, shiftById, borrowCountByEmployee, true);
+            BorrowForBlock(assignments, block, dayShifts, requirements, skillsByEmployee, shiftById, shiftSlotsCache, borrowCountByEmployee, true);
         }
 
         // ========== 2F：二次连续块填补（放宽约束） ==========
@@ -147,7 +153,7 @@ public sealed class WorkstationAllocator
 
         foreach (var block in remainingBlocks)
         {
-            BorrowForBlock(assignments, block, dayShifts, requirements, skillsByEmployee, shiftById, borrowCountByEmployee, false);
+            BorrowForBlock(assignments, block, dayShifts, requirements, skillsByEmployee, shiftById, shiftSlotsCache, borrowCountByEmployee, false);
         }
 
         // ========== 2G：最终逐段兜底 ==========
@@ -165,7 +171,7 @@ public sealed class WorkstationAllocator
                 }
 
                 var borrower = dayShifts
-                    .Where(s => IsActiveInSlot(s, slot, shiftById))
+                    .Where(s => IsActiveInSlot(s, slot, shiftById, shiftSlotsCache))
                     .Where(s =>
                     {
                         var existing = assignments
@@ -204,14 +210,22 @@ public sealed class WorkstationAllocator
                 if (actual < req.Value)
                 {
                     var shortfall = req.Value - actual;
+                    var isLowSkill = input.LowSkillWorkstationIds.ContainsKey(req.Key);
+                    var description = $"{slot:hh\\:mm} 工作站 {req.Key} 缺 {shortfall} 人（需求 {req.Value}，实际 {actual}）";
+                    if (isLowSkill)
+                    {
+                        description += "。该岗位技术含量低，建议寻找兼职人员临时填补";
+                    }
+                    // 低技能岗位（可兼职替补）缺口不升级为 ERROR，避免结构性人手不足阻塞发布
+                    var severity = shortfall >= 3 && !isLowSkill ? "ERROR" : "WARN";
                     issues.Add(new ScheduleIssueOutput(
                         "STAFFING_GAP",
-                        shortfall >= 3 ? "ERROR" : "WARN",
+                        severity,
                         date.WorkDate,
                         slot,
                         null,
                         req.Key,
-                        $"{slot:hh\\:mm} 工作站 {req.Key} 缺 {shortfall} 人（需求 {req.Value}，实际 {actual}）"));
+                        description));
                 }
             }
         }
@@ -259,8 +273,9 @@ public sealed class WorkstationAllocator
                     current = current with
                     {
                         EndSlot = b.EndSlot,
-                        MaxShortfall = Math.Max(current.MaxShortfall, b.MaxShortfall),
-                        Severity = current.Shortfall * ((int)(current.EndSlot - current.StartSlot).TotalMinutes / 30 + 1)
+                        // P1-5 修复：更新 Shortfall 为区间最大缺口
+                        Shortfall = Math.Max(current.Shortfall, b.Shortfall),
+                        MaxShortfall = Math.Max(current.MaxShortfall, b.MaxShortfall)
                     };
                 }
                 else
@@ -290,6 +305,7 @@ public sealed class WorkstationAllocator
         IReadOnlyDictionary<TimeSpan, Dictionary<long, int>> requirements,
         IReadOnlyDictionary<long, Dictionary<long, int>> skillsByEmployee,
         IReadOnlyDictionary<long, ShiftTemplateInput> shiftById,
+        IReadOnlyDictionary<long, IReadOnlyList<TimeSpan>> shiftSlotsCache,
         Dictionary<long, int> borrowCountByEmployee,
         bool strict)
     {
@@ -297,7 +313,7 @@ public sealed class WorkstationAllocator
 
         var borrower = dayShifts
             .Where(s => borrowCountByEmployee.GetValueOrDefault(s.EmployeeId) < MaxBorrowPerEmployeePerDay)
-            .Where(s => blockSlots.All(slot => IsActiveInSlot(s, slot, shiftById)))
+            .Where(s => blockSlots.All(slot => IsActiveInSlot(s, slot, shiftById, shiftSlotsCache)))
             .Where(s =>
             {
                 var currentWs = GetCurrentWorkstation(assignments, s.EmployeeId, blockSlots.First());
@@ -409,11 +425,17 @@ public sealed class WorkstationAllocator
     private static bool IsActiveInSlot(
         ShiftAssignment shift,
         TimeSpan slot,
-        IReadOnlyDictionary<long, ShiftTemplateInput> shiftById)
+        IReadOnlyDictionary<long, ShiftTemplateInput> shiftById,
+        IReadOnlyDictionary<long, IReadOnlyList<TimeSpan>> shiftSlotsCache)
     {
         if (!shiftById.TryGetValue(shift.ShiftTemplateId, out var template))
         {
             return false;
+        }
+
+        if (shiftSlotsCache.TryGetValue(template.Id, out var cachedSlots))
+        {
+            return cachedSlots.Contains(slot);
         }
 
         return SchedulingTimeHelper.GetShiftSlots(template.StartTime, template.EndTime, template.IsCrossDay).Contains(slot);

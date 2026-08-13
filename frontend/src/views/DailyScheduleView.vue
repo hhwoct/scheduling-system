@@ -64,6 +64,10 @@
 </template>
 
 <script setup>
+function getToday() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
 import { onMounted, ref, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { getDailyView, getScheduleIssues } from '../api/schedules'
@@ -136,7 +140,7 @@ async function loadData() {
     return
   }
   if (!workDate.value) {
-    workDate.value = route.query.workDate || '2026-08-01'
+    workDate.value = route.query.workDate || getToday()
   }
   loading.value = true
   errorMsg.value = ''

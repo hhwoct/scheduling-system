@@ -5,12 +5,13 @@ namespace ShiftScheduling.Api.Application.Auth;
 /// </summary>
 public sealed class ForgotPasswordRequest
 {
-    public ForgotPasswordRequest(string? username, string? newPassword, string? confirmPassword, string? verifyInfo)
+    public ForgotPasswordRequest(string? username, string? newPassword, string? confirmPassword, string? verifyInfo, string? otpCode)
     {
         Username = username;
         NewPassword = newPassword;
         ConfirmPassword = confirmPassword;
         VerifyInfo = verifyInfo;
+        OtpCode = otpCode;
     }
 
     public string? Username { get; init; }
@@ -21,6 +22,11 @@ public sealed class ForgotPasswordRequest
 
     public string? VerifyInfo { get; init; }
 
+    /// <summary>
+    /// 短信/服务端下发的验证码（6 位数字，10 分钟内有效，单次有效）。
+    /// </summary>
+    public string? OtpCode { get; init; }
+
     public override string ToString()
-        => $"ForgotPasswordRequest(Username = {Username}, VerifyInfo = ***, NewPassword = ***, ConfirmPassword = ***)";
+        => $"ForgotPasswordRequest(Username = {Username}, VerifyInfo = ***, NewPassword = ***, ConfirmPassword = ***, OtpCode = ***)";
 }

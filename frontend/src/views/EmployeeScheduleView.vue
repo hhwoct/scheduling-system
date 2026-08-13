@@ -47,7 +47,7 @@
             <template #default="{ row }">{{ row.isRestDay === 1 ? '--' : fmtTime(row.startTime) + ' - ' + fmtTime(row.endTime) }}</template>
           </el-table-column>
           <el-table-column label="工时(h)" width="90">
-            <template #default="{ row }">{{ row.isRestDay === 1 ? '0' : Number(row.workHours).toFixed(1) }}</template>
+            <template #default="{ row }">{{ row.isRestDay === 1 ? '0' : formatWorkHours(row.workHours) }}</template>
           </el-table-column>
         </el-table>
       </div>
@@ -56,11 +56,17 @@
 </template>
 
 <script setup>
+function formatWorkHours(hours) {
+  const num = Number(hours)
+  if (!Number.isFinite(num)) return '0.0'
+  return num.toFixed(1)
+}
 import { onMounted, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { getMySchedule } from '../api/employee'
-import { useAuthStore } from '../stores/auth'
 
-const authStore = useAuthStore()
+const route = useRoute()
+const employeeNo = ref(route.query.employeeNo || localStorage.getItem('shift_preview_employee_no') || '')
 const loading = ref(false)
 const employee = ref(null)
 const plans = ref([])
@@ -70,14 +76,24 @@ const month = ref(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2,
 
 function fmtTime(t) {
   if (!t) return '--'
-  return String(t).substring(0, 5)
+  const str = String(t)
+  if (/^\d{2}:\d{2}/.test(str)) return str.substring(0, 5)
+  const match = str.match(/\d{2}:\d{2}/)
+  if (match) return match[0]
+  try {
+    const d = new Date(str)
+    if (!Number.isNaN(d.getTime())) {
+      return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0')
+    }
+  } catch {}
+  return '--'
 }
 
 async function loadData() {
   loading.value = true
   errorMsg.value = ''
   try {
-    const data = await getMySchedule(month.value)
+    const data = await getMySchedule(month.value, employeeNo.value || undefined)
     employee.value = data.employee
     plans.value = data.plans || []
   } catch (e) {

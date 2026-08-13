@@ -129,12 +129,21 @@ const router = createRouter({
   routes
 })
 
+const ALLOWED_ROLES = ['EMPLOYEE', 'STORE_MANAGER', 'SYSTEM_ADMIN']
+
 router.beforeEach((to) => {
   const token = localStorage.getItem('shift_token')
   const role = localStorage.getItem('shift_role') || ''
 
   // 未登录 -> 登录页
   if (to.path !== '/login' && !token) {
+    return { path: '/login' }
+  }
+
+  // 角色无效/缺失 -> 清除凭证并强制重新登录
+  if (token && !ALLOWED_ROLES.includes(role)) {
+    localStorage.removeItem('shift_token')
+    localStorage.removeItem('shift_role')
     return { path: '/login' }
   }
 

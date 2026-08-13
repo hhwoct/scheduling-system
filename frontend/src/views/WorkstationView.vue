@@ -9,6 +9,12 @@
         <el-table-column prop="code" label="编码" min-width="140" show-overflow-tooltip />
         <el-table-column prop="name" label="名称" min-width="120" />
         <el-table-column prop="sortOrder" label="排序" width="80" />
+        <el-table-column label="低技能" width="90">
+          <template #default="{ row }">
+            <el-tag v-if="row.isLowSkill === 1" type="success" size="small">可兼职</el-tag>
+            <el-tag v-else type="info" size="small">否</el-tag>
+          </template>
+        </el-table-column>
         <el-table-column prop="remark" label="备注" />
         <el-table-column label="状态" width="100">
           <template #default="{ row }">
@@ -35,6 +41,9 @@
         <el-form-item label="状态">
           <el-switch v-model="form.status" :active-value="1" :inactive-value="0" active-text="启用" inactive-text="停用" />
         </el-form-item>
+        <el-form-item label="低技能岗位">
+          <el-switch v-model="form.isLowSkill" :active-value="1" :inactive-value="0" active-text="可兼职填补" inactive-text="否" />
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
@@ -57,6 +66,9 @@
         <el-form-item label="备注">
           <el-input v-model="createForm.remark" type="textarea" />
         </el-form-item>
+        <el-form-item label="低技能岗位">
+          <el-switch v-model="createForm.isLowSkill" :active-value="1" :inactive-value="0" active-text="可兼职填补" inactive-text="否" />
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="createVisible = false">取消</el-button>
@@ -78,12 +90,12 @@ const list = ref([])
 const dialogVisible = ref(false)
 const saving = ref(false)
 const editingId = ref(0)
-const form = reactive({ name: '', remark: '', status: 1 })
+const form = reactive({ name: '', remark: '', status: 1, isLowSkill: 0 })
 
 // 新增
 const createVisible = ref(false)
 const creating = ref(false)
-const createForm = reactive({ code: '', name: '', sortOrder: 0, remark: '' })
+const createForm = reactive({ code: '', name: '', sortOrder: 0, remark: '', isLowSkill: 0 })
 
 async function loadData() {
   loading.value = true
@@ -99,6 +111,7 @@ function openCreate() {
   createForm.name = ''
   createForm.sortOrder = 0
   createForm.remark = ''
+  createForm.isLowSkill = 0
   createVisible.value = true
 }
 
@@ -123,6 +136,7 @@ function openEdit(row) {
   form.name = row.name
   form.remark = row.remark || ''
   form.status = row.status
+  form.isLowSkill = row.isLowSkill ?? 0
   dialogVisible.value = true
 }
 

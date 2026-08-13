@@ -64,6 +64,8 @@ public sealed class SchedulingEngineTests
             dates,
             shiftTemplates,
             staffing,
+            new List<ApprovedLeaveInput>(),
+            new Dictionary<long, bool>(),
             4,
             48m,
             6,

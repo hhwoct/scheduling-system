@@ -25,7 +25,6 @@ public sealed class AuditLogService : IAuditLogService
         string? remark,
         CancellationToken cancellationToken)
     {
-        // 使用独立的 DbContext 写入审计日志，避免与业务事务共用 ChangeTracker
         await using var auditDbContext = await _dbContextFactory.CreateDbContextAsync(cancellationToken);
         auditDbContext.AuditLogs.Add(new AuditLogEntity
         {
@@ -38,9 +37,74 @@ public sealed class AuditLogService : IAuditLogService
             BeforeContent = beforeContent,
             AfterContent = afterContent,
             Remark = remark,
-            CreatedAt = DateTime.Now
+            CreatedAt = DateTime.UtcNow
         });
 
         await auditDbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// P1-7 修复：在业务事务内写入审计日志。
+    /// </summary>
+    public async Task WriteInTransactionAsync(
+        long storeId,
+        long? operatorUserId,
+        string? operatorName,
+        string actionType,
+        string targetType,
+        long? targetId,
+        string? beforeContent,
+        string? afterContent,
+        string? remark,
+        CancellationToken cancellationToken)
+    {
+        await using var auditDbContext = await _dbContextFactory.CreateDbContextAsync(cancellationToken);
+        auditDbContext.AuditLogs.Add(new AuditLogEntity
+        {
+            StoreId = storeId,
+            OperatorUserId = operatorUserId,
+            OperatorName = operatorName,
+            ActionType = actionType,
+            TargetType = targetType,
+            TargetId = targetId,
+            BeforeContent = beforeContent,
+            AfterContent = afterContent,
+            Remark = remark,
+            CreatedAt = DateTime.UtcNow
+        });
+
+        await auditDbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// P1-7 修复：将审计实体加入业务 DbContext 的 ChangeTracker。
+    /// 与业务操作在同一个 SaveChanges 中一并提交，保证事务原子性。
+    /// </summary>
+    public void AddAuditEntity(
+        ShiftSchedulingDbContext dbContext,
+        long storeId,
+        long? operatorUserId,
+        string? operatorName,
+        string actionType,
+        string targetType,
+        long? targetId,
+        string? beforeContent,
+        string? afterContent,
+        string? remark,
+        DateTime createdAt)
+    {
+        dbContext.AuditLogs.Add(new AuditLogEntity
+        {
+            StoreId = storeId,
+            OperatorUserId = operatorUserId,
+            OperatorName = operatorName,
+            ActionType = actionType,
+            TargetType = targetType,
+            TargetId = targetId,
+            BeforeContent = beforeContent,
+            AfterContent = afterContent,
+            Remark = remark,
+            CreatedAt = createdAt
+        });
     }
 }

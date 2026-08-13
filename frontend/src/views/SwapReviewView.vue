@@ -52,7 +52,7 @@
 
 <script setup>
 import { onMounted, ref } from 'vue'
-import { ElMessageBox } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { getSwapReviewList, reviewSwap } from '../api/swap'
 
 const list = ref([])
@@ -76,21 +76,26 @@ async function loadData() {
 }
 
 async function handleReview(row, approved) {
+  if (row._submitting) return
+  row._submitting = true
+
   const action = approved ? '批准' : '驳回'
-  let remark
   try {
     const result = await ElMessageBox.prompt(`请输入${action}意见（可留空）`, `${action}换班申请 #${row.id}`, {
       confirmButtonText: '确定',
       cancelButtonText: '取消',
       inputPlaceholder: '审批意见...'
     })
-    remark = result.value
-  } catch {
-    // 用户取消：不提交审批
-    return
+    // 只有确认才执行
+    await reviewSwap(row.id, { approved, remark: result.value || undefined })
+    ElMessage.success(`${action}成功`)
+    await loadData()
+  } catch (e) {
+    if (e === 'cancel' || e === 'close') return
+    ElMessage.error('操作失败，请重试')
+  } finally {
+    row._submitting = false
   }
-  await reviewSwap(row.id, { approved, remark: remark || undefined })
-  loadData()
 }
 
 onMounted(loadData)

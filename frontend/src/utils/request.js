@@ -1,10 +1,11 @@
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
 import router from '../router'
+import { API_BASE_URL, REQUEST_TIMEOUT } from '../constants/config'
 
 const request = axios.create({
-  baseURL: '/api',
-  timeout: 15000
+  baseURL: API_BASE_URL,
+  timeout: REQUEST_TIMEOUT || 15000
 })
 
 request.interceptors.request.use((config) => {
@@ -15,9 +16,16 @@ request.interceptors.request.use((config) => {
   return config
 })
 
+// P3-19: 401 重定向防抖
+let isRedirecting = false
+
+// P3-20: 响应拦截器处理业务错误与空值防护
 request.interceptors.response.use(
   (response) => {
     const res = response.data
+    if (!res || typeof res !== 'object') {
+      return res
+    }
     if (res.success === false) {
       ElMessage.error(res.message || '操作失败')
       return Promise.reject(new Error(res.message || '操作失败'))
@@ -29,10 +37,24 @@ request.interceptors.response.use(
     const message = error.response?.data?.message || error.message || '网络错误'
     if (status === 401) {
       localStorage.removeItem('shift_token')
-      router.push('/login')
+      localStorage.removeItem('shift_role')
+      localStorage.removeItem('shift_token_expires_at')
+      // 避免并发请求重复跳转
+      if (router.currentRoute.value.path !== '/login' && !isRedirecting) {
+        isRedirecting = true
+        router.push('/login')
+        setTimeout(() => {
+          isRedirecting = false
+        }, 1000)
+      }
     }
+    // P3-17: 错误标准化，让调用方拿到统一 Error 对象
+    const normalizedError = new Error(message)
+    normalizedError.status = status
+    normalizedError.code = error.code
+    normalizedError.original = error
     ElMessage.error(message)
-    return Promise.reject(error)
+    return Promise.reject(normalizedError)
   }
 )
 

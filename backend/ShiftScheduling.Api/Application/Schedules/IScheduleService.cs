@@ -50,5 +50,6 @@ public interface IScheduleService
         long storeId,
         long operatorUserId,
         string operatorName,
+        bool force,
         CancellationToken cancellationToken);
 }

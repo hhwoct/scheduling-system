@@ -30,7 +30,7 @@ public sealed class WorkstationService : IWorkstationService
 
         return await query
             .OrderBy(x => x.SortOrder)
-            .Select(x => new WorkstationItem(x.Id, x.Code, x.Name, x.SortOrder, x.Remark, x.Status))
+            .Select(x => new WorkstationItem(x.Id, x.Code, x.Name, x.SortOrder, x.IsLowSkill, x.Remark, x.Status))
             .ToListAsync(cancellationToken);
     }
 
@@ -57,10 +57,11 @@ public sealed class WorkstationService : IWorkstationService
             Code = request.Code.Trim(),
             Name = request.Name.Trim(),
             SortOrder = request.SortOrder,
+            IsLowSkill = request.IsLowSkill == 1 ? 1 : 0,
             Remark = request.Remark,
             Status = 1,
-            CreatedAt = DateTime.Now,
-            UpdatedAt = DateTime.Now
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
         };
         _dbContext.Workstations.Add(entity);
         await _dbContext.SaveChangesAsync(cancellationToken);
@@ -69,10 +70,10 @@ public sealed class WorkstationService : IWorkstationService
             storeId, operatorUserId, operatorName,
             "CREATE_WORKSTATION", "WORKSTATION", entity.Id,
             null,
-            System.Text.Json.JsonSerializer.Serialize(new { entity.Code, entity.Name, entity.SortOrder, entity.Remark }),
+            System.Text.Json.JsonSerializer.Serialize(new { entity.Code, entity.Name, entity.SortOrder, entity.IsLowSkill, entity.Remark }),
             "新增工作站", cancellationToken);
 
-        return new WorkstationItem(entity.Id, entity.Code, entity.Name, entity.SortOrder, entity.Remark, entity.Status);
+        return new WorkstationItem(entity.Id, entity.Code, entity.Name, entity.SortOrder, entity.IsLowSkill, entity.Remark, entity.Status);
     }
 
     public async Task<WorkstationItem> UpdateAsync(
@@ -96,12 +97,13 @@ public sealed class WorkstationService : IWorkstationService
             throw new NotFoundException("工作站不存在");
         }
 
-        var beforeContent = System.Text.Json.JsonSerializer.Serialize(new { workstation.Name, workstation.Remark, workstation.Status });
+        var beforeContent = System.Text.Json.JsonSerializer.Serialize(new { workstation.Name, workstation.Remark, workstation.Status, workstation.IsLowSkill });
 
         workstation.Name = request.Name.Trim();
         workstation.Remark = request.Remark;
         workstation.Status = request.Status;
-        workstation.UpdatedAt = DateTime.Now;
+        workstation.IsLowSkill = request.IsLowSkill == 1 ? 1 : 0;
+        workstation.UpdatedAt = DateTime.UtcNow;
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 
@@ -113,7 +115,7 @@ public sealed class WorkstationService : IWorkstationService
             "WORKSTATION",
             workstation.Id,
             beforeContent,
-            System.Text.Json.JsonSerializer.Serialize(new { workstation.Name, workstation.Remark, workstation.Status }),
+            System.Text.Json.JsonSerializer.Serialize(new { workstation.Name, workstation.Remark, workstation.Status, workstation.IsLowSkill }),
             "编辑工作站",
             cancellationToken);
 
@@ -122,6 +124,7 @@ public sealed class WorkstationService : IWorkstationService
             workstation.Code,
             workstation.Name,
             workstation.SortOrder,
+            workstation.IsLowSkill,
             workstation.Remark,
             workstation.Status);
     }

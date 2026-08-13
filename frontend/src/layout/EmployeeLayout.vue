@@ -4,34 +4,64 @@
       <div class="logo">排班系统 · 员工端</div>
       <el-menu
         :default-active="$route.path"
-        router
         background-color="#001529"
         text-color="rgba(255,255,255,0.65)"
         active-text-color="#ffffff"
+        @select="handleMenuSelect"
       >
         <el-menu-item index="/employee/schedule">
           <el-icon><Calendar /></el-icon>
           <span>我的班表</span>
         </el-menu-item>
-        <el-menu-item index="/employee/leave">
-          <el-icon><Document /></el-icon>
-          <span>请假申请</span>
-        </el-menu-item>
-        <el-menu-item index="/employee/swap">
-          <el-icon><Switch /></el-icon>
-          <span>换班申请</span>
-        </el-menu-item>
-        <el-menu-item index="/employee/notifications">
-          <el-icon><Bell /></el-icon>
-          <span>通知消息</span>
-        </el-menu-item>
+        <!-- 管理员/店长预览模式：只显示班表查看，隐藏员工操作功能 -->
+        <template v-if="authStore.role === 'EMPLOYEE'">
+          <el-menu-item index="/employee/leave">
+            <el-icon><Document /></el-icon>
+            <span>请假申请</span>
+          </el-menu-item>
+          <el-menu-item index="/employee/swap">
+            <el-icon><Switch /></el-icon>
+            <span>换班申请</span>
+          </el-menu-item>
+          <el-menu-item index="/employee/notifications">
+            <el-icon><Bell /></el-icon>
+            <span>通知消息</span>
+          </el-menu-item>
+        </template>
+        <!-- 预览提示 -->
+        <div v-if="authStore.role !== 'EMPLOYEE'" class="preview-tip">预览模式：仅供查看班表</div>
       </el-menu>
+      <div class="emp-aside-footer">
+        <el-button link type="primary" size="small" style="color: rgba(255,255,255,0.65)" @click="router.push('/dashboard')">
+          ← 返回管理端
+        </el-button>
+      </div>
     </el-aside>
     <el-container>
       <el-header class="emp-header">
         <div class="header-title">{{ $route.meta.title }}</div>
         <div style="display: flex; align-items: center; gap: 16px">
-          <el-badge :value="unreadCount" :hidden="unreadCount === 0" :max="99" style="cursor: pointer" @click="$router.push('/employee/notifications')">
+          <!-- 管理员预览员工选择器 -->
+          <el-select
+            v-if="authStore.role !== 'EMPLOYEE'"
+            class="preview-select"
+            :model-value="previewEmployeeNo"
+            placeholder="选择预览员工"
+            clearable
+            filterable
+            size="small"
+            style="width: 180px"
+            @update:model-value="onPreviewChange"
+            @clear="onPreviewClear"
+          >
+            <el-option
+              v-for="emp in employeeList"
+              :key="emp.employeeNo"
+              :label="`${emp.employeeNo} ${emp.name}`"
+              :value="emp.employeeNo"
+            />
+          </el-select>
+          <el-badge v-if="authStore.role === 'EMPLOYEE'" :value="unreadCount" :hidden="unreadCount === 0" :max="99" style="cursor: pointer" @click="$router.push('/employee/notifications')">
             <el-icon :size="20"><Bell /></el-icon>
           </el-badge>
           <el-dropdown @command="handleCommand">
@@ -48,37 +78,137 @@
         </div>
       </el-header>
       <el-main class="emp-content">
-        <router-view />
+        <router-view :key="$route.fullPath" />
       </el-main>
     </el-container>
   </el-container>
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref, watch } from 'vue'
 import { ArrowDown, Bell, Calendar, Document, Switch } from '@element-plus/icons-vue'
-import { useRouter } from 'vue-router'
+import { ElMessageBox } from 'element-plus'
+import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { getUnreadCount } from '../api/notifications'
+import { getEmployees } from '../api/employees'
+
+const PREVIEW_KEY = 'shift_preview_employee_no'
 
 const router = useRouter()
+const route = useRoute()
 const authStore = useAuthStore()
 const unreadCount = ref(0)
+const employeeList = ref([])
+const previewEmployeeNo = ref(route.query.employeeNo || localStorage.getItem(PREVIEW_KEY) || '')
+let refreshTimer = null
 
-onMounted(async () => {
-  if (authStore.isAuthenticated && !authStore.user) {
-    authStore.fetchCurrentUser().catch(() => {})
-  }
+// 管理员加载员工列表用于选择
+async function loadEmployeeList() {
+  const role = authStore.role || localStorage.getItem('shift_role') || ''
+  if (role === 'EMPLOYEE') return
   try {
-    const data = await getUnreadCount()
+    const res = await getEmployees({ page: 1, pageSize: 100, status: 1 })
+    employeeList.value = res.items || []
+
+    // 管理员未选择员工时，自动默认选中第一个员工，避免"员工档案不存在"
+    if (!previewEmployeeNo.value && employeeList.value.length > 0 && role !== 'EMPLOYEE') {
+      const first = employeeList.value[0]
+      previewEmployeeNo.value = first.employeeNo
+      localStorage.setItem(PREVIEW_KEY, first.employeeNo)
+      router.replace({ path: route.path, query: { employeeNo: first.employeeNo } })
+    }
+  } catch (e) {
+    console.error('加载员工列表失败', e)
+  }
+}
+
+// 切换预览员工：保存到 localStorage 并跳转
+function onPreviewChange(val) {
+  previewEmployeeNo.value = val || ''
+  if (val) localStorage.setItem(PREVIEW_KEY, val)
+  else localStorage.removeItem(PREVIEW_KEY)
+  const query = val ? { employeeNo: val } : {}
+  router.push({ path: route.path, query })
+}
+
+function onPreviewClear() {
+  previewEmployeeNo.value = ''
+  localStorage.removeItem(PREVIEW_KEY)
+  router.push({ path: route.path, query: {} })
+}
+
+// 菜单切换时保留预览员工参数
+function handleMenuSelect(index) {
+  const query = previewEmployeeNo.value ? { employeeNo: previewEmployeeNo.value } : {}
+  router.push({ path: index, query })
+}
+
+// P3-15: 未读计数定时刷新
+async function refreshUnreadCount() {
+  try {
+    const targetNo = previewEmployeeNo.value || route.query.employeeNo || localStorage.getItem(PREVIEW_KEY) || undefined
+    const data = await getUnreadCount(targetNo || undefined)
     unreadCount.value = data?.count ?? 0
-  } catch {}
+  } catch (e) {
+    console.error('获取未读通知数失败', e)
+  }
+}
+
+// 路由参数变化时同步
+watch(() => route.query.employeeNo, (val) => {
+  if (val) {
+    previewEmployeeNo.value = val
+    localStorage.setItem(PREVIEW_KEY, val)
+  }
+  refreshUnreadCount()
 })
 
-function handleCommand(command) {
+onMounted(async () => {
+  const role = authStore.role || localStorage.getItem('shift_role') || ''
+  // 管理员预览模式：仅允许查看班表，其他员工功能页重定向回班表
+  if (role !== 'EMPLOYEE' && !['/employee/schedule'].includes(route.path)) {
+    router.replace({ path: '/employee/schedule', query: route.query })
+  }
+  loadEmployeeList()
+  if (authStore.isAuthenticated && !authStore.user) {
+    try {
+      // P3-26: 用户加载失败跳转登录
+      await authStore.fetchCurrentUser()
+      loadEmployeeList()
+    } catch (e) {
+      console.error('获取当前用户失败', e)
+      authStore.logout()
+      router.push('/login')
+    }
+  }
+  refreshUnreadCount()
+  refreshTimer = setInterval(refreshUnreadCount, 60000)
+})
+
+onUnmounted(() => {
+  if (refreshTimer) {
+    clearInterval(refreshTimer)
+    refreshTimer = null
+  }
+})
+
+// 路由切换时刷新
+watch(() => route.path, () => {
+  refreshUnreadCount()
+})
+
+async function handleCommand(command) {
   if (command === 'logout') {
-    authStore.logout()
-    router.push('/login')
+    try {
+      await ElMessageBox.confirm('确定要退出登录吗？', '提示', {
+        confirmButtonText: '退出',
+        cancelButtonText: '取消',
+        type: 'warning'
+      })
+      authStore.logout()
+      router.push('/login')
+    } catch {}
   }
 }
 </script>
@@ -89,6 +219,8 @@ function handleCommand(command) {
 }
 .emp-aside {
   background-color: #001529;
+  display: flex;
+  flex-direction: column;
 }
 .logo {
   height: 60px;
@@ -100,6 +232,19 @@ function handleCommand(command) {
 }
 .emp-aside :deep(.el-menu) {
   border-right: none;
+  flex: 1;
+}
+.emp-aside-footer {
+  padding: 8px 12px;
+  border-top: 1px solid rgba(255,255,255,0.1);
+}
+.preview-tip {
+  padding: 6px 12px;
+  color: #67c23a;
+  font-size: 12px;
+  border-top: 1px solid rgba(255,255,255,0.1);
+  margin-top: 4px;
+  opacity: 0.85;
 }
 .emp-header {
   display: flex;

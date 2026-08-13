@@ -203,8 +203,13 @@ async function exportCsv() {
     const a = document.createElement('a')
     a.href = url
     a.download = `排班报表_${planId.value}_${new Date().toISOString().slice(0, 10)}.csv`
+    // P3-23: 延迟释放 URL，避免下载开始前被回收
+    document.body.appendChild(a)
     a.click()
-    URL.revokeObjectURL(url)
+    document.body.removeChild(a)
+    setTimeout(() => {
+      URL.revokeObjectURL(url)
+    }, 1000)
     ElMessage.success('导出成功')
   } finally {
     exporting.value = false

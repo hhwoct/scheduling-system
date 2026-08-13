@@ -32,18 +32,21 @@ public sealed class SchedulingEngine
         // 阶段一：休息日分配
         var restDays = restDayAllocator.Allocate(input);
 
+        // 已批准请假强制视为休息日，确保请假员工在请假期间不被排班
+        var effectiveRestDays = MergeApprovedLeaves(restDays, input);
+
         // 阶段二：班次分配
-        var shiftAssignments = shiftAllocator.Allocate(input, restDays);
+        var shiftAssignments = shiftAllocator.Allocate(input, effectiveRestDays);
 
         // 阶段三：工作站分配（收集岗位缺口）
         var staffingGaps = new List<ScheduleIssueOutput>();
-        var workstationAssignments = workstationAllocator.Allocate(input, restDays, shiftAssignments, staffingGaps);
+        var workstationAssignments = workstationAllocator.Allocate(input, effectiveRestDays, shiftAssignments, staffingGaps);
 
         // 生成日汇总
-        var daySummaries = BuildDaySummaries(input, restDays, shiftAssignments, workstationAssignments);
+        var daySummaries = BuildDaySummaries(input, effectiveRestDays, shiftAssignments, workstationAssignments);
 
         // 合规检查（合并岗位缺口与合规违规）
-        var complianceIssues = BuildComplianceIssues(input, restDays, shiftAssignments, workstationAssignments, daySummaries);
+        var complianceIssues = BuildComplianceIssues(input, effectiveRestDays, shiftAssignments, workstationAssignments, daySummaries);
         var issues = staffingGaps.Concat(complianceIssues).ToList();
 
         return new SchedulingOutput(
@@ -92,7 +95,7 @@ public sealed class SchedulingEngine
         var workstations = await _dbContext.Workstations
             .AsNoTracking()
             .Where(x => x.StoreId == storeId && x.Status == 1)
-            .Select(x => new { x.Id })
+            .Select(x => new { x.Id, x.IsLowSkill })
             .ToListAsync(cancellationToken);
 
         var shiftWorkstations = await _dbContext.ShiftWorkstations
@@ -127,6 +130,14 @@ public sealed class SchedulingEngine
                 x.RequiredCount))
             .ToListAsync(cancellationToken);
 
+        // 读取已批准请假：请假期间该员工强制休息，不参与排班
+        var approvedLeaves = await _dbContext.LeaveRequests
+            .AsNoTracking()
+            .Where(x => x.StoreId == storeId && x.Status == "APPROVED" &&
+                        x.StartDate <= endDate && x.EndDate >= startDate)
+            .Select(x => new ApprovedLeaveInput(x.EmployeeId, x.StartDate, x.EndDate))
+            .ToListAsync(cancellationToken);
+
         var rules = await _dbContext.RuleConfigs
             .AsNoTracking()
             .Where(x => x.StoreId == storeId && x.Status == 1)
@@ -137,6 +148,10 @@ public sealed class SchedulingEngine
         var maxConsecutiveWorkDays = GetRuleInt(rules, "max_consecutive_work_days", 6);
         var minRestHoursAfterNightShift = GetRuleInt(rules, "min_rest_hours_after_night_shift", 10);
 
+        var lowSkillWorkstationIds = workstations
+            .Where(x => x.IsLowSkill == 1)
+            .ToDictionary(x => x.Id, _ => true);
+
         return new SchedulingInput(
             storeId,
             startDate,
@@ -146,10 +161,35 @@ public sealed class SchedulingEngine
             dateParameters,
             shiftInputs,
             staffingRequirements,
+            approvedLeaves,
+            lowSkillWorkstationIds,
             defaultMonthlyRestDays,
             maxWeeklyHours,
             maxConsecutiveWorkDays,
             minRestHoursAfterNightShift);
+    }
+
+    /// <summary>
+    /// 将已批准请假的日期合并进休息日集合，确保请假员工在请假期间不被排班。
+    /// </summary>
+    private static IReadOnlyList<RestDayAssignment> MergeApprovedLeaves(
+        IReadOnlyList<RestDayAssignment> restDays,
+        SchedulingInput input)
+    {
+        var combined = restDays.ToList();
+
+        foreach (var leave in input.ApprovedLeaves)
+        {
+            var from = leave.StartDate < input.StartDate ? input.StartDate : leave.StartDate;
+            var to = leave.EndDate > input.EndDate ? input.EndDate : leave.EndDate;
+
+            for (var d = from; d <= to; d = d.AddDays(1))
+            {
+                combined.Add(new RestDayAssignment(leave.EmployeeId, d));
+            }
+        }
+
+        return combined;
     }
 
     private static IReadOnlyList<DaySummaryOutput> BuildDaySummaries(

@@ -54,7 +54,8 @@ public sealed class RestDayAllocator
             quotaByDate[allDays[i].WorkDate] = q;
         }
 
-        var assignedEmployees = new HashSet<long>();
+        // P1-4 修复：改用计数器，每个员工可分配多天休息（上限 restDaysTarget 天）
+        var restDayCounts = new Dictionary<long, int>();
         // 每天每部门已休息的部门集合
         var restedDeptsByDate = new Dictionary<DateOnly, HashSet<string>>();
 
@@ -74,11 +75,12 @@ public sealed class RestDayAllocator
 
             var restrictedDepts = restedDeptsByDate[day.WorkDate];
 
-            // 候选：未分配；高峰日仅行政员工可休；当天每部门不超1人
+            // 候选：未达到休息天数上限；高峰日仅行政员工可休；当天每部门不超1人
             var orderedEmployees = input.Employees
-                .Where(e => !assignedEmployees.Contains(e.Id))
+                .Where(e => restDayCounts.GetValueOrDefault(e.Id, 0) < restDaysTarget)
                 .Where(e => !isPeakDay || CanRestOnPeakDay(e.Department))
-                .OrderBy(e => PreferenceRank(e.Department, day))
+                .OrderBy(e => restDayCounts.GetValueOrDefault(e.Id, 0))
+                .ThenBy(e => PreferenceRank(e.Department, day))
                 .ThenBy(e => e.Id);
 
             var candidates = new List<EmployeeInput>();
@@ -93,7 +95,7 @@ public sealed class RestDayAllocator
             foreach (var employee in candidates)
             {
                 assignments.Add(new RestDayAssignment(employee.Id, day.WorkDate));
-                assignedEmployees.Add(employee.Id);
+                restDayCounts[employee.Id] = restDayCounts.GetValueOrDefault(employee.Id, 0) + 1;
             }
         }
 
@@ -102,7 +104,7 @@ public sealed class RestDayAllocator
             .GroupBy(x => x.WorkDate)
             .ToDictionary(g => g.Key, g => g.Count());
 
-        foreach (var employee in input.Employees.Where(e => !assignedEmployees.Contains(e.Id)))
+        foreach (var employee in input.Employees.Where(e => restDayCounts.GetValueOrDefault(e.Id, 0) < restDaysTarget))
         {
             var isAdministrative = IsAdministrativeDepartment(employee.Department);
 
@@ -116,7 +118,7 @@ public sealed class RestDayAllocator
             if (best is not null)
             {
                 assignments.Add(new RestDayAssignment(employee.Id, best.WorkDate));
-                assignedEmployees.Add(employee.Id);
+                restDayCounts[employee.Id] = restDayCounts.GetValueOrDefault(employee.Id, 0) + 1;
                 restCountByDate[best.WorkDate] = restCountByDate.GetValueOrDefault(best.WorkDate) + 1;
             }
         }

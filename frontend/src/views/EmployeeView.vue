@@ -3,18 +3,18 @@
     <el-card>
       <el-form inline :model="query">
         <el-form-item label="姓名">
-          <el-input v-model="query.name" placeholder="姓名" clearable style="width: 160px" @keyup.enter="loadData" />
+          <el-input v-model="query.name" placeholder="姓名" clearable style="width: 160px" @keyup.enter="search" />
         </el-form-item>
         <el-form-item label="工号">
-          <el-input v-model="query.employeeNo" placeholder="工号" clearable style="width: 160px" @keyup.enter="loadData" />
+          <el-input v-model="query.employeeNo" placeholder="工号" clearable style="width: 160px" @keyup.enter="search" />
         </el-form-item>
         <el-form-item label="部门">
-          <el-select v-model="query.department" placeholder="全部" clearable style="width: 140px">
+          <el-select v-model="query.department" placeholder="全部" clearable style="width: 140px" @change="search">
             <el-option v-for="d in departments" :key="d" :label="d" :value="d" />
           </el-select>
         </el-form-item>
         <el-form-item>
-          <el-button type="primary" @click="loadData">查询</el-button>
+          <el-button type="primary" @click="search">查询</el-button>
         </el-form-item>
       </el-form>
 
@@ -34,9 +34,9 @@
         </el-table-column>
         <el-table-column label="操作" width="200" fixed="right">
           <template #default="{ row }">
-            <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
-            <el-button link type="primary" @click="openSkills(row)">技能</el-button>
-            <el-button v-if="row.status === 1" link type="danger" @click="handleDeactivate(row)">停用</el-button>
+            <el-button :link="true" type="primary" @click="openEdit(row)">编辑</el-button>
+            <el-button :link="true" type="primary" @click="openSkills(row)">技能</el-button>
+            <el-button v-if="row.status === 1" :link="true" type="danger" @click="handleDeactivate(row)">停用</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -90,7 +90,7 @@
         </el-table-column>
         <el-table-column label="主技能" width="100">
           <template #default="{ row }">
-            <el-switch v-model="row.isPrimarySkill" :active-value="1" :inactive-value="0" />
+            <el-switch v-model="row.isPrimarySkill" :active-value="1" :inactive-value="0" @change="onPrimaryChange(row, $event)" />
           </template>
         </el-table-column>
       </el-table>
@@ -103,7 +103,7 @@
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { nextTick, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { createEmployee, deactivateEmployee, getEmployeeSkills, getEmployees, saveEmployeeSkills, updateEmployee } from '../api/employees'
 import { getWorkstations } from '../api/workstations'
@@ -121,7 +121,17 @@ const query = reactive({
   department: ''
 })
 
+// P3-3: 搜索重置页码
+function search() {
+  query.page = 1
+  loadData()
+}
+
+// P3-25: 请求序号防止旧响应覆盖
+let requestSeq = 0
+
 async function loadData() {
+  const seq = ++requestSeq
   loading.value = true
   try {
     const res = await getEmployees({
@@ -131,10 +141,11 @@ async function loadData() {
       employeeNo: query.employeeNo || undefined,
       department: query.department || undefined
     })
+    if (seq !== requestSeq) return
     list.value = res.items
     total.value = res.total
   } finally {
-    loading.value = false
+    if (seq === requestSeq) loading.value = false
   }
 }
 
@@ -162,6 +173,7 @@ const rules = {
   maxWeeklyHours: [{ required: true, message: '请输入周工时上限', trigger: 'blur' }]
 }
 
+// P3-28: 重置表单并清除验证状态
 function resetForm() {
   form.employeeNo = ''
   form.name = ''
@@ -170,6 +182,9 @@ function resetForm() {
   form.primaryPosition = ''
   form.maxWeeklyHours = 48
   editing.value = false
+  nextTick(() => {
+    formRef.value?.clearValidate?.()
+  })
 }
 
 function openCreate() {
@@ -189,8 +204,13 @@ function openEdit(row) {
   dialogVisible.value = true
 }
 
+// P3-40: 弹窗取消/验证失败不执行保存
 async function handleSave() {
-  await formRef.value.validate()
+  try {
+    await formRef.value.validate()
+  } catch {
+    return
+  }
   saving.value = true
   try {
     if (editing.value) {
@@ -202,16 +222,27 @@ async function handleSave() {
     }
     dialogVisible.value = false
     loadData()
+  } catch (e) {
+    ElMessage.error('保存失败：' + (e.message || '网络错误'))
   } finally {
     saving.value = false
   }
 }
 
+// P3-40: 取消确认后不执行停用
 async function handleDeactivate(row) {
-  await ElMessageBox.confirm('确定停用员工 ' + row.name + ' 吗？', '提示', { type: 'warning' })
-  await deactivateEmployee(row.id)
-  ElMessage.success('已停用')
-  loadData()
+  try {
+    await ElMessageBox.confirm('确定停用员工 ' + row.name + ' 吗？', '提示', { type: 'warning' })
+  } catch {
+    return
+  }
+  try {
+    await deactivateEmployee(row.id)
+    ElMessage.success('已停用')
+    loadData()
+  } catch (e) {
+    ElMessage.error('停用失败：' + (e.message || '网络错误'))
+  }
 }
 
 const skillsVisible = ref(false)
@@ -238,11 +269,25 @@ async function openSkills(row) {
         isPrimarySkill: existing?.isPrimarySkill ?? 0
       }
     })
+  } catch (e) {
+    ElMessage.error('加载技能失败')
   } finally {
     skillsLoading.value = false
   }
 }
 
+// P3-29: 主技能唯一
+function onPrimaryChange(row, isPrimary) {
+  if (isPrimary) {
+    skillRows.value.forEach(r => {
+      if (r.workstationId !== row.workstationId) {
+        r.isPrimarySkill = 0
+      }
+    })
+  }
+}
+
+// P3-40: 技能保存失败不静默
 async function handleSaveSkills() {
   savingSkills.value = true
   try {
@@ -255,6 +300,8 @@ async function handleSaveSkills() {
     })
     ElMessage.success('技能保存成功')
     skillsVisible.value = false
+  } catch (e) {
+    ElMessage.error('技能保存失败：' + (e.message || '网络错误'))
   } finally {
     savingSkills.value = false
   }

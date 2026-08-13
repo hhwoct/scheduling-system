@@ -90,7 +90,7 @@
         <el-table-column type="expand">
           <template #default="{ row }">
             <div style="padding: 8px 16px">
-              <el-table :data="employeeHourRows[row.employeeId] || []" size="small" border max-height="260">
+              <el-table :data="employeeHourRows[`${planId}_${row.employeeId}`] || []" size="small" border max-height="260">
                 <el-table-column prop="workDate" label="日期" width="110" />
                 <el-table-column label="类型" width="60">
                   <template #default="{ row: d }">{{ d.isRestDay === 1 ? '休' : '班' }}</template>
@@ -100,7 +100,7 @@
                   <template #default="{ row: d }">{{ Number(d.workHours).toFixed(1) }}</template>
                 </el-table-column>
               </el-table>
-              <div v-if="!(employeeHourRows[row.employeeId] || []).length" style="font-size:12px;color:#909399">（点击右侧「工时明细」加载）</div>
+              <div v-if="!((employeeHourRows[`${planId}_${row.employeeId}`] || []).length)" style="font-size:12px;color:#909399">（点击右侧「工时明细」加载）</div>
             </div>
           </template>
         </el-table-column>
@@ -121,6 +121,7 @@
 <script setup>
 import { onMounted, ref, computed } from 'vue'
 import { useRoute } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import { getWeekView, getScheduleIssues, getMonthView } from '../api/schedules'
 
 const route = useRoute()
@@ -133,6 +134,7 @@ const issues = ref([])
 const errorMsg = ref('')
 const showOvertimeDetail = ref(false)
 const employeeHourRows = ref({})
+const loadingSet = new Set()  // 追踪加载状态，防止重复加载
 
 const summaryIssues = computed(() => issues.value.filter(i => i.workDate == null))
 
@@ -177,15 +179,31 @@ function buildWeekDays() {
   weekDays.value = days
 }
 
-// 加载某员工整个周期的每日工时（从月视图数据提取）
+// P3-13/P3-14: 按 planId 缓存，空结果也缓存（区分未加载），失败不缓存允许重试
 async function loadEmployeeHours(employeeId) {
-  if (employeeHourRows.value[employeeId]) return
+  const cacheKey = `${planId.value}_${employeeId}`
+
+  // 已加载过（包含空结果 null/[]）直接返回
+  if (employeeHourRows.value[cacheKey] !== undefined) {
+    return employeeHourRows.value[cacheKey]
+  }
+
+  // 防止重复加载
+  if (loadingSet.has(cacheKey)) return
+  loadingSet.add(cacheKey)
+
   try {
     const month = await getMonthView(planId.value)
     const emp = month.find(e => e.employeeId === employeeId)
-    employeeHourRows.value[employeeId] = emp ? emp.days : []
+    // 空结果也缓存为 []，避免重复请求；用 null 表示未加载
+    employeeHourRows.value[cacheKey] = emp ? emp.days : []
+    return employeeHourRows.value[cacheKey]
   } catch (e) {
-    employeeHourRows.value[employeeId] = []
+    // 失败时不缓存，允许重试
+    ElMessage.error('加载工时明细失败')
+    throw e
+  } finally {
+    loadingSet.delete(cacheKey)
   }
 }
 
@@ -196,6 +214,9 @@ async function loadData() {
   }
   loading.value = true
   errorMsg.value = ''
+  // P3-13: 加载新计划时清除缓存，避免数据陈旧
+  employeeHourRows.value = {}
+  loadingSet.clear()
   try {
     rows.value = await getWeekView(planId.value, weekStart.value || undefined)
     issues.value = await getScheduleIssues(planId.value)

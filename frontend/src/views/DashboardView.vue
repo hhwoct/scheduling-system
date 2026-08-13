@@ -36,6 +36,7 @@
 <script setup>
 import { onMounted, reactive, ref } from 'vue'
 import { getCurrentStore } from '../api/store'
+import request from '../utils/request'
 import { useAuthStore } from '../stores/auth'
 
 const authStore = useAuthStore()
@@ -43,22 +44,33 @@ const store = ref(null)
 const stats = reactive({})
 
 onMounted(async () => {
-  try {
-      const [storeRes, statsRes] = await Promise.all([
-        getCurrentStore(),
-        fetch('/api/dashboard/stats', { headers: { Authorization: `Bearer ${localStorage.getItem('shift_token')}` } }).then(r => r.json())
-      ])
-      store.value = storeRes
-      if (statsRes?.data) {
-        stats.employeeCount = statsRes.data.employeeCount
-        stats.shiftCount = statsRes.data.shiftCount
-        stats.workstationCount = statsRes.data.workstationCount
-      }
-  } catch {
-    store.value = null
+  const [storeRes, statsRes] = await Promise.allSettled([
+    getCurrentStore(),
+    request.get('/dashboard/stats')
+  ])
+
+  // 分别处理结果：一个请求失败不丢弃另一个有效数据
+  if (storeRes.status === 'fulfilled') {
+    store.value = storeRes.value
+  } else {
+    console.error('加载门店信息失败', storeRes.reason)
   }
+
+  if (statsRes.status === 'fulfilled' && statsRes.value?.data) {
+    stats.employeeCount = statsRes.value.data.employeeCount
+    stats.shiftCount = statsRes.value.data.shiftCount
+    stats.workstationCount = statsRes.value.data.workstationCount
+  } else {
+    console.error('加载统计数据失败', statsRes.reason)
+    // 显示部分数据，不全部丢弃
+  }
+
   if (authStore.isAuthenticated && !authStore.user) {
-    authStore.fetchCurrentUser().catch(() => {})
+    try {
+      await authStore.fetchCurrentUser()
+    } catch (e) {
+      console.error('获取当前用户失败', e)
+    }
   }
 })
 </script>

@@ -27,7 +27,8 @@ public sealed class JwtTokenService : IJwtTokenService
             new(JwtRegisteredClaimNames.Iat, DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(), ClaimValueTypes.Integer64),
             new("username", user.Username),
             new("nickname", user.Nickname),
-            new(ClaimTypes.Role, user.Role)
+            new(ClaimTypes.Role, user.Role),
+            new("password_version", "1")
         };
 
         if (user.StoreId.HasValue)

@@ -33,6 +33,14 @@ public sealed record StaffingRequirementInput(
     TimeSpan TimeSlot,
     int RequiredCount);
 
+/// <summary>
+/// 已批准请假：排班时该员工在 StartDate~EndDate 内强制视为休息日。
+/// </summary>
+public sealed record ApprovedLeaveInput(
+    long EmployeeId,
+    DateOnly StartDate,
+    DateOnly EndDate);
+
 public sealed record SchedulingInput(
     long StoreId,
     DateOnly StartDate,
@@ -42,6 +50,8 @@ public sealed record SchedulingInput(
     IReadOnlyList<DateParameterInput> DateParameters,
     IReadOnlyList<ShiftTemplateInput> ShiftTemplates,
     IReadOnlyList<StaffingRequirementInput> StaffingRequirements,
+    IReadOnlyList<ApprovedLeaveInput> ApprovedLeaves,
+    IReadOnlyDictionary<long, bool> LowSkillWorkstationIds,
     int DefaultMonthlyRestDays,
     decimal MaxWeeklyHours,
     int MaxConsecutiveWorkDays,
@@ -53,7 +63,8 @@ public sealed record ShiftAssignment(
     long EmployeeId,
     DateOnly WorkDate,
     long ShiftTemplateId,
-    string ShiftCode);
+    string ShiftCode,
+    long? WorkstationId = null);
 
 public sealed record WorkstationAssignment(
     long EmployeeId,
@@ -135,6 +146,14 @@ public static class SchedulingTimeHelper
 
         return (decimal)(end - start).TotalMinutes / 60m;
     }
+
+    /// <summary>
+    /// P1-5 修复2：修正跨天检测。
+    /// 结束时间早于开始时间视为跨天；或开始时间在 20:00 后且结束时间在 06:00 前也视为跨天。
+    /// </summary>
+    public static bool IsCrossDay(TimeSpan start, TimeSpan end)
+        => end < start
+           || (start >= TimeSpan.FromHours(20) && end <= TimeSpan.FromHours(6));
 
     public static bool IsNightShift(ShiftTemplateInput shift)
         => shift.IsCrossDay == 1 || shift.EndTime >= TimeSpan.FromHours(20);

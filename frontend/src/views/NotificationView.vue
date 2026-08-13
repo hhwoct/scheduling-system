@@ -30,18 +30,42 @@
           </el-card>
         </el-timeline-item>
       </el-timeline>
+
+      <el-pagination
+        style="margin-top: 16px; justify-content: center"
+        layout="total, prev, pager, next"
+        :total="total"
+        :page-size="pageSize"
+        :current-page="page"
+        @current-change="onPageChange"
+      />
     </el-card>
   </div>
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { getNotifications, getUnreadCount, markAsRead, markAllAsRead } from '../api/notifications'
+
+const route = useRoute()
+// 仅员工端路由使用 localStorage 兜底；管理端/notifications 不使用预览员工过滤
+const employeeNo = computed(() => {
+  if (route.query.employeeNo) return route.query.employeeNo
+  if (route.path.startsWith('/employee/')) {
+    return localStorage.getItem('shift_preview_employee_no') || ''
+  }
+  return ''
+})
 
 const list = ref([])
 const unreadCount = ref(0)
 const loading = ref(false)
+// P3-36: 分页
+const total = ref(0)
+const page = ref(1)
+const pageSize = ref(20)
 
 function typeName(t) {
   return {
@@ -61,14 +85,25 @@ function fmtTime(t) {
 async function loadData() {
   loading.value = true
   try {
-    const [notifs, countData] = await Promise.all([getNotifications(), getUnreadCount()])
-    list.value = notifs || []
+    const params = { page: page.value, pageSize: pageSize.value }
+    if (employeeNo.value) params.employeeNo = employeeNo.value
+    const [notifs, countData] = await Promise.all([
+      getNotifications(params),
+      getUnreadCount(employeeNo.value || undefined)
+    ])
+    list.value = notifs?.items || notifs || []
+    total.value = notifs?.total || 0
     unreadCount.value = countData?.count ?? 0
   } catch (e) {
     ElMessage.error('加载通知失败')
   } finally {
     loading.value = false
   }
+}
+
+function onPageChange(newPage) {
+  page.value = newPage
+  loadData()
 }
 
 async function handleRead(id) {

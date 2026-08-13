@@ -3,9 +3,9 @@ USE shift_mvp;
 
 INSERT INTO date_parameters (store_id, work_date, week_day, day_type, is_legal_holiday, is_holiday_eve)
 SELECT 1, d, DAYOFWEEK(d),
-  CASE WHEN DAYOFWEEK(d) IN (6,7) THEN 'HOLIDAY' ELSE 'WORKDAY' END,
+  CASE WHEN DAYOFWEEK(d) IN (1,7) THEN 'HOLIDAY' ELSE 'WORKDAY' END,
   0,
-  CASE WHEN DAYOFWEEK(d) = 5 THEN 1 ELSE 0 END
+  CASE WHEN DAYOFWEEK(d) = 6 THEN 1 ELSE 0 END
 FROM (
   SELECT DATE('2026-09-01') + INTERVAL seq DAY AS d
   FROM (
@@ -16,4 +16,9 @@ FROM (
     UNION ALL SELECT 28 UNION ALL SELECT 29
   ) x
 ) dates
-ON DUPLICATE KEY UPDATE week_day = VALUES(week_day);
+AS new
+ON DUPLICATE KEY UPDATE
+  week_day = new.week_day,
+  day_type = new.day_type,
+  is_legal_holiday = new.is_legal_holiday,
+  is_holiday_eve = new.is_holiday_eve;

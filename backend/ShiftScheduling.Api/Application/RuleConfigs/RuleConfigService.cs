@@ -66,7 +66,7 @@ public sealed class RuleConfigService : IRuleConfigService
 
         rule.RuleValue = request.RuleValue.Trim();
         rule.Status = request.Status;
-        rule.UpdatedAt = DateTime.Now;
+        rule.UpdatedAt = DateTime.UtcNow;
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 

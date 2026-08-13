@@ -16,6 +16,11 @@ public sealed class UserEntity
 
     public int Status { get; set; }
 
+    /// <summary>
+    /// 密码版本号。密码重置时递增，使旧 JWT 令牌失效。
+    /// </summary>
+    public int PasswordVersion { get; set; }
+
     public DateTime CreatedAt { get; set; }
 
     public DateTime UpdatedAt { get; set; }

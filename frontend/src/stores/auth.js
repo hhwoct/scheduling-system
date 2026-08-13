@@ -1,12 +1,49 @@
 import { defineStore } from 'pinia'
 import { login as loginApi, getCurrentUser } from '../api/auth'
 
+// Token 短期有效期（分钟），与后端 Jwt:ExpireMinutes 保持一致
+const TOKEN_TTL_MINUTES = 30
+const STORAGE_KEY_TOKEN = 'shift_token'
+const STORAGE_KEY_ROLE = 'shift_role'
+const STORAGE_KEY_EXPIRES = 'shift_token_expires_at'
+
+/**
+ * 缓存 token 到 localStorage 并记录过期时间。
+ * 每次登录/刷新时调用。
+ */
+function persistToken(token, role) {
+  const expiresAt = Date.now() + TOKEN_TTL_MINUTES * 60 * 1000
+  localStorage.setItem(STORAGE_KEY_TOKEN, token)
+  localStorage.setItem(STORAGE_KEY_ROLE, role || '')
+  localStorage.setItem(STORAGE_KEY_EXPIRES, String(expiresAt))
+}
+
+/**
+ * 读取已缓存的 token；若已过期则清除并返回空。
+ */
+function loadToken() {
+  const token = localStorage.getItem(STORAGE_KEY_TOKEN)
+  if (!token) return ''
+  const expiresAt = Number(localStorage.getItem(STORAGE_KEY_EXPIRES) || 0)
+  if (expiresAt && Date.now() > expiresAt) {
+    clearStoredAuth()
+    return ''
+  }
+  return token
+}
+
+function clearStoredAuth() {
+  localStorage.removeItem(STORAGE_KEY_TOKEN)
+  localStorage.removeItem(STORAGE_KEY_ROLE)
+  localStorage.removeItem(STORAGE_KEY_EXPIRES)
+}
+
 export const useAuthStore = defineStore('auth', {
   state: () => ({
-    token: localStorage.getItem('shift_token') || '',
+    token: loadToken(),
     user: null,
     store: null,
-    role: localStorage.getItem('shift_role') || ''
+    role: localStorage.getItem(STORAGE_KEY_ROLE) || ''
   }),
   getters: {
     isAuthenticated: (state) => !!state.token
@@ -22,8 +59,7 @@ export const useAuthStore = defineStore('auth', {
       this.token = res.token
       this.user = res.user
       this.role = res.user.role
-      localStorage.setItem('shift_token', res.token)
-      localStorage.setItem('shift_role', res.user.role || '')
+      persistToken(res.token, res.user.role || '')
       return res
     },
     async fetchCurrentUser() {
@@ -33,7 +69,8 @@ export const useAuthStore = defineStore('auth', {
           throw new Error('用户信息无效')
         }
         this.role = this.user.role
-        localStorage.setItem('shift_role', this.user.role || '')
+        // 刷新 token 有效期（当前 token 仍有效，仅刷新过期时间）
+        persistToken(this.token, this.user.role || '')
         return this.user
       } catch (e) {
         // 获取当前用户失败时清除旧状态，避免残留脏数据
@@ -46,8 +83,7 @@ export const useAuthStore = defineStore('auth', {
       this.user = null
       this.store = null
       this.role = ''
-      localStorage.removeItem('shift_token')
-      localStorage.removeItem('shift_role')
+      clearStoredAuth()
     }
   }
 })

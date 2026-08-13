@@ -12,6 +12,9 @@ public sealed class WorkstationEntity
 
     public int SortOrder { get; set; }
 
+    /// <summary>是否低技术含量岗位：缺口可建议找兼职临时填补。</summary>
+    public int IsLowSkill { get; set; }
+
     public string? Remark { get; set; }
 
     public int Status { get; set; }

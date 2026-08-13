@@ -7,7 +7,14 @@
         <div class="gantt-axis">
           <div class="gantt-label"></div>
           <div class="gantt-bar-area">
-            <div v-for="t in ganttHours" :key="t" class="axis-tick">{{ t }}</div>
+            <div
+              v-for="(t, i) in ganttHours"
+              :key="t"
+              class="axis-tick"
+              :style="{ left: (i * 100 / (ganttHours.length - 1)) + '%' }"
+            >
+              {{ t }}
+            </div>
           </div>
         </div>
         <!-- 每个班次一行 -->
@@ -180,12 +187,17 @@ function toMinutes(t) {
   return parseInt(parts[0]) * 60 + parseInt(parts[1])
 }
 
+// P3-31: 自动检测跨天，不依赖 isCrossDay 标志
 function barStyle(shift) {
   let startMin = toMinutes(shift.startTime)
   let endMin = toMinutes(shift.endTime)
-  if (shift.isCrossDay && endMin <= startMin) endMin += 24 * 60
 
-  // 限制在甘特图范围内
+  // 自动检测跨天（结束时间 <= 开始时间视为跨天）
+  if (endMin <= startMin) {
+    endMin += 24 * 60
+  }
+
+  // 裁剪到甘特图范围（13:00 ~ 次日04:00）
   const clampedStart = Math.max(startMin, GANTT_START)
   const clampedEnd = Math.min(endMin, GANTT_END)
 
@@ -224,13 +236,18 @@ onMounted(loadData)
   display: flex;
 }
 .axis-tick {
-  flex: 1;
+  position: absolute;
+  transform: translateX(-50%);
   font-size: 9px;
   text-align: center;
   color: #909399;
   border-left: 1px solid #e4e7ed;
   line-height: 20px;
   flex-shrink: 0;
+  white-space: nowrap;
+}
+.gantt-bar-area .axis-tick:first-child {
+  border-left: none;
 }
 .gantt-row {
   display: flex;

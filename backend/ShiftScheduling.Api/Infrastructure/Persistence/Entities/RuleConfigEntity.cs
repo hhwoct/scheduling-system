@@ -18,6 +18,11 @@ public sealed class RuleConfigEntity
 
     public int Status { get; set; }
 
+    /// <summary>
+    /// 乐观锁版本号。更新时检查版本，防止并发覆盖。
+    /// </summary>
+    public int Version { get; set; }
+
     public DateTime CreatedAt { get; set; }
 
     public DateTime UpdatedAt { get; set; }

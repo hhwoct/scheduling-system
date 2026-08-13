@@ -41,13 +41,25 @@ async function loadData() {
   }
 }
 
+// P3-35: 并发保存所有规则，失败不中断其他规则
 async function handleSave() {
+  if (list.value.length === 0) {
+    ElMessage.info('没有可保存的规则')
+    return
+  }
   saving.value = true
   try {
-    for (const rule of list.value) {
-      await updateRule(rule.id, { ruleValue: rule.ruleValue, status: rule.status })
+    const results = await Promise.allSettled(
+      list.value.map(rule =>
+        updateRule(rule.id, { ruleValue: rule.ruleValue, status: rule.status, version: rule.version })
+      )
+    )
+    const failed = results.filter(r => r.status === 'rejected')
+    if (failed.length === 0) {
+      ElMessage.success(`保存成功（${list.value.length}条）`)
+    } else {
+      ElMessage.warning(`${failed.length}条保存失败，请重试`)
     }
-    ElMessage.success('规则保存成功')
   } finally {
     saving.value = false
   }

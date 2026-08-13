@@ -72,6 +72,11 @@ public sealed class EmployeeSkillService : IEmployeeSkillService
 
         var beforeContent = await BuildMatrixContentAsync(employeeId, cancellationToken);
 
+        // P3-14 修复：批量查询现有技能，避免循环内 N+1 查询
+        var existingSkills = await _dbContext.EmployeeSkills
+            .Where(x => x.EmployeeId == employeeId && workstationIds.Contains(x.WorkstationId))
+            .ToDictionaryAsync(x => x.WorkstationId, cancellationToken);
+
         foreach (var item in request.Skills)
         {
             if (!validWorkstations.Contains(item.WorkstationId))
@@ -84,8 +89,7 @@ public sealed class EmployeeSkillService : IEmployeeSkillService
                 throw new BusinessException("技能分必须在 0 到 5 之间", "INVALID_SKILL_SCORE");
             }
 
-            var skill = await _dbContext.EmployeeSkills
-                .FirstOrDefaultAsync(x => x.EmployeeId == employeeId && x.WorkstationId == item.WorkstationId, cancellationToken);
+            existingSkills.TryGetValue(item.WorkstationId, out var skill);
 
             if (skill is null)
             {
@@ -96,15 +100,15 @@ public sealed class EmployeeSkillService : IEmployeeSkillService
                     SkillScore = item.SkillScore,
                     IsPrimarySkill = item.IsPrimarySkill,
                     Status = 1,
-                    CreatedAt = DateTime.Now,
-                    UpdatedAt = DateTime.Now
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
                 });
             }
             else
             {
                 skill.SkillScore = item.SkillScore;
                 skill.IsPrimarySkill = item.IsPrimarySkill;
-                skill.UpdatedAt = DateTime.Now;
+                skill.UpdatedAt = DateTime.UtcNow;
             }
         }
 

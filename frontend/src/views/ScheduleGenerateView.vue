@@ -82,11 +82,16 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { generateSchedule, getSchedules, publishSchedule, deleteSchedule } from '../api/schedules'
+import { generateSchedule, getSchedules, publishSchedule, deleteSchedule, getScheduleIssues } from '../api/schedules'
+
+function getToday() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
 
 const router = useRouter()
 const scheduleMode = ref('week')
-const refDate = ref('2026-08-01')
+const refDate = ref(getToday())
 const planName = ref('')
 const generating = ref(false)
 const result = ref(null)
@@ -99,7 +104,9 @@ const pageSize = 10
 
 // 根据排班方式 + 参考日期计算起止
 function computeRange() {
-  const d = new Date(refDate.value + 'T00:00:00')
+    if (!refDate.value) return null
+    const d = new Date(refDate.value + 'T00:00:00')
+    if (Number.isNaN(d.getTime())) return null
   const fmt = x => `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`
 
   if (scheduleMode.value === 'week') {
@@ -130,8 +137,14 @@ const rangeDays = computed(() => {
   return Math.round((e - s) / 86400000) + 1
 })
 
+// P3-6: 处理 refDate 清空/无效的情况
 function refreshRange() {
   const r = computeRange()
+  if (!r) {
+    startDate.value = ''
+    endDate.value = ''
+    return
+  }
   startDate.value = r.start
   endDate.value = r.end
 }
@@ -174,7 +187,33 @@ async function loadPlans(current = 1) {
 
 async function handlePublish(row) {
   await ElMessageBox.confirm('确定发布排班 ' + row.planName + ' 吗？', '提示', { type: 'warning' })
-  await publishSchedule(row.id)
+
+  // 检查排班是否存在 ERROR 严重问题（如真实高技能岗位缺口）
+  let hasError = false
+  try {
+    const issues = await getScheduleIssues(row.id)
+    const list = Array.isArray(issues) ? issues : (issues?.items || [])
+    hasError = list.some(i => i.severity === 'ERROR')
+  } catch (e) {
+    // 查询失败不阻塞发布
+  }
+
+  if (hasError) {
+    // 有 ERROR：弹二次确认，用户可选择继续发布（force=true）
+    try {
+      await ElMessageBox.confirm(
+        '该排班计划存在严重违规（ERROR）问题，直接发布可能存在岗位缺口风险。\n\n确认继续发布吗？',
+        '发布确认',
+        { type: 'error', confirmButtonText: '继续发布', cancelButtonText: '取消' }
+      )
+      await publishSchedule(row.id, true)
+    } catch (e) {
+      return // 用户取消强制发布
+    }
+  } else {
+    await publishSchedule(row.id, false)
+  }
+
   ElMessage.success('发布成功')
   loadPlans(page.value)
 }

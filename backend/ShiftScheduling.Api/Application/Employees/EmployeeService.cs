@@ -19,9 +19,11 @@ public sealed class EmployeeService : IEmployeeService
 
     public async Task<PagedResult<EmployeeListItem>> QueryAsync(EmployeeQueryRequest request, long storeId, CancellationToken cancellationToken)
     {
+        // 修复 EF Core 无法比较 int 与 int?：将 nullable 提升为局部变量
+        var defaultStatus = request.Status ?? 1;
         var query = _dbContext.Employees
             .AsNoTracking()
-            .Where(x => x.StoreId == storeId && x.Status == (request.Status ?? 1));
+            .Where(x => x.StoreId == storeId && x.Status == defaultStatus);
 
         if (!string.IsNullOrWhiteSpace(request.Name))
         {
@@ -104,8 +106,8 @@ public sealed class EmployeeService : IEmployeeService
             PrimaryPosition = request.PrimaryPosition,
             MaxWeeklyHours = request.MaxWeeklyHours,
             Status = 1,
-            CreatedAt = DateTime.Now,
-            UpdatedAt = DateTime.Now
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
         };
 
         _dbContext.Employees.Add(employee);
@@ -164,7 +166,7 @@ public sealed class EmployeeService : IEmployeeService
         employee.HireDate = request.HireDate;
         employee.PrimaryPosition = request.PrimaryPosition;
         employee.MaxWeeklyHours = request.MaxWeeklyHours;
-        employee.UpdatedAt = DateTime.Now;
+        employee.UpdatedAt = DateTime.UtcNow;
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 
@@ -206,7 +208,7 @@ public sealed class EmployeeService : IEmployeeService
         var beforeContent = System.Text.Json.JsonSerializer.Serialize(new { employee.Status });
 
         employee.Status = 0;
-        employee.UpdatedAt = DateTime.Now;
+        employee.UpdatedAt = DateTime.UtcNow;
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 

@@ -20,8 +20,8 @@
         </div>
         <div v-for="(week, wi) in weeks" :key="wi" class="cal-week">
           <div
-            v-for="day in week"
-            :key="day.date || '__empty'"
+            v-for="(day, di) in week"
+            :key="day.date || `empty-${wi}-${di}`"
             class="cal-cell"
             :class="{ 'is-empty': !day.date, 'is-selected': day.date === selectedDate }"
             @click="day.date && selectDate(day.date)"
@@ -101,8 +101,17 @@ const slots = computed(() => {
   return list
 })
 
+// P3-11: 缺口岗位也显示（只包含当前选中日期）
 const dailyWorkstations = computed(() => {
-  const set = new Set(dailyRows.value.map(r => r.workstationName).filter(Boolean))
+  const set = new Set()
+  dailyRows.value.forEach(r => {
+    if (r.workstationName) set.add(r.workstationName)
+  })
+  dailyIssues.value
+    .filter(i => i.issueType === 'STAFFING_GAP' && i.workDate === selectedDate.value)
+    .forEach(i => {
+      if (i.workstationName) set.add(i.workstationName)
+    })
   return Array.from(set)
 })
 
@@ -177,7 +186,20 @@ function buildCalendar() {
     return
   }
 
-  const days = rows.value[0].days.map(d => d.workDate).sort()
+  // P3-10: 从所有行收集日期，避免第一行缺少 days 时遗漏
+  const daySet = new Set()
+  rows.value.forEach(row => {
+    (row.days || []).forEach(d => {
+      if (d?.workDate) daySet.add(d.workDate)
+    })
+  })
+  const days = Array.from(daySet).sort()
+
+  if (days.length === 0) {
+    weeks.value = []
+    return
+  }
+
   const dayStats = {}
   days.forEach(d => { dayStats[d] = { workCount: 0, restCount: 0, shifts: new Set() } })
 

@@ -378,7 +378,17 @@ SELECT e.id, w.id,
   CASE WHEN e.primary_position = w.name THEN 1 ELSE 0 END AS is_primary_skill,
   1
 FROM employees e CROSS JOIN workstations w
-WHERE e.store_id = 1 AND w.store_id = 1;
+WHERE e.store_id = 1 AND w.store_id = 1
+  AND (
+    (e.primary_position = w.name)
+    OR (e.department = '管理' AND w.code IN ('MANAGER','SERVICE','CUSTOMER_MANAGER'))
+    OR (e.department = '行政' AND w.code IN ('CLERK_WAREHOUSE','PURCHASE','MANAGER'))
+    OR (e.department = '工程' AND w.code IN ('ENGINEERING','NETWORK'))
+    OR (e.department = '保洁' AND w.code IN ('CLEANING','SERVICE'))
+    OR (e.department = '厨房' AND w.code = 'KITCHEN')
+    OR (e.department = '楼面' AND w.code IN ('RECEPTION','DELIVERY','SERVICE','CUSTOMER_MANAGER'))
+    OR (e.department = '吧台' AND w.code IN ('INNER_BAR','OUTER_BAR'))
+  );
 
 INSERT INTO rule_configs (store_id, rule_key, rule_name, rule_value, value_type, remark, status) VALUES
 (1, 'default_monthly_rest_days', '默认每月休息天数', '4', 'number', 'MVP 默认每人每月休息 4 天', 1),
@@ -391,7 +401,7 @@ INSERT INTO rule_configs (store_id, rule_key, rule_name, rule_value, value_type,
 (1, 'station_continuity_weight', '工作站连续性权重', '20', 'number', '减少同日频繁换岗', 1);
 
 INSERT INTO date_parameters (store_id, work_date, week_day, day_type, is_legal_holiday, is_holiday_eve)
-SELECT 1, d, DAYOFWEEK(d), CASE WHEN DAYOFWEEK(d) IN (6,7) THEN 'HOLIDAY' ELSE 'WORKDAY' END, 0, CASE WHEN DAYOFWEEK(d) = 5 THEN 1 ELSE 0 END
+SELECT 1, d, DAYOFWEEK(d), CASE WHEN DAYOFWEEK(d) IN (1,7) THEN 'HOLIDAY' ELSE 'WORKDAY' END, 0, CASE WHEN DAYOFWEEK(d) = 6 THEN 1 ELSE 0 END
 FROM (
   SELECT DATE('2026-08-01') + INTERVAL seq DAY AS d
   FROM (
@@ -405,15 +415,15 @@ FROM (
 INSERT INTO staffing_requirements (store_id, day_type, workstation_id, time_slot, required_count)
 SELECT 1, day_type, w.id, time_slot,
   CASE
-    WHEN w.code IN ('MANAGER','CLERK_WAREHOUSE','PURCHASE','ENGINEERING','NETWORK') AND time_slot BETWEEN '13:00:00' AND '22:00:00' THEN 1
-    WHEN w.code = 'KITCHEN' AND time_slot BETWEEN '18:00:00' AND '23:30:00' THEN CASE WHEN day_type='HOLIDAY' THEN 3 ELSE 2 END
-    WHEN w.code = 'KITCHEN' AND (time_slot BETWEEN '00:00:00' AND '03:00:00') THEN 1
-    WHEN w.code IN ('SERVICE','DELIVERY') AND (time_slot BETWEEN '19:00:00' AND '23:30:00') THEN CASE WHEN day_type='HOLIDAY' THEN 3 ELSE 2 END
-    WHEN w.code IN ('SERVICE','DELIVERY') AND (time_slot BETWEEN '00:00:00' AND '04:00:00') THEN CASE WHEN day_type='HOLIDAY' THEN 2 ELSE 1 END
-    WHEN w.code IN ('RECEPTION','CUSTOMER_MANAGER') AND (time_slot BETWEEN '19:00:00' AND '23:30:00') THEN CASE WHEN day_type='HOLIDAY' THEN 2 ELSE 1 END
-    WHEN w.code IN ('INNER_BAR','OUTER_BAR') AND (time_slot BETWEEN '18:30:00' AND '23:30:00') THEN CASE WHEN day_type='HOLIDAY' THEN 2 ELSE 1 END
-    WHEN w.code IN ('INNER_BAR','OUTER_BAR') AND (time_slot BETWEEN '00:00:00' AND '04:00:00') THEN 1
-    WHEN w.code = 'CLEANING' AND (time_slot BETWEEN '21:00:00' AND '23:30:00' OR time_slot BETWEEN '00:00:00' AND '06:00:00') THEN 1
+    WHEN w.code IN ('MANAGER','CLERK_WAREHOUSE','PURCHASE','ENGINEERING','NETWORK') AND time_slot >= '13:00:00' AND time_slot < '22:00:00' THEN 1
+    WHEN w.code = 'KITCHEN' AND time_slot >= '18:00:00' AND time_slot < '23:30:00' THEN CASE WHEN day_type='HOLIDAY' THEN 3 ELSE 2 END
+    WHEN w.code = 'KITCHEN' AND (time_slot >= '00:00:00' AND time_slot < '03:00:00') THEN 1
+    WHEN w.code IN ('SERVICE','DELIVERY') AND (time_slot >= '19:00:00' AND time_slot < '23:30:00') THEN CASE WHEN day_type='HOLIDAY' THEN 3 ELSE 2 END
+    WHEN w.code IN ('SERVICE','DELIVERY') AND (time_slot >= '00:00:00' AND time_slot < '04:00:00') THEN CASE WHEN day_type='HOLIDAY' THEN 2 ELSE 1 END
+    WHEN w.code IN ('RECEPTION','CUSTOMER_MANAGER') AND (time_slot >= '19:00:00' AND time_slot < '23:30:00') THEN CASE WHEN day_type='HOLIDAY' THEN 2 ELSE 1 END
+    WHEN w.code IN ('INNER_BAR','OUTER_BAR') AND (time_slot >= '18:30:00' AND time_slot < '23:30:00') THEN CASE WHEN day_type='HOLIDAY' THEN 2 ELSE 1 END
+    WHEN w.code IN ('INNER_BAR','OUTER_BAR') AND (time_slot >= '00:00:00' AND time_slot < '04:00:00') THEN 1
+    WHEN w.code = 'CLEANING' AND (time_slot >= '21:00:00' AND time_slot < '23:30:00' OR time_slot >= '00:00:00' AND time_slot < '06:00:00') THEN 1
     ELSE 0
   END
 FROM workstations w

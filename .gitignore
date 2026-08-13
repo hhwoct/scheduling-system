@@ -24,3 +24,16 @@ database/backups/
 # ===== 日志 =====
 *.log
 logs/
+# 环境文件
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# VS
+.vs/
+
+# 备份文件
+*.bak
+*.backup
+database/backups/

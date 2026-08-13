@@ -60,11 +60,14 @@
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { getMySwaps, submitSwap, getSwapCandidates } from '../api/swap'
 import { fetchSchedules } from '../api/schedules'
 
+const route = useRoute()
+const employeeNo = computed(() => route.query.employeeNo || localStorage.getItem('shift_preview_employee_no') || '')
 const form = reactive({ planId: null, swapDate: '', targetEmployeeId: null, reason: '' })
 const mine = ref([])
 const plans = ref([])
@@ -95,10 +98,21 @@ function disabledDate(d) {
   return false
 }
 
+// P3-38: 分页加载全部已发布计划，避免超过100条不可访问
 async function loadPlans() {
   try {
-      const res = await fetchSchedules({ page: 1, pageSize: 100, status: 'PUBLISHED' })
-    plans.value = res.items || []
+    const pageSize = 100
+    let page = 1
+    let allPlans = []
+
+    while (true) {
+      const res = await fetchSchedules({ page, pageSize, status: 'PUBLISHED' })
+      const items = res.items || []
+      allPlans = allPlans.concat(items)
+      if (allPlans.length >= (res.total || 0) || items.length === 0) break
+      page++
+    }
+    plans.value = allPlans
   } catch (e) {
     ElMessage.error('加载排班计划失败：' + (e.message || '网络错误'))
   }
@@ -124,7 +138,7 @@ async function loadCandidates() {
 async function loadMine() {
   loading.value = true
   try {
-    mine.value = await getMySwaps()
+    mine.value = await getMySwaps(employeeNo.value || undefined)
   } finally {
     loading.value = false
   }

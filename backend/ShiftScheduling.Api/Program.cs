@@ -1,4 +1,7 @@
 using System.Net;
+using System.Threading;
+using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.RateLimiting;
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
@@ -27,6 +30,7 @@ builder.Services.AddScoped<ICurrentUser, CurrentUser>();
 builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
 builder.Services.AddSingleton<IPasswordService, BcryptPasswordService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddSingleton<IPasswordResetService, PasswordResetService>();
 builder.Services.AddScoped<IAuditLogService, AuditLogService>();
 builder.Services.AddScoped<IEmployeeService, EmployeeService>();
 builder.Services.AddScoped<IEmployeeSkillService, EmployeeSkillService>();
@@ -130,6 +134,27 @@ builder.Services
         };
     });
 
+builder.Services.AddRateLimiter(options =>
+{
+    // 登录端点限流：1 分钟最多 5 次尝试
+    options.AddFixedWindowLimiter("LoginLimiter", opt =>
+    {
+        opt.PermitLimit = 5;
+        opt.Window = TimeSpan.FromMinutes(1);
+        opt.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
+        opt.QueueLimit = 0;
+    });
+
+    // 密码重置限流：15 分钟最多 3 次尝试
+    options.AddFixedWindowLimiter("ResetLimiter", opt =>
+    {
+        opt.PermitLimit = 3;
+        opt.Window = TimeSpan.FromMinutes(15);
+        opt.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
+        opt.QueueLimit = 0;
+    });
+});
+
 builder.Services.AddAuthorization(options =>
 {
     // 管理端策略：仅系统管理员与门店经理可访问管理接口
@@ -140,7 +165,20 @@ builder.Services.AddOpenApi();
 
 var app = builder.Build();
 
+// P2-30: 应用启动时自动执行数据库迁移（失败不阻断启动）
+try
+{
+    using var migrateScope = app.Services.CreateScope();
+    var migrateDb = migrateScope.ServiceProvider.GetRequiredService<ShiftSchedulingDbContext>();
+    await migrateDb.Database.MigrateAsync();
+}
+catch (Exception ex)
+{
+    Console.WriteLine($"[迁移警告] 数据库迁移执行失败（应用将继续启动）：{ex.Message}");
+}
+
 app.UseMiddleware<ApiExceptionMiddleware>();
+app.UseRateLimiter();
 
 if (app.Environment.IsDevelopment())
 {
@@ -158,12 +196,13 @@ api.MapPost("/auth/login", async (LoginRequest request, IAuthService authService
 {
     var result = await authService.LoginAsync(request, cancellationToken);
     return ApiResponse.Ok(result, "登录成功");
-});
+}).RequireRateLimiting("LoginLimiter");
 
-// 忘记密码：验证用户名 + 手机号后重置密码
-api.MapPost("/auth/forgot-password", async (
-    ForgotPasswordRequest request,
+// 发送密码重置验证码（防枚举 + 限流）
+api.MapPost("/auth/send-reset-otp", async (
+    SendResetOtpRequest request,
     IAuthService authService,
+    HttpContext httpContext,
     CancellationToken cancellationToken) =>
 {
     if (request is null)
@@ -171,7 +210,25 @@ api.MapPost("/auth/forgot-password", async (
         throw new BusinessException("请求参数不能为空", "INVALID_REQUEST");
     }
 
-    await authService.ForgotPasswordAsync(request, cancellationToken);
+    var clientIp = httpContext.Connection.RemoteIpAddress?.ToString();
+    var otp = await authService.SendPasswordResetOtpAsync(request.Username ?? string.Empty, clientIp, cancellationToken);
+    return ApiResponse.Ok(new { DevOtp = otp }, "验证码已发送");
+}).RequireRateLimiting("ResetLimiter");
+
+// 忘记密码：验证用户名 + 手机号 + OTP 后重置密码
+api.MapPost("/auth/forgot-password", async (
+    ForgotPasswordRequest request,
+    IAuthService authService,
+    HttpContext httpContext,
+    CancellationToken cancellationToken) =>
+{
+    if (request is null)
+    {
+        throw new BusinessException("请求参数不能为空", "INVALID_REQUEST");
+    }
+
+    var clientIp = httpContext.Connection.RemoteIpAddress?.ToString();
+    await authService.ForgotPasswordAsync(request, clientIp, cancellationToken);
     return ApiResponse.Ok(true, "密码重置成功，请使用新密码登录");
 });
 
@@ -553,6 +610,7 @@ api.MapPost("/schedules/{planId:long}/publish", async (
     long planId,
     ICurrentUser currentUser,
     IScheduleService scheduleService,
+    bool force,
     CancellationToken cancellationToken) =>
 {
     var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
@@ -561,6 +619,7 @@ api.MapPost("/schedules/{planId:long}/publish", async (
         storeId,
         currentUser.UserId ?? 0,
         currentUser.Nickname ?? currentUser.Username ?? "匿名",
+        force,
         cancellationToken);
 
     // 生成排班发布通知
@@ -584,7 +643,7 @@ api.MapPost("/schedules/{planId:long}/publish", async (
             NotificationType = "SCHEDULE_PUBLISHED",
             Title = "排班已发布",
             Content = $"排班计划「{WebUtility.HtmlEncode(plan.PlanName)}」已发布，请查看您的班表",
-            CreatedAt = DateTime.Now
+            CreatedAt = DateTime.UtcNow
         }));
         await db.SaveChangesAsync(cancellationToken);
     }
@@ -594,7 +653,9 @@ api.MapPost("/schedules/{planId:long}/publish", async (
 
 // ============ 站内通知 ============
 // 获取通知列表（管理端按门店，员工端按员工 ID）
-api.MapGet("/notifications", async (HttpContext httpCtx) =>
+api.MapGet("/notifications", async (
+    HttpContext httpCtx,
+    string? employeeNo = null) =>
 {
     var db = httpCtx.RequestServices.GetRequiredService<ShiftSchedulingDbContext>();
     var currentUser = httpCtx.RequestServices.GetRequiredService<ICurrentUser>();
@@ -602,10 +663,14 @@ api.MapGet("/notifications", async (HttpContext httpCtx) =>
 
     IQueryable<NotificationEntity> query = db.Notifications.AsNoTracking().Where(x => x.StoreId == storeId);
 
-    if (currentUser.Role == "EMPLOYEE")
+    // 员工只看自己的；管理端可预览指定员工
+    var isEmployee = currentUser.Role == "EMPLOYEE";
+    var lookupNo = isEmployee ? currentUser.Username : (string.IsNullOrWhiteSpace(employeeNo) ? null : employeeNo.Trim());
+
+    if (lookupNo != null)
     {
         var emp = await db.Employees.AsNoTracking()
-            .FirstOrDefaultAsync(x => x.EmployeeNo == currentUser.Username && x.Status == 1);
+            .FirstOrDefaultAsync(x => x.EmployeeNo == lookupNo && x.Status == 1);
         if (emp != null)
             query = query.Where(x => x.ReceiverEmployeeId == emp.Id);
         else
@@ -617,7 +682,9 @@ api.MapGet("/notifications", async (HttpContext httpCtx) =>
     }
     else
     {
-        // 管理端显示门店下所有通知
+        // 管理端未指定员工：仅显示门店级通知（新请假/新换班等提醒），
+        // 不显示发给员工的个人通知（如「您的请假已批准」）
+        query = query.Where(x => x.ReceiverEmployeeId == null && x.ReceiverUserId == null);
     }
 
     var items = await query.OrderByDescending(x => x.CreatedAt)
@@ -630,7 +697,9 @@ api.MapGet("/notifications", async (HttpContext httpCtx) =>
 }).RequireAuthorization();
 
 // 获取未读数量
-api.MapGet("/notifications/unread-count", async (HttpContext httpCtx) =>
+api.MapGet("/notifications/unread-count", async (
+    HttpContext httpCtx,
+    string? employeeNo = null) =>
 {
     var db = httpCtx.RequestServices.GetRequiredService<ShiftSchedulingDbContext>();
     var currentUser = httpCtx.RequestServices.GetRequiredService<ICurrentUser>();
@@ -638,10 +707,13 @@ api.MapGet("/notifications/unread-count", async (HttpContext httpCtx) =>
 
     IQueryable<NotificationEntity> query = db.Notifications.AsNoTracking().Where(x => x.StoreId == storeId && x.IsRead == 0);
 
-    if (currentUser.Role == "EMPLOYEE")
+    var isEmployee = currentUser.Role == "EMPLOYEE";
+    var lookupNo = isEmployee ? currentUser.Username : (string.IsNullOrWhiteSpace(employeeNo) ? null : employeeNo.Trim());
+
+    if (lookupNo != null)
     {
         var emp = await db.Employees.AsNoTracking()
-            .FirstOrDefaultAsync(x => x.EmployeeNo == currentUser.Username && x.Status == 1);
+            .FirstOrDefaultAsync(x => x.EmployeeNo == lookupNo && x.Status == 1);
         if (emp != null)
             query = query.Where(x => x.ReceiverEmployeeId == emp.Id);
         else
@@ -653,7 +725,8 @@ api.MapGet("/notifications/unread-count", async (HttpContext httpCtx) =>
     }
     else
     {
-        // 管理端显示门店下所有通知
+        // 管理端未指定员工：仅统计门店级未读通知
+        query = query.Where(x => x.ReceiverEmployeeId == null && x.ReceiverUserId == null);
     }
 
     var count = await query.CountAsync();
@@ -685,7 +758,7 @@ api.MapPut("/notifications/{id:long}/read", async (
         ?? throw new NotFoundException("通知不存在");
 
     notification.IsRead = 1;
-    notification.ReadAt = DateTime.Now;
+    notification.ReadAt = DateTime.UtcNow;
     await db.SaveChangesAsync(ct);
     return ApiResponse.Ok(true, "已标记为已读");
 }).RequireAuthorization();
@@ -712,7 +785,7 @@ api.MapPut("/notifications/read-all", async (
         // 管理端显示门店下所有通知
     }
 
-    var now = DateTime.Now;
+    var now = DateTime.UtcNow;
     await query.ExecuteUpdateAsync(x => x.SetProperty(n => n.IsRead, 1).SetProperty(n => n.ReadAt, now), ct);
     return ApiResponse.Ok(true, "已全部标记为已读");
 }).RequireAuthorization();
@@ -782,9 +855,13 @@ api.MapGet("/employee/my-schedule", async (
     ICurrentUser currentUser,
     ShiftSchedulingDbContext dbContext,
     string? month = null,
+    string? employeeNo = null,
     CancellationToken cancellationToken = default) =>
 {
-    var username = currentUser.Username;
+    // 管理员/店长可通过 employeeNo 参数预览指定员工的班表
+    var username = currentUser.Role == "EMPLOYEE"
+        ? currentUser.Username
+        : (string.IsNullOrWhiteSpace(employeeNo) ? currentUser.Username : employeeNo.Trim());
     if (string.IsNullOrWhiteSpace(username))
     {
         throw new UnauthorizedBusinessException("无法识别当前员工");
@@ -793,7 +870,7 @@ api.MapGet("/employee/my-schedule", async (
     // 按工号关联员工（支持 EMPLOYEE 与 STORE_MANAGER 共用的店长账号）
     var employee = await dbContext.Employees
         .AsNoTracking()
-        .FirstOrDefaultAsync(x => x.EmployeeNo == username && x.Status == 1, cancellationToken)
+        .FirstOrDefaultAsync(x => x.EmployeeNo == username && x.StoreId == currentUser.StoreId && x.Status == 1, cancellationToken)
         ?? throw new NotFoundException("员工档案不存在");
 
     if (currentUser.Role != "EMPLOYEE" && currentUser.Role != "STORE_MANAGER" && currentUser.Role != "SYSTEM_ADMIN")
@@ -870,7 +947,7 @@ api.MapPost("/leave-requests", async (
     CancellationToken ct) =>
 {
     var username = currentUser.Username;
-    var emp = await db.Employees.AsNoTracking().FirstOrDefaultAsync(x => x.EmployeeNo == username && x.Status == 1, ct)
+    var emp = await db.Employees.AsNoTracking().FirstOrDefaultAsync(x => x.EmployeeNo == username && x.StoreId == currentUser.StoreId && x.Status == 1, ct)
         ?? throw new NotFoundException("员工档案不存在");
 
     if (currentUser.Role != "EMPLOYEE" && currentUser.Role != "STORE_MANAGER" && currentUser.Role != "SYSTEM_ADMIN")
@@ -920,8 +997,8 @@ api.MapPost("/leave-requests", async (
         EndDate = request.EndDate,
         Reason = request.Reason,
         Status = "PENDING",
-        CreatedAt = DateTime.Now,
-        UpdatedAt = DateTime.Now
+        CreatedAt = DateTime.UtcNow,
+        UpdatedAt = DateTime.UtcNow
     };
     db.LeaveRequests.Add(leave);
     await db.SaveChangesAsync(ct);
@@ -938,21 +1015,24 @@ api.MapPost("/leave-requests", async (
         NotificationType = "NEW_LEAVE",
         Title = "新的请假申请",
         Content = $"{WebUtility.HtmlEncode(emp.Name)}({WebUtility.HtmlEncode(emp.EmployeeNo)}) 提交了 {request.StartDate:yyyy-MM-dd} 至 {request.EndDate:yyyy-MM-dd} 的请假申请",
-        CreatedAt = DateTime.Now
+        CreatedAt = DateTime.UtcNow
     });
     await db.SaveChangesAsync(ct);
 
     return ApiResponse.Ok(new { leave.Id, leave.Status }, "请假申请已提交");
 }).RequireAuthorization();
 
-// 员工：我的请假列表（支持 EMPLOYEE + STORE_MANAGER + SYSTEM_ADMIN）
+// 员工：我的请假列表（支持 EMPLOYEE + STORE_MANAGER + SYSTEM_ADMIN，管理员可用 employeeNo 预览）
 api.MapGet("/leave-requests/mine", async (
     ICurrentUser currentUser,
     ShiftSchedulingDbContext db,
-    CancellationToken ct) =>
+    string? employeeNo = null,
+    CancellationToken ct = default) =>
 {
-    var username = currentUser.Username;
-    var emp = await db.Employees.AsNoTracking().FirstOrDefaultAsync(x => x.EmployeeNo == username && x.Status == 1, ct)
+    var username = currentUser.Role == "EMPLOYEE"
+        ? currentUser.Username
+        : (string.IsNullOrWhiteSpace(employeeNo) ? currentUser.Username : employeeNo.Trim());
+    var emp = await db.Employees.AsNoTracking().FirstOrDefaultAsync(x => x.EmployeeNo == username && x.StoreId == currentUser.StoreId && x.Status == 1, ct)
         ?? throw new NotFoundException("员工档案不存在");
 
     if (currentUser.Role != "EMPLOYEE" && currentUser.Role != "STORE_MANAGER" && currentUser.Role != "SYSTEM_ADMIN")
@@ -1026,9 +1106,9 @@ api.MapPut("/leave-requests/{id:long}/review", async (
         leave.Status = "REJECTED";
     }
     leave.ReviewUserId = currentUser.UserId;
-    leave.ReviewTime = DateTime.Now;
+    leave.ReviewTime = DateTime.UtcNow;
     leave.ReviewRemark = review.Remark;
-    leave.UpdatedAt = DateTime.Now;
+    leave.UpdatedAt = DateTime.UtcNow;
 
     await db.SaveChangesAsync(ct);
 
@@ -1046,7 +1126,7 @@ api.MapPut("/leave-requests/{id:long}/review", async (
             NotificationType = leave.Status == "APPROVED" ? "LEAVE_APPROVED" : "LEAVE_REJECTED",
             Title = leave.Status == "APPROVED" ? "请假已批准" : "请假已驳回",
             Content = $"您的{leave.StartDate:yyyy-MM-dd}至{leave.EndDate:yyyy-MM-dd}的请假申请已被{(leave.Status == "APPROVED" ? "批准" : "驳回")}",
-            CreatedAt = DateTime.Now
+            CreatedAt = DateTime.UtcNow
         };
         db.Notifications.Add(leaveNotif);
         await db.SaveChangesAsync(ct);
@@ -1065,7 +1145,7 @@ api.MapPost("/shift-swaps", async (
     CancellationToken ct) =>
 {
     var username = currentUser.Username;
-    var requesterEmp = await db.Employees.AsNoTracking().FirstOrDefaultAsync(x => x.EmployeeNo == username && x.Status == 1, ct)
+    var requesterEmp = await db.Employees.AsNoTracking().FirstOrDefaultAsync(x => x.EmployeeNo == username && x.StoreId == currentUser.StoreId && x.Status == 1, ct)
         ?? throw new NotFoundException("员工档案不存在");
 
     if (currentUser.Role != "EMPLOYEE" && currentUser.Role != "STORE_MANAGER" && currentUser.Role != "SYSTEM_ADMIN")
@@ -1121,8 +1201,8 @@ api.MapPost("/shift-swaps", async (
         SwapDate = request.SwapDate,
         Reason = request.Reason,
         Status = "PENDING",
-        CreatedAt = DateTime.Now,
-        UpdatedAt = DateTime.Now
+        CreatedAt = DateTime.UtcNow,
+        UpdatedAt = DateTime.UtcNow
     };
     db.ShiftSwaps.Add(swap);
     await db.SaveChangesAsync(ct);
@@ -1139,21 +1219,24 @@ api.MapPost("/shift-swaps", async (
         NotificationType = "NEW_SWAP",
         Title = "新的换班申请",
         Content = $"{WebUtility.HtmlEncode(requesterEmp.Name)}({WebUtility.HtmlEncode(requesterEmp.EmployeeNo)}) 申请与 {WebUtility.HtmlEncode(targetEmp.Name)}({WebUtility.HtmlEncode(targetEmp.EmployeeNo)}) 换班 {request.SwapDate:yyyy-MM-dd}",
-        CreatedAt = DateTime.Now
+        CreatedAt = DateTime.UtcNow
     });
     await db.SaveChangesAsync(ct);
 
     return ApiResponse.Ok(new { swap.Id, swap.Status }, "换班申请已提交");
 }).RequireAuthorization();
 
-// 员工：我的换班列表（支持 EMPLOYEE + STORE_MANAGER + SYSTEM_ADMIN）
+// 员工：我的换班列表（支持 EMPLOYEE + STORE_MANAGER + SYSTEM_ADMIN，管理员可用 employeeNo 预览）
 api.MapGet("/shift-swaps/mine", async (
     ICurrentUser currentUser,
     ShiftSchedulingDbContext db,
-    CancellationToken ct) =>
+    string? employeeNo = null,
+    CancellationToken ct = default) =>
 {
-    var username = currentUser.Username;
-    var emp = await db.Employees.AsNoTracking().FirstOrDefaultAsync(x => x.EmployeeNo == username && x.Status == 1, ct)
+    var username = currentUser.Role == "EMPLOYEE"
+        ? currentUser.Username
+        : (string.IsNullOrWhiteSpace(employeeNo) ? currentUser.Username : employeeNo.Trim());
+    var emp = await db.Employees.AsNoTracking().FirstOrDefaultAsync(x => x.EmployeeNo == username && x.StoreId == currentUser.StoreId && x.Status == 1, ct)
         ?? throw new NotFoundException("员工档案不存在");
 
     if (currentUser.Role != "EMPLOYEE" && currentUser.Role != "STORE_MANAGER" && currentUser.Role != "SYSTEM_ADMIN")
@@ -1193,7 +1276,7 @@ api.MapPost("/shift-swaps/candidates", async (HttpContext httpCtx) =>
         throw new BusinessException("日期格式无效", "INVALID_PARAM");
 
     var username = currentUser.Username;
-    var emp = await db.Employees.AsNoTracking().FirstOrDefaultAsync(x => x.EmployeeNo == username && x.Status == 1)
+    var emp = await db.Employees.AsNoTracking().FirstOrDefaultAsync(x => x.EmployeeNo == username && x.StoreId == currentUser.StoreId && x.Status == 1)
         ?? throw new NotFoundException("员工档案不存在");
 
     // 校验排班计划属于当前员工门店且已发布（防止跨门店信息泄露）
@@ -1277,9 +1360,9 @@ api.MapPut("/shift-swaps/{id:long}/review", async (
         throw new BusinessException("该申请已审批", "ALREADY_REVIEWED");
 
     swap.ReviewUserId = currentUser.UserId;
-    swap.ReviewTime = DateTime.Now;
+    swap.ReviewTime = DateTime.UtcNow;
     swap.ReviewRemark = review.Remark;
-    swap.UpdatedAt = DateTime.Now;
+    swap.UpdatedAt = DateTime.UtcNow;
 
     if (review.Approved)
     {
@@ -1355,8 +1438,8 @@ api.MapPut("/shift-swaps/{id:long}/review", async (
     var swapNotifLabel = swapNotifStatus == "APPROVED" ? "批准" : "驳回";
     var swapNotifs = new[]
     {
-        new NotificationEntity { StoreId = storeId, ReceiverEmployeeId = swap.RequesterEmployeeId, NotificationType = swapNotifStatus == "APPROVED" ? "SWAP_APPROVED" : "SWAP_REJECTED", Title = $"换班已{swapNotifLabel}", Content = $"您与同事的 {swap.SwapDate:yyyy-MM-dd} 换班申请已被{swapNotifLabel}", CreatedAt = DateTime.Now },
-        new NotificationEntity { StoreId = storeId, ReceiverEmployeeId = swap.TargetEmployeeId, NotificationType = swapNotifStatus == "APPROVED" ? "SWAP_APPROVED" : "SWAP_REJECTED", Title = $"换班已{swapNotifLabel}", Content = $"您与同事的 {swap.SwapDate:yyyy-MM-dd} 换班申请已被{swapNotifLabel}", CreatedAt = DateTime.Now }
+        new NotificationEntity { StoreId = storeId, ReceiverEmployeeId = swap.RequesterEmployeeId, NotificationType = swapNotifStatus == "APPROVED" ? "SWAP_APPROVED" : "SWAP_REJECTED", Title = $"换班已{swapNotifLabel}", Content = $"您与同事的 {swap.SwapDate:yyyy-MM-dd} 换班申请已被{swapNotifLabel}", CreatedAt = DateTime.UtcNow },
+        new NotificationEntity { StoreId = storeId, ReceiverEmployeeId = swap.TargetEmployeeId, NotificationType = swapNotifStatus == "APPROVED" ? "SWAP_APPROVED" : "SWAP_REJECTED", Title = $"换班已{swapNotifLabel}", Content = $"您与同事的 {swap.SwapDate:yyyy-MM-dd} 换班申请已被{swapNotifLabel}", CreatedAt = DateTime.UtcNow }
     };
     db.Notifications.AddRange(swapNotifs);
     await db.SaveChangesAsync(ct);
@@ -1382,7 +1465,11 @@ api.MapDelete("/schedules/{planId:long}", async (
 
     await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
 
-    // 删除关联的明细、汇总、问题
+    // 删除关联的明细、汇总、问题、换班记录（换班有外键引用排班计划）
+    await dbContext.ShiftSwaps
+        .Where(x => x.PlanId == planId)
+        .ExecuteDeleteAsync(cancellationToken);
+
     await dbContext.ScheduleResults
         .Where(x => x.PlanId == planId)
         .ExecuteDeleteAsync(cancellationToken);
@@ -1421,9 +1508,9 @@ api.MapGet("/schedules/{planId:long}/issues", async (
         throw new NotFoundException("排班计划不存在");
     }
 
-    var workstationNames = await dbContext.Workstations
+    var workstationInfo = await dbContext.Workstations
         .AsNoTracking()
-        .ToDictionaryAsync(x => x.Id, x => x.Name, cancellationToken);
+        .ToDictionaryAsync(x => x.Id, x => new { x.Name, x.IsLowSkill }, cancellationToken);
 
     var issues = await dbContext.ScheduleIssues
         .AsNoTracking()
@@ -1452,11 +1539,69 @@ api.MapGet("/schedules/{planId:long}/issues", async (
         x.TimeSlot,
         x.EmployeeId,
         x.WorkstationId,
-        WorkstationName = x.WorkstationId is null ? null : workstationNames.GetValueOrDefault(x.WorkstationId.Value),
+        WorkstationName = x.WorkstationId is null ? null : workstationInfo.GetValueOrDefault(x.WorkstationId.Value)?.Name,
+        IsLowSkill = x.WorkstationId is not null && workstationInfo.TryGetValue(x.WorkstationId.Value, out var ws2) && ws2.IsLowSkill == 1,
         x.Description
     }).ToList();
 
+    // 返回纯数组（兼容 week/day/loadIssues），合理度由独立端点 /rationality 提供
     return ApiResponse.Ok(items, "获取排班问题成功");
+}).RequireAuthorization("AdminOnly");
+
+// 每日排班合理度 = 当日实际排班人次 ÷ 当日需求人次 × 100
+api.MapGet("/schedules/{planId:long}/rationality", async (
+    long planId,
+    ICurrentUser currentUser,
+    ShiftSchedulingDbContext dbContext,
+    CancellationToken cancellationToken) =>
+{
+    var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
+
+    var plan = await dbContext.SchedulePlans.AsNoTracking()
+        .FirstOrDefaultAsync(x => x.Id == planId && x.StoreId == storeId, cancellationToken)
+        ?? throw new NotFoundException("排班计划不存在");
+
+    var dates = Enumerable.Range(0, plan.EndDate.DayNumber - plan.StartDate.DayNumber + 1)
+        .Select(offset => plan.StartDate.AddDays(offset))
+        .ToList();
+
+    var dayTypeByDate = await dbContext.DateParameters.AsNoTracking()
+        .Where(x => x.StoreId == storeId && x.WorkDate >= plan.StartDate && x.WorkDate <= plan.EndDate)
+        .ToDictionaryAsync(x => x.WorkDate, x => x.DayType, cancellationToken);
+
+    var requirements = await dbContext.StaffingRequirements.AsNoTracking()
+        .Where(x => x.StoreId == storeId)
+        .GroupBy(x => new { x.DayType, x.WorkstationId, x.TimeSlot })
+        .Select(g => new { g.Key.DayType, g.Key.WorkstationId, g.Key.TimeSlot, Count = g.Max(x => x.RequiredCount) })
+        .ToListAsync(cancellationToken);
+
+    var coverages = await dbContext.ScheduleResults.AsNoTracking()
+        .Where(x => x.PlanId == planId)
+        .GroupBy(x => new { x.WorkDate, x.WorkstationId, x.TimeSlot })
+        .Select(g => new { g.Key.WorkDate, g.Key.WorkstationId, g.Key.TimeSlot, Count = g.Select(x => x.EmployeeId).Distinct().Count() })
+        .ToListAsync(cancellationToken);
+
+    var rationality = new List<object>();
+    foreach (var date in dates)
+    {
+        var dayType = dayTypeByDate.GetValueOrDefault(date) ?? "WORKDAY";
+        var dailyReqs = requirements
+            .Where(r => r.DayType == dayType)
+            .ToDictionary(r => (r.WorkstationId, r.TimeSlot), r => r.Count);
+        var totalDemand = dailyReqs.Values.Sum();
+        var covered = 0;
+        foreach (var c in coverages.Where(c => c.WorkDate == date && c.WorkstationId.HasValue))
+        {
+            if (dailyReqs.TryGetValue((c.WorkstationId!.Value, c.TimeSlot), out var req))
+            {
+                covered += Math.Min(c.Count, req);
+            }
+        }
+        var pct = totalDemand > 0 ? (int)Math.Round(covered * 100.0 / totalDemand) : 100;
+        rationality.Add(new { Date = date, Pct = Math.Min(100, Math.Max(0, pct)) });
+    }
+
+    return ApiResponse.Ok(rationality, "获取每日排班合理度成功");
 }).RequireAuthorization("AdminOnly");
 
 app.Run();

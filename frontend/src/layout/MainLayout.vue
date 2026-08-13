@@ -30,7 +30,7 @@
           <el-menu-item index="/swap-review">换班审批</el-menu-item>
           <el-menu-item index="/notifications">通知消息</el-menu-item>
         </el-sub-menu>
-        <el-menu-item index="/employee/schedule">
+        <el-menu-item index="/employee/schedule" @click="goEmployeePreview">
           <el-icon><Calendar /></el-icon>
           <span>员工端（我的班表）</span>
         </el-menu-item>
@@ -57,7 +57,8 @@
         </div>
       </el-header>
       <el-main class="main-content">
-        <router-view />
+        <!-- 只对页面内容加 key，避免整个布局（含 sidebar）重新挂载 -->
+        <router-view :key="$route.fullPath" />
       </el-main>
     </el-container>
   </el-container>
@@ -67,6 +68,7 @@
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ArrowDown, Bell, Calendar, DataBoard } from '@element-plus/icons-vue'
+import { ElMessageBox } from 'element-plus'
 import { useAuthStore } from '../stores/auth'
 import { getUnreadCount } from '../api/notifications'
 
@@ -84,10 +86,22 @@ onMounted(async () => {
   } catch {}
 })
 
-function handleCommand(command) {
+// 管理员进入员工端时默认选择第一个员工（E001）预览
+function goEmployeePreview() {
+  router.push({ path: '/employee/schedule', query: { employeeNo: 'E001' } })
+}
+
+async function handleCommand(command) {
   if (command === 'logout') {
-    authStore.logout()
-    router.push('/login')
+    try {
+      await ElMessageBox.confirm('确定要退出登录吗？', '提示', {
+        confirmButtonText: '退出',
+        cancelButtonText: '取消',
+        type: 'warning'
+      })
+      authStore.logout()
+      router.push('/login')
+    } catch {}
   }
 }
 </script>

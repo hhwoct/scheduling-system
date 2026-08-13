@@ -40,7 +40,12 @@
     </el-card>
 
     <el-card style="margin-top: 16px">
-      <template #header>我的请假记录</template>
+      <template #header>
+        <div style="display: flex; align-items: center; justify-content: space-between">
+          <span>我的请假记录</span>
+          <el-alert v-if="errorMsg" :title="errorMsg" type="warning" :closable="false" style="width: 260px" />
+        </div>
+      </template>
       <el-table :data="mine" v-loading="loading" border stripe size="small">
         <el-table-column prop="id" label="ID" width="60" />
         <el-table-column label="类型" width="90">
@@ -64,14 +69,19 @@
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { getMyLeaves, submitLeave } from '../api/leave'
 
+const route = useRoute()
+const employeeNo = computed(() => route.query.employeeNo || localStorage.getItem('shift_preview_employee_no') || '')
 const form = reactive({ leaveType: 'PERSONAL', startDate: '', endDate: '', reason: '' })
 const mine = ref([])
 const loading = ref(false)
 const submitting = ref(false)
+const errorMsg = ref('')
+const isPreview = computed(() => !!employeeNo.value)
 
 // 请假日期范围：不能早于今天，不能晚于 30 天后
 const TODAY0 = new Date()
@@ -111,8 +121,13 @@ function statusType(s) {
 
 async function loadMine() {
   loading.value = true
+  errorMsg.value = ''
   try {
-    mine.value = await getMyLeaves()
+    mine.value = await getMyLeaves(employeeNo.value || undefined)
+  } catch (e) {
+    errorMsg.value = '加载请假记录失败'
+    ElMessage.error('加载请假记录失败，请稍后重试')
+    console.error('loadMine error:', e)
   } finally {
     loading.value = false
   }

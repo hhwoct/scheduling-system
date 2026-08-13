@@ -41,13 +41,36 @@ public sealed class ScheduleService : IScheduleService
             throw new BusinessException("排班周期不能超过 31 天", "INVALID_DATE_RANGE");
         }
 
-        // 幂等保护：同门店同一周期不允许重复生成排班计划
+        // 幂等保护：同门店同一周期已发布的排班不允许重复生成；
+        // 若存在 DRAFT 草稿计划，则自动级联删除旧计划后重新生成（使算法更新可重新应用）。
         var existingPlan = await _dbContext.SchedulePlans
             .AsNoTracking()
-            .AnyAsync(x => x.StoreId == storeId && x.StartDate == request.StartDate && x.EndDate == request.EndDate, cancellationToken);
-        if (existingPlan)
+            .FirstOrDefaultAsync(x => x.StoreId == storeId && x.StartDate == request.StartDate && x.EndDate == request.EndDate, cancellationToken);
+        if (existingPlan is not null)
         {
-            throw new BusinessException("该排班周期已存在排班计划，请勿重复生成", "DUPLICATE_SCHEDULE_PLAN");
+            if (existingPlan.Status == "PUBLISHED")
+            {
+                throw new BusinessException("该排班周期已存在已发布的排班计划，请勿重复生成", "DUPLICATE_SCHEDULE_PLAN");
+            }
+
+            // 级联删除草稿旧计划及其关联数据
+            await using var cleanupTransaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
+            await _dbContext.ShiftSwaps
+                .Where(x => x.PlanId == existingPlan.Id)
+                .ExecuteDeleteAsync(cancellationToken);
+            await _dbContext.ScheduleResults
+                .Where(x => x.PlanId == existingPlan.Id)
+                .ExecuteDeleteAsync(cancellationToken);
+            await _dbContext.ScheduleSummaries
+                .Where(x => x.PlanId == existingPlan.Id)
+                .ExecuteDeleteAsync(cancellationToken);
+            await _dbContext.ScheduleIssues
+                .Where(x => x.PlanId == existingPlan.Id)
+                .ExecuteDeleteAsync(cancellationToken);
+            _dbContext.SchedulePlans.Remove(await _dbContext.SchedulePlans
+                .FirstAsync(x => x.Id == existingPlan.Id, cancellationToken));
+            await _dbContext.SaveChangesAsync(cancellationToken);
+            await cleanupTransaction.CommitAsync(cancellationToken);
         }
 
         var output = await _schedulingEngine.GenerateAsync(storeId, request.StartDate, request.EndDate, cancellationToken);
@@ -68,8 +91,8 @@ public sealed class ScheduleService : IScheduleService
             EndDate = request.EndDate,
             Status = "DRAFT",
             CreatedBy = operatorUserId,
-            CreatedAt = DateTime.Now,
-            UpdatedAt = DateTime.Now
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
         };
 
         _dbContext.SchedulePlans.Add(plan);
@@ -89,8 +112,8 @@ public sealed class ScheduleService : IScheduleService
                 SkillScore = assignment.SkillScore,
                 Status = "DRAFT",
                 Version = 1,
-                CreatedAt = DateTime.Now,
-                UpdatedAt = DateTime.Now
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
             });
         }
 
@@ -108,8 +131,8 @@ public sealed class ScheduleService : IScheduleService
                 EndTime = summary.EndTime,
                 WorkHours = summary.WorkHours,
                 CoveredWorkstations = summary.CoveredWorkstations,
-                CreatedAt = DateTime.Now,
-                UpdatedAt = DateTime.Now
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
             });
         }
 
@@ -127,13 +150,15 @@ public sealed class ScheduleService : IScheduleService
                 WorkstationId = issue.WorkstationId,
                 Description = issue.Description,
                 Status = "OPEN",
-                CreatedAt = DateTime.Now
+                CreatedAt = DateTime.UtcNow
             });
         }
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 
-        await _auditLogService.WriteAsync(
+        // P1-7 修复：审计日志与业务数据在同一事务内原子提交
+        _auditLogService.AddAuditEntity(
+            _dbContext,
             storeId,
             operatorUserId,
             operatorName,
@@ -150,7 +175,9 @@ public sealed class ScheduleService : IScheduleService
                 IssueCount = output.Issues.Count
             }),
             "一键生成排班",
-            cancellationToken);
+            DateTime.UtcNow);
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
 
         await transaction.CommitAsync(cancellationToken);
 
@@ -468,12 +495,12 @@ public sealed class ScheduleService : IScheduleService
                         summary.StartTime = newShift.StartTime;
                         summary.EndTime = newShift.EndTime;
                         summary.WorkHours = SchedulingTimeHelper.GetShiftHours(newShift.StartTime, newShift.EndTime, newShift.IsCrossDay);
-                        summary.UpdatedAt = DateTime.Now;
+                        summary.UpdatedAt = DateTime.UtcNow;
                     }
                 }
             }
 
-            result.UpdatedAt = DateTime.Now;
+            result.UpdatedAt = DateTime.UtcNow;
             result.Version++;
         }
 
@@ -497,6 +524,7 @@ public sealed class ScheduleService : IScheduleService
         long storeId,
         long operatorUserId,
         string operatorName,
+        bool force,
         CancellationToken cancellationToken)
     {
         var plan = await _dbContext.SchedulePlans
@@ -511,16 +539,17 @@ public sealed class ScheduleService : IScheduleService
         var errors = await _dbContext.ScheduleIssues
             .AnyAsync(x => x.PlanId == planId && x.Severity == "ERROR", cancellationToken);
 
-        if (errors)
+        if (errors && !force)
         {
+            // 前端先检查并弹"确认继续发布"；force=true 表示用户已确认
             throw new BusinessException("排班存在严重违规（ERROR），请先处理后再发布", "HAS_ERROR_ISSUES");
         }
 
         await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
 
         plan.Status = "PUBLISHED";
-        plan.PublishedAt = DateTime.Now;
-        plan.UpdatedAt = DateTime.Now;
+        plan.PublishedAt = DateTime.UtcNow;
+        plan.UpdatedAt = DateTime.UtcNow;
 
         await _dbContext.ScheduleResults
             .Where(x => x.PlanId == planId)
@@ -536,11 +565,13 @@ public sealed class ScheduleService : IScheduleService
             Title = $"排班已发布：{plan.PlanName}",
             Content = $"排班计划 {plan.PlanName}（{plan.StartDate:yyyy-MM-dd} 至 {plan.EndDate:yyyy-MM-dd}）已正式发布。",
             IsRead = 0,
-            CreatedAt = DateTime.Now
+            CreatedAt = DateTime.UtcNow
         };
         _dbContext.Notifications.Add(notify);
 
-        await _auditLogService.WriteAsync(
+        // P1-7 修复：审计日志与业务数据在同一事务内原子提交
+        _auditLogService.AddAuditEntity(
+            _dbContext,
             storeId,
             operatorUserId,
             operatorName,
@@ -550,7 +581,9 @@ public sealed class ScheduleService : IScheduleService
             null,
             $"{plan.PlanName} 已发布",
             "发布排班",
-            cancellationToken);
+            DateTime.UtcNow);
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
 
         await transaction.CommitAsync(cancellationToken);
     }
