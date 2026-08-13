@@ -46,6 +46,17 @@
 
 ## 快速启动
 
+### 0. 测试环境准备（clone 后直接跑）
+
+仓库已内置**开发环境配置**（appsettings.Development.json），克隆后无需再配置密钥即可运行。
+
+前置条件（本机需已安装）：
+- **MySQL 8.0**：默认连接 localhost:3306，账号 root / 密码 root123
+- **.NET 10.0 SDK**
+- **Node.js 18+**
+
+> 若 MySQL 密码不同，请修改 backend/ShiftScheduling.Api/appsettings.Development.json 中的 ConnectionStrings:ShiftMvp。
+
 ### 1. 初始化数据库
 
 ```bash
