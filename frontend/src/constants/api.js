@@ -48,6 +48,9 @@ export const API_ROUTES = {
     REVIEW: '/shift-swaps/review',
     REVIEW_DETAIL: (id) => `/shift-swaps/${encodeURIComponent(id)}/review`
   },
+  EMPLOYEE: {
+    SWAP_PLANS: '/employee/swap-plans'
+  },
   NOTIFICATIONS: {
     BASE: '/notifications',
     UNREAD_COUNT: '/notifications/unread-count',

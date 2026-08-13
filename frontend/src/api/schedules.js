@@ -29,6 +29,10 @@ export function adjustSchedule(planId, data) {
   return request.put(API_ROUTES.SCHEDULES.ADJUST(planId), data).then(res => res.data)
 }
 
+export function getSwapPlans() {
+  return request.get('/employee/swap-plans').then(res => res.data)
+}
+
 export function getScheduleRationality(planId) {
   return request.get(API_ROUTES.SCHEDULES.RATIONALITY(planId)).then(res => res.data)
 }

@@ -937,6 +937,23 @@ api.MapGet("/employee/my-schedule", async (
     return ApiResponse.Ok(new { Employee = new { employee.Id, employee.EmployeeNo, employee.Name, employee.Department }, Plans = result }, "获取我的班表成功");
 }).RequireAuthorization();
 
+// 员工：获取可换班的已发布排班计划（仅登录即可，不限制管理员）
+api.MapGet("/employee/swap-plans", async (
+    ICurrentUser currentUser,
+    ShiftSchedulingDbContext db,
+    CancellationToken ct) =>
+{
+    var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
+
+    var plans = await db.SchedulePlans.AsNoTracking()
+        .Where(x => x.StoreId == storeId && x.Status == "PUBLISHED")
+        .OrderByDescending(x => x.StartDate)
+        .Select(x => new { x.Id, x.PlanName, x.StartDate, x.EndDate, x.Status })
+        .ToListAsync(ct);
+
+    return ApiResponse.Ok(plans, "获取可换班排班计划成功");
+}).RequireAuthorization();
+
 // ============ 请假申请 ============
 // 员工提交请假（支持 EMPLOYEE + STORE_MANAGER + SYSTEM_ADMIN，通过工号关联员工档案）
 api.MapPost("/leave-requests", async (
