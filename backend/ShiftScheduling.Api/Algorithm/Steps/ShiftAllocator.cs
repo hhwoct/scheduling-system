@@ -82,7 +82,8 @@ public sealed class ShiftAllocator
                     .Where(e => !assignedToday.Contains(e.Id))
                     .Where(e => weeklyHours.GetValueOrDefault(e.Id) < input.MaxWeeklyHours)
                     .Where(e => HasSkillForShift(e.Id, shift, skillsByEmployee))
-                    .OrderByDescending(e => SkillCoverage(e.Id, shift, skillsByEmployee) * 100 + MaxSkillScore(e.Id, shift, skillsByEmployee))
+                    .OrderBy(e => e.IsParttime)  // 全职优先，兼职靠后
+                    .ThenByDescending(e => SkillCoverage(e.Id, shift, skillsByEmployee) * 100 + MaxSkillScore(e.Id, shift, skillsByEmployee))
                     .ThenBy(e => weeklyHours.GetValueOrDefault(e.Id))
                     .ToList();
 
@@ -103,7 +104,11 @@ public sealed class ShiftAllocator
             // 剩余员工分配到需求缺口最大的班次。
             // 修复：仅当当天仍有需求缺口时才补充人员；需求已满足后，
             // 多余员工（如兼职）当天不排班（空闲），避免超配排班。
-            var unassigned = workingEmployees.Where(e => !assignedToday.Contains(e.Id)).ToList();
+            var unassigned = workingEmployees
+                .Where(e => !assignedToday.Contains(e.Id))
+                .OrderBy(e => e.IsParttime)  // 全职优先，兼职靠后
+                .ThenBy(e => weeklyHours.GetValueOrDefault(e.Id))
+                .ToList();
             var outstandingDemand = remaining.Values.Sum();
             foreach (var employee in unassigned)
             {
