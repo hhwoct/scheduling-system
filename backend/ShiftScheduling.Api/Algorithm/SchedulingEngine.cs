@@ -225,6 +225,9 @@ public sealed class SchedulingEngine
                 if (!shiftMap.TryGetValue((employee.Id, date), out var shift) ||
                     !shiftById.TryGetValue(shift.ShiftTemplateId, out var template))
                 {
+                    // 未安排班次但也不是"正式休息日"的空闲日：补记为休息，
+                    // 避免视图出现既无班次也无休息标记的空白格（语义 = 休息）。
+                    summaries.Add(new DaySummaryOutput(employee.Id, date, 1, null, null, null, 0m, null));
                     continue;
                 }
 
