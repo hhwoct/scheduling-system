@@ -152,14 +152,14 @@
         <el-row :gutter="16" style="margin-bottom: 16px">
           <el-col :span="24">
             <el-card header="排班合理度趋势">
-              <div v-if="rationalityData.length" class="area-chart-wrap" style="padding: 2px 6px 6px">
-                <svg :viewBox="`0 0 ${rationalityData.length * 80 + 40} 500`" width="100%" height="500" preserveAspectRatio="xMidYMid meet">
+              <div v-if="rationalityData.length" class="area-chart-wrap" style="padding: 0 2px 2px">
+                <svg :viewBox="`0 0 ${rationalityData.length * 80 + 40} 420`" width="100%" height="420" preserveAspectRatio="xMidYMid meet">
                   <!-- Y轴网格线 -->
                   <line v-for="tick in yTicks" :key="'grid'+tick" :x1="40" :y1="Y(tick)" :x2="rationalityData.length * 80 + 30" :y2="Y(tick)" stroke="#ebeef5" stroke-width="1" />
                   <!-- Y轴标签 -->
                   <text v-for="tick in yTicks" :key="'ylbl'+tick" x="36" :y="Y(tick) + 4" text-anchor="end" font-size="13" font-weight="bold" fill="#606266">{{ tick }}%</text>
                   <!-- X轴标签 -->
-                  <text v-for="(d, i) in rationalityData" :key="'xlbl'+i" :x="40 + i * 80 + 25" y="488" text-anchor="middle" font-size="13" font-weight="bold" fill="#303133">{{ d.date.substring(5) }}</text>
+                  <text v-for="(d, i) in rationalityData" :key="'xlbl'+i" :x="40 + i * 80 + 25" y="412" text-anchor="middle" font-size="13" font-weight="bold" fill="#303133">{{ d.date.substring(5) }}</text>
                   <!-- 填色区域 -->
                   <path :d="areaPath" fill="rgba(64,158,255,0.15)" />
                   <!-- 曲线 -->
@@ -487,7 +487,7 @@ const rationalityData = computed(() => {
   return []
 })
 const yTicks = [0, 25, 50, 75, 100]
-function Y(pct) { return 470 - (pct / 100) * 440 }
+function Y(pct) { return 400 - (pct / 100) * 390 }
 const areaPath = computed(() => {
   const pts = rationalityData.value
   if (pts.length === 0) return ''
@@ -501,7 +501,7 @@ const areaPath = computed(() => {
     const cx2 = x1 - 25
     d += `C ${cx1} ${y0} ${cx2} ${y1} ${x1} ${y1} `
   }
-  d += `L ${40 + pts.length * 80 + 15} 470 L 65 470 Z`
+  d += `L ${40 + pts.length * 80 + 15} 400 L 65 400 Z`
   return d
 })
 const linePath = computed(() => {
