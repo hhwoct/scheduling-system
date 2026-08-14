@@ -309,7 +309,7 @@ public sealed class ScheduleService : IScheduleService
         var employees = await _dbContext.Employees
             .AsNoTracking()
             .Where(x => x.StoreId == storeId)
-            .Select(x => new { x.Id, x.EmployeeNo, x.Name, x.Department })
+            .Select(x => new { x.Id, x.EmployeeNo, x.Name, x.Department, x.IsParttime })
             .ToListAsync(cancellationToken);
 
         return summaries
@@ -328,7 +328,7 @@ public sealed class ScheduleService : IScheduleService
                         s.CoveredWorkstations))
                     .ToList();
 
-                return new WeekViewItem(employee.Id, employee.EmployeeNo, employee.Name, employee.Department, days);
+                return new WeekViewItem(employee.Id, employee.EmployeeNo, employee.Name, employee.Department, employee.IsParttime, days);
             })
             .ToList();
     }

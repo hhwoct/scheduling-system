@@ -40,7 +40,7 @@
             </div>
           </div>
           <div v-for="row in weekRows" :key="row.employeeId" class="gantt-row">
-            <div class="gantt-emp-col"><div class="emp-name">{{ row.employeeName }}</div><div class="emp-sub">{{ row.department }}</div></div>
+            <div class="gantt-emp-col"><div class="emp-name">{{ row.employeeName }}<el-tag v-if="row.isParttime === 1" type="success" size="small" style="margin-left:4px">兼</el-tag></div><div class="emp-sub">{{ row.department }}</div></div>
             <div v-for="d in weekDays" :key="d.date" class="gantt-day-col">
               <template v-if="getWeekDay(row, d.date)">
                 <div v-if="getWeekDay(row, d.date).isRestDay === 1" class="day-block rest-block">休</div>

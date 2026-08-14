@@ -45,6 +45,7 @@ public sealed record WeekViewItem(
     string EmployeeNo,
     string EmployeeName,
     string Department,
+    int IsParttime,
     IReadOnlyList<WeekDayShift> Days);
 
 public sealed record WeekDayShift(
