@@ -1,7 +1,7 @@
 <template>
   <div>
     <el-card style="margin-bottom: 16px">
-      <template #header>班次甘特图（13:00 ~ 次日 04:00）</template>
+      <template #header>班次甘特图（13:00 ~ 次日 06:00）</template>
       <div class="gantt-wrap">
         <!-- 时间轴刻度 -->
         <div class="gantt-axis">
@@ -158,20 +158,20 @@ async function handleSave() {
   }
 }
 
-// 甘特图辅助 — 连续横条，时间范围 13:00 ~ 次日 04:00
+// 甘特图辅助 — 连续横条，时间范围 13:00 ~ 次日 06:00
 const GANTT_START = 13 * 60  // 13:00 in minutes
-const GANTT_END = (24 + 4) * 60  // 次日 04:00 = 28:00 in minutes
-const GANTT_DURATION = GANTT_END - GANTT_START  // 15h = 900 min
+const GANTT_END = (24 + 6) * 60  // 次日 06:00 = 30:00 in minutes
+const GANTT_DURATION = GANTT_END - GANTT_START  // 17h = 1020 min
 
 const COLORS = ['#409eff','#67c23a','#e6a23c','#f56c6c','#909399','#b37feb','#ff85c0','#36cfc9']
 
-// 时间轴刻度：13:00 到 04:00（次日）
+// 时间轴刻度：13:00 到 06:00（次日）
 const ganttHours = (() => {
   const arr = []
   for (let h = 13; ; h++) {
     const real = h % 24
     arr.push(`${String(real).padStart(2,'0')}:00`)
-    if (h === 28) break // 次日 04:00
+    if (h === 30) break // 次日 06:00
   }
   return arr
 })()
@@ -197,7 +197,7 @@ function barStyle(shift) {
     endMin += 24 * 60
   }
 
-  // 裁剪到甘特图范围（13:00 ~ 次日04:00）
+  // 裁剪到甘特图范围（13:00 ~ 次日06:00）
   const clampedStart = Math.max(startMin, GANTT_START)
   const clampedEnd = Math.min(endMin, GANTT_END)
 

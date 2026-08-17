@@ -59,13 +59,23 @@
             </div>
             <div v-for="d in weekDays" :key="d.date" class="gantt-day-col">
               <template v-if="getDay(row, d.date)">
-                <div v-if="getDay(row, d.date).isRestDay === 1" class="day-block rest-block" :class="dayIssuesClass(row, d.date)">
+                <div v-if="getDay(row, d.date).isRestDay === 1 && row.isParttime !== 1" class="day-block rest-block" :class="dayIssuesClass(row, d.date)">
                   休<div v-if="dayIssues(row, d.date).length" class="issue-badge">{{ dayIssues(row, d.date)[0].issueType === 'OVERTIME' ? '超时' : '连续' }}</div>
                 </div>
+                <div v-else-if="getDay(row, d.date).isRestDay === 1" class="day-block empty-block"></div>
                 <div v-else class="day-block work-block" :class="dayIssuesClass(row, d.date)">
                   <div class="shift-code">{{ getDay(row, d.date).shiftCode || '班' }}</div>
                   <div class="shift-time">{{ fmt(getDay(row, d.date).startTime) }}-{{ fmt(getDay(row, d.date).endTime) }}</div>
                   <div class="shift-hours">{{ getDay(row, d.date).workHours }}h</div>
+                  <div
+                    v-if="getDay(row, d.date).breakStartTime && row.isParttime !== 1"
+                    class="shift-break"
+                    :title="getDay(row, d.date).breakCoverEmployeeName
+                      ? `休息 ${fmt(getDay(row, d.date).breakStartTime)}-${fmt(getDay(row, d.date).breakEndTime)}，由 ${getDay(row, d.date).breakCoverEmployeeName} 顶班`
+                      : `休息 ${fmt(getDay(row, d.date).breakStartTime)}-${fmt(getDay(row, d.date).breakEndTime)}`"
+                  >
+                    休 {{ fmt(getDay(row, d.date).breakStartTime) }}-{{ fmt(getDay(row, d.date).breakEndTime) }}{{ getDay(row, d.date).breakCoverEmployeeName ? ' · ' + getDay(row, d.date).breakCoverEmployeeName + ' 顶' : '' }}
+                  </div>
                   <div v-if="dayIssues(row, d.date).length" class="issue-badge">连续</div>
                 </div>
               </template>
@@ -78,6 +88,7 @@
       <div style="margin-top: 12px; display: flex; gap: 16px; align-items: center">
         <el-tag size="small" type="danger">休</el-tag><span style="font-size: 12px; color: #909399">休息</span>
         <el-tag size="small" type="primary">班</el-tag><span style="font-size: 12px; color: #909399">班次（含时间与工时）</span>
+        <el-tag size="small" type="warning">休 HH:mm-HH:mm</el-tag><span style="font-size: 12px; color: #909399">班中休息（含顶岗人）</span>
       </div>
     </el-card>
 
@@ -251,7 +262,8 @@ onMounted(loadData)
 .gantt-day-col:last-child { border-right: none; }
 .day-label { font-size: 13px; text-align: center; }
 .day-sub { font-size: 11px; color: #909399; text-align: center; }
-.day-block { height: 64px; border-radius: 4px; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.day-block { min-height: 84px; border-radius: 4px; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 4px 2px; }
+.shift-break { margin-top: 2px; font-size: 10px; color: #e6a23c; line-height: 1.4; text-align: center; }
 .rest-block { background: #fef0f0; color: #f56c6c; font-weight: 600; font-size: 14px; }
 .work-block { background: #ecf5ff; color: #409eff; }
 .shift-code { font-weight: 600; font-size: 13px; }

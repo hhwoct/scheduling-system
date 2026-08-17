@@ -49,7 +49,30 @@
           <el-table-column label="工时(h)" width="90">
             <template #default="{ row }">{{ row.isRestDay === 1 ? '0' : formatWorkHours(row.workHours) }}</template>
           </el-table-column>
+          <el-table-column label="休息" min-width="170">
+            <template #default="{ row }">
+              <span v-if="row.isRestDay === 1 || !row.breakStartTime">--</span>
+              <span v-else>
+                <el-tag size="small" type="warning">休 {{ fmtTime(row.breakStartTime) }}-{{ fmtTime(row.breakEndTime) }}</el-tag>
+                <span v-if="row.coverEmployeeName" class="cover-note">由 {{ row.coverEmployeeName }} 顶班</span>
+              </span>
+            </template>
+          </el-table-column>
         </el-table>
+        <el-alert v-if="false" :closable="false" style="display: none" />
+        <div v-if="plan.covers && plan.covers.length" class="cover-list">
+          <div class="cover-title">我顶岗的记录</div>
+          <el-table :data="plan.covers" border stripe size="small" max-height="200" style="margin-top: 6px">
+            <el-table-column prop="workDate" label="日期" width="120" />
+            <el-table-column label="时段" width="130">
+              <template #default="{ row }">{{ fmtTime(row.breakStartTime) }}-{{ fmtTime(row.breakEndTime) }}</template>
+            </el-table-column>
+            <el-table-column prop="workstationName" label="顶岗岗位" width="120">
+              <template #default="{ row }">{{ row.workstationName || '--' }}</template>
+            </el-table-column>
+            <el-table-column prop="forEmployeeName" label="替谁顶岗" />
+          </el-table>
+        </div>
       </div>
     </el-card>
   </div>
@@ -95,7 +118,12 @@ async function loadData() {
   try {
     const data = await getMySchedule(month.value, employeeNo.value || undefined)
     employee.value = data.employee
-    plans.value = data.plans || []
+    // 顶岗记录挂在第一个计划下展示（covers 为全局记录）
+    const planList = data.plans || []
+    if (planList.length && data.covers && data.covers.length) {
+      planList[0] = { ...planList[0], covers: data.covers }
+    }
+    plans.value = planList
   } catch (e) {
     errorMsg.value = '查询失败：' + (e.message || '网络错误')
   } finally {
@@ -115,5 +143,18 @@ onMounted(loadData)
   font-weight: 600;
   margin-bottom: 8px;
   color: #303133;
+}
+.cover-note {
+  margin-left: 6px;
+  font-size: 12px;
+  color: #409eff;
+}
+.cover-list {
+  margin-top: 10px;
+}
+.cover-title {
+  font-weight: 600;
+  color: #e6a23c;
+  font-size: 13px;
 }
 </style>

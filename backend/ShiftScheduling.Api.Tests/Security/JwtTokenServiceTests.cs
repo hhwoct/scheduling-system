@@ -21,7 +21,7 @@ public sealed class JwtTokenServiceTests
         });
         var service = new JwtTokenService(options);
 
-        var result = service.CreateToken(new CurrentUserResponse(7, 3, "manager", "门店经理", "STORE_MANAGER"));
+        var result = service.CreateToken(new CurrentUserResponse(7, 3, "manager", "门店经理", "STORE_MANAGER", 1));
         var token = new JwtSecurityTokenHandler().ReadJwtToken(result.Token);
 
         Assert.Equal("ShiftScheduling.Api.Tests", token.Issuer);
@@ -30,6 +30,7 @@ public sealed class JwtTokenServiceTests
         Assert.Equal("3", token.Claims.Single(x => x.Type == "store_id").Value);
         Assert.Equal("manager", token.Claims.Single(x => x.Type == "username").Value);
         Assert.Equal("STORE_MANAGER", token.Claims.Single(x => x.Type == ClaimTypes.Role).Value);
+        Assert.Equal("1", token.Claims.Single(x => x.Type == "password_version").Value);
         Assert.False(string.IsNullOrWhiteSpace(token.Id));
         Assert.InRange(result.ExpiresAt, DateTime.UtcNow.AddMinutes(29), DateTime.UtcNow.AddMinutes(31));
     }

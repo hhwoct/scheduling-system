@@ -31,7 +31,7 @@ public sealed class AuthService : IAuthService
         _passwordResetService = passwordResetService;
     }
 
-    public async Task<LoginResponse> LoginAsync(LoginRequest request, CancellationToken cancellationToken)
+    public async Task<LoginResponse> LoginAsync(LoginRequest request, string? clientIp, CancellationToken cancellationToken)
     {
         var username = request.Username?.Trim();
         if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(request.Password))
@@ -45,7 +45,7 @@ public sealed class AuthService : IAuthService
         }
 
         // 限流：登录失败次数过多时锁定
-        _passwordResetService.CheckRateLimit(username, null);
+        _passwordResetService.CheckRateLimit(username, clientIp);
 
         var user = await _dbContext.Users
             .AsNoTracking()
@@ -62,20 +62,20 @@ public sealed class AuthService : IAuthService
                 // 用户不存在：执行虚拟验证以消耗相同时间（与真实 bcrypt 耗时一致）
                 _passwordService.Verify(request.Password, "$2b$12$Ci01D3eY4zXe10SHH5XRCuKKGN2aHGqB1AhsBTBCqQ0tX8xvAmLKO");
             }
-            _passwordResetService.RecordFailure(username, null);
+            _passwordResetService.RecordFailure(username, clientIp);
             throw new InvalidCredentialsException();
         }
 
         if (user!.Status != 1)
         {
             // 用户已停用：统一返回"用户名或密码错误"，不泄露账号状态
-            _passwordResetService.RecordFailure(username, null);
+            _passwordResetService.RecordFailure(username, clientIp);
             throw new InvalidCredentialsException();
         }
 
-        _passwordResetService.RecordSuccess(username, null);
+        _passwordResetService.RecordSuccess(username, clientIp);
 
-        var currentUser = new CurrentUserResponse(user.Id, user.StoreId, user.Username, user.Nickname, user.Role);
+        var currentUser = new CurrentUserResponse(user.Id, user.StoreId, user.Username, user.Nickname, user.Role, user.PasswordVersion);
         var tokenResult = _jwtTokenService.CreateToken(currentUser);
 
         await _auditLogService.WriteAsync(
@@ -103,7 +103,7 @@ public sealed class AuthService : IAuthService
         var user = await _dbContext.Users
             .AsNoTracking()
             .Where(x => x.Id == _currentUser.UserId.Value && x.Status == 1)
-            .Select(x => new CurrentUserResponse(x.Id, x.StoreId, x.Username, x.Nickname, x.Role))
+            .Select(x => new CurrentUserResponse(x.Id, x.StoreId, x.Username, x.Nickname, x.Role, x.PasswordVersion))
             .FirstOrDefaultAsync(cancellationToken);
 
         return user ?? throw new UnauthorizedBusinessException("当前用户不存在或已被停用");

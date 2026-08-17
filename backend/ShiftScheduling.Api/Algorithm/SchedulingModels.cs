@@ -9,7 +9,7 @@ public sealed record EmployeeInput(
     decimal MaxWeeklyHours,
     int IsParttime = 0);
 
-public sealed record SkillInput(long EmployeeId, long WorkstationId, int SkillScore);
+public sealed record SkillInput(long EmployeeId, long WorkstationId, int SkillScore, int IsPrimarySkill = 0);
 
 public sealed record DateParameterInput(
     DateOnly WorkDate,
@@ -42,6 +42,13 @@ public sealed record ApprovedLeaveInput(
     DateOnly StartDate,
     DateOnly EndDate);
 
+/// <summary>
+/// 高峰禁休时段（班中休息不得与其重叠）。StartTime 含，EndTime 不含。
+/// </summary>
+public sealed record PeakRestrictedHourInput(
+    TimeSpan StartTime,
+    TimeSpan EndTime);
+
 public sealed record SchedulingInput(
     long StoreId,
     DateOnly StartDate,
@@ -52,6 +59,7 @@ public sealed record SchedulingInput(
     IReadOnlyList<ShiftTemplateInput> ShiftTemplates,
     IReadOnlyList<StaffingRequirementInput> StaffingRequirements,
     IReadOnlyList<ApprovedLeaveInput> ApprovedLeaves,
+    IReadOnlyList<PeakRestrictedHourInput> PeakRestrictedHours,
     IReadOnlyDictionary<long, bool> LowSkillWorkstationIds,
     int DefaultMonthlyRestDays,
     decimal MaxWeeklyHours,
@@ -74,6 +82,19 @@ public sealed record WorkstationAssignment(
     long WorkstationId,
     int SkillScore,
     long ShiftTemplateId);
+
+/// <summary>
+/// 班中休息分配结果（每次固定 30 分钟）。
+/// CoverEmployeeId 为 null 表示无人顶岗（对应 BREAK_UNCOVERED 告警）；
+/// CoverInexperienced 表示顶岗人非该站主技能（对应 BREAK_BORROW_INEXPERIENCED 提示）。
+/// </summary>
+public sealed record BreakAssignment(
+    long EmployeeId,
+    DateOnly WorkDate,
+    TimeSpan BreakStartTime,
+    long? CoverEmployeeId,
+    bool CoverInexperienced,
+    long? WorkstationId);
 
 public sealed record DaySummaryOutput(
     long EmployeeId,
@@ -98,6 +119,7 @@ public sealed record SchedulingOutput(
     IReadOnlyList<RestDayAssignment> RestDays,
     IReadOnlyList<ShiftAssignment> ShiftAssignments,
     IReadOnlyList<WorkstationAssignment> WorkstationAssignments,
+    IReadOnlyList<BreakAssignment> BreakAssignments,
     IReadOnlyList<DaySummaryOutput> DaySummaries,
     IReadOnlyList<ScheduleIssueOutput> Issues);
 

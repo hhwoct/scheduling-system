@@ -29,6 +29,14 @@ export function adjustSchedule(planId, data) {
   return request.put(API_ROUTES.SCHEDULES.ADJUST(planId), data).then(res => res.data)
 }
 
+export function setDayStatus(planId, data) {
+  return request.put(API_ROUTES.SCHEDULES.DAY_STATUS(planId), data).then(res => res.data)
+}
+
+export function setSlotStatus(planId, data) {
+  return request.put(API_ROUTES.SCHEDULES.SLOT_STATUS(planId), data).then(res => res.data)
+}
+
 export function getSwapPlans() {
   return request.get('/employee/swap-plans').then(res => res.data)
 }

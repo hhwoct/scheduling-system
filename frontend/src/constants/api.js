@@ -32,6 +32,8 @@ export const API_ROUTES = {
     SUMMARY: (planId) => `/schedules/${encodeURIComponent(planId)}/summary`,
     RATIONALITY: (planId) => `/schedules/${encodeURIComponent(planId)}/rationality`,
     ADJUST: (planId) => `/schedules/${encodeURIComponent(planId)}/adjust`,
+    DAY_STATUS: (planId) => `/schedules/${encodeURIComponent(planId)}/day-status`,
+    SLOT_STATUS: (planId) => `/schedules/${encodeURIComponent(planId)}/slot-status`,
     PUBLISH: (planId) => `/schedules/${encodeURIComponent(planId)}/publish`
   },
   LEAVE: {

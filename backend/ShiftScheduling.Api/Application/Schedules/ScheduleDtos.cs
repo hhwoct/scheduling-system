@@ -32,13 +32,16 @@ public sealed record MonthViewItem(
     string EmployeeNo,
     string EmployeeName,
     string Department,
+    int IsParttime,
     IReadOnlyList<MonthDayCell> Days);
 
 public sealed record MonthDayCell(
     DateOnly WorkDate,
     int IsRestDay,
     string? ShiftCode,
-    decimal WorkHours);
+    decimal WorkHours,
+    TimeSpan? BreakStartTime,
+    TimeSpan? BreakEndTime);
 
 public sealed record WeekViewItem(
     long EmployeeId,
@@ -55,7 +58,10 @@ public sealed record WeekDayShift(
     TimeSpan? StartTime,
     TimeSpan? EndTime,
     decimal WorkHours,
-    string? CoveredWorkstations);
+    string? CoveredWorkstations,
+    TimeSpan? BreakStartTime,
+    TimeSpan? BreakEndTime,
+    string? BreakCoverEmployeeName);
 
 public sealed record DailyViewItem(
     DateOnly WorkDate,
@@ -63,12 +69,16 @@ public sealed record DailyViewItem(
     string EmployeeNo,
     string EmployeeName,
     string? EmployeePosition,
+    int IsParttime,
     long? ShiftTemplateId,
     string? ShiftCode,
     long? WorkstationId,
     string? WorkstationName,
     TimeSpan TimeSlot,
-    int SkillScore);
+    int SkillScore,
+    TimeSpan? BreakStartTime,
+    TimeSpan? BreakEndTime,
+    string? BreakCoverEmployeeName);
 
 public sealed record ScheduleSummaryDto(
     long PlanId,
@@ -88,3 +98,29 @@ public sealed record AdjustScheduleItem(
     TimeSpan? TimeSlot);
 
 public sealed record AdjustScheduleRequest(IReadOnlyList<AdjustScheduleItem> Items);
+
+/// <summary>
+/// 设置员工某天的休息/上班状态（日明细点色块调整）。
+/// IsRestDay=1 → 设为休息（删除当天明细）；IsRestDay=0 → 设为上班（需班次，工作站按技能自动选择）。
+/// </summary>
+public sealed record SetDayStatusItem(
+    long EmployeeId,
+    DateOnly WorkDate,
+    int IsRestDay,
+    long? ShiftTemplateId = null,
+    long? WorkstationId = null);
+
+public sealed record SetDayStatusRequest(IReadOnlyList<SetDayStatusItem> Items);
+
+/// <summary>
+/// 调整员工某天某个半小时时段的状态（甘特图/日明细点色块）。
+/// IsRest=1 → 该半小时改为休息（作为班中休息记录在该时段）；
+/// IsRest=0 → 该半小时恢复上班（清除该时段休息标记）。
+/// </summary>
+public sealed record SetSlotStatusItem(
+    long EmployeeId,
+    DateOnly WorkDate,
+    TimeSpan TimeSlot,
+    int IsRest);
+
+public sealed record SetSlotStatusRequest(IReadOnlyList<SetSlotStatusItem> Items);

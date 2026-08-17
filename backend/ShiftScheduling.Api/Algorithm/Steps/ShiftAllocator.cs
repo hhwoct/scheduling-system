@@ -34,9 +34,15 @@ public sealed class ShiftAllocator
             .ToList();
 
         var weeklyHours = new Dictionary<long, decimal>();
+        // 整个排班周期内的累计工时（跨周不清零）。
+        // 兼职员工按“周期累计工时从高到低”优先复用：把兼职需求尽量集中到
+        // 已在用的少数兼职人员身上（例如一二三四五六都用兼传送A，而不是
+        // 一二三用A、四五六用B），从而用更少的兼职人员。
+        var periodHours = new Dictionary<long, decimal>();
         foreach (var employee in input.Employees)
         {
             weeklyHours[employee.Id] = 0m;
+            periodHours[employee.Id] = 0m;
         }
 
         foreach (var date in dates)
@@ -83,8 +89,12 @@ public sealed class ShiftAllocator
                     .Where(e => weeklyHours.GetValueOrDefault(e.Id) < input.MaxWeeklyHours)
                     .Where(e => HasSkillForShift(e.Id, shift, skillsByEmployee))
                     .OrderBy(e => e.IsParttime)  // 全职优先，兼职靠后
+                    // 兼职：周期累计工时高者优先 → 复用已在用的兼职，少用兼职人员；
+                    // 全职：该键恒为 0，不影响全职原有排序。
+                    .ThenByDescending(e => e.IsParttime == 1 ? periodHours.GetValueOrDefault(e.Id) : 0m)
                     .ThenByDescending(e => SkillCoverage(e.Id, shift, skillsByEmployee) * 100 + MaxSkillScore(e.Id, shift, skillsByEmployee))
-                    .ThenBy(e => weeklyHours.GetValueOrDefault(e.Id))
+                    // 全职：周工时低者优先（均衡）；兼职：该键恒为 0，不再按工时均衡。
+                    .ThenBy(e => e.IsParttime == 1 ? 0m : weeklyHours.GetValueOrDefault(e.Id))
                     .ToList();
 
                 var toAssign = Math.Min(required, candidates.Count);
@@ -93,8 +103,9 @@ public sealed class ShiftAllocator
                     var targetWs = SelectWorkstation(employee.Id, shift, remaining, skillsByEmployee);
                     assignments.Add(new ShiftAssignment(employee.Id, date.WorkDate, shift.Id, shift.Code, targetWs));
                     assignedToday.Add(employee.Id);
-                    weeklyHours[employee.Id] =
-                        weeklyHours.GetValueOrDefault(employee.Id) + SchedulingTimeHelper.GetShiftHours(shift.StartTime, shift.EndTime, shift.IsCrossDay);
+                    var shiftHours = SchedulingTimeHelper.GetShiftHours(shift.StartTime, shift.EndTime, shift.IsCrossDay);
+                    weeklyHours[employee.Id] = weeklyHours.GetValueOrDefault(employee.Id) + shiftHours;
+                    periodHours[employee.Id] = periodHours.GetValueOrDefault(employee.Id) + shiftHours;
 
                     // 分配 1 人覆盖整个班次时段：该工作站在班次覆盖的所有时段剩余需求减 1
                     DecrementRemaining(shift, targetWs, remaining);
@@ -107,7 +118,11 @@ public sealed class ShiftAllocator
             var unassigned = workingEmployees
                 .Where(e => !assignedToday.Contains(e.Id))
                 .OrderBy(e => e.IsParttime)  // 全职优先，兼职靠后
-                .ThenBy(e => weeklyHours.GetValueOrDefault(e.Id))
+                // 兼职：周期累计工时高者优先 → 复用已在用的兼职，少用兼职人员；
+                // 全职：该键恒为 0。
+                .ThenByDescending(e => e.IsParttime == 1 ? periodHours.GetValueOrDefault(e.Id) : 0m)
+                // 全职：周工时低者优先（均衡）；兼职：该键恒为 0。
+                .ThenBy(e => e.IsParttime == 1 ? 0m : weeklyHours.GetValueOrDefault(e.Id))
                 .ToList();
             var outstandingDemand = remaining.Values.Sum();
             foreach (var employee in unassigned)
@@ -127,8 +142,9 @@ public sealed class ShiftAllocator
                     var targetWs = SelectWorkstation(employee.Id, bestShift, remaining, skillsByEmployee);
                     assignments.Add(new ShiftAssignment(employee.Id, date.WorkDate, bestShift.Id, bestShift.Code, targetWs));
                     assignedToday.Add(employee.Id);
-                    weeklyHours[employee.Id] =
-                        weeklyHours.GetValueOrDefault(employee.Id) + SchedulingTimeHelper.GetShiftHours(bestShift.StartTime, bestShift.EndTime, bestShift.IsCrossDay);
+                    var bestShiftHours = SchedulingTimeHelper.GetShiftHours(bestShift.StartTime, bestShift.EndTime, bestShift.IsCrossDay);
+                    weeklyHours[employee.Id] = weeklyHours.GetValueOrDefault(employee.Id) + bestShiftHours;
+                    periodHours[employee.Id] = periodHours.GetValueOrDefault(employee.Id) + bestShiftHours;
 
                     var before = outstandingDemand;
                     DecrementRemaining(bestShift, targetWs, remaining);

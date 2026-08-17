@@ -123,6 +123,11 @@ public sealed class PasswordResetService : IPasswordResetService
         var userKey = BuildKey(username, string.Empty);
         _attempts.TryRemove(userKey, out _);
         _lockouts.TryRemove(userKey, out _);
+
+        // 成功登录同时清除对应 IP 的失败计数与锁定，避免误伤共享出口 IP / 残留全站桶
+        var ipKey = $"ip:{clientIp ?? "unknown"}";
+        _attempts.TryRemove(ipKey, out _);
+        _lockouts.TryRemove(ipKey, out _);
     }
 
     public bool IsLocked(string username, string? clientIp)

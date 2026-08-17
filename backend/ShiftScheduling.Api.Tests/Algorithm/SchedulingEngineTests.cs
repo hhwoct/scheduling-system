@@ -22,9 +22,9 @@ public sealed class SchedulingEngineTests
 
         var skills = new List<SkillInput>
         {
-            new(1, workstations["MANAGER"], 5),
-            new(2, workstations["KITCHEN"], 5),
-            new(3, workstations["SERVICE"], 4)
+            new(1, workstations["MANAGER"], 5, 1),
+            new(2, workstations["KITCHEN"], 5, 1),
+            new(3, workstations["SERVICE"], 4, 1)
         };
 
         var dates = new List<DateParameterInput>();
@@ -65,6 +65,7 @@ public sealed class SchedulingEngineTests
             shiftTemplates,
             staffing,
             new List<ApprovedLeaveInput>(),
+            new List<PeakRestrictedHourInput>(),
             new Dictionary<long, bool>(),
             4,
             48m,

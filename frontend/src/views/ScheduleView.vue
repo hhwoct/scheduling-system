@@ -10,7 +10,7 @@
 
       <el-alert v-if="errorMsg" :title="errorMsg" type="warning" closable @close="errorMsg=''" />
 
-      <el-table :data="plans" v-loading="plansLoading" border stripe size="small" style="margin-bottom: 16px" highlight-current-row @current-change="selectPlan">
+      <el-table ref="plansTableRef" :data="plans" v-loading="plansLoading" border stripe size="small" style="margin-bottom: 16px" highlight-current-row @current-change="selectPlan">
         <el-table-column prop="id" label="ID" width="60" />
         <el-table-column prop="planName" label="计划名称" />
         <el-table-column label="周期" width="200">
@@ -31,7 +31,7 @@
       </el-radio-group>
 
       <div v-if="viewMode === 'week'" v-loading="loading">
-        <el-date-picker v-model="weekStart" type="date" value-format="YYYY-MM-DD" style="width: 150px; margin-bottom: 12px" placeholder="选择起始日" @change="loadWeek" />
+        <el-date-picker v-model="weekStart" type="date" value-format="YYYY-MM-DD" style="width: 150px; margin-bottom: 12px" placeholder="选择起始日" :disabled-date="disabledDate" @change="loadWeek" />
         <div class="gantt">
           <div class="gantt-row gantt-header">
             <div class="gantt-emp-col">员工</div>
@@ -39,19 +39,35 @@
               <div class="day-label">{{ weekdayName(d.weekday) }}</div><div class="day-sub">{{ d.date }}</div>
             </div>
           </div>
-          <div v-for="row in weekRows" :key="row.employeeId" class="gantt-row">
-            <div class="gantt-emp-col"><div class="emp-name">{{ row.employeeName }}<el-tag v-if="row.isParttime === 1" type="success" size="small" style="margin-left:4px">兼</el-tag></div><div class="emp-sub">{{ row.department }}</div></div>
-            <div v-for="d in weekDays" :key="d.date" class="gantt-day-col">
-              <template v-if="getWeekDay(row, d.date)">
-                <div v-if="getWeekDay(row, d.date).isRestDay === 1" class="day-block rest-block">休</div>
-                <div v-else class="day-block work-block">
-                  <div class="shift-code">{{ getWeekDay(row, d.date).shiftCode || '班' }}</div>
-                  <div class="shift-time">{{ fmt(getWeekDay(row, d.date).startTime) }}-{{ fmt(getWeekDay(row, d.date).endTime) }}</div>
-                </div>
-              </template>
-              <div v-else class="day-block empty-block"></div>
+          <template v-for="(row, i) in sortedWeekRows" :key="row.employeeId">
+            <!-- 全职员工与兼职员工之间的分隔行 -->
+            <div v-if="i === firstPartTimeIndex" class="gantt-divider">
+              <span class="gantt-divider-badge">兼</span>兼职员工
             </div>
-          </div>
+            <div class="gantt-row" :class="{ 'gantt-row-parttime': row.isParttime === 1 }">
+              <div class="gantt-emp-col"><div class="emp-name">{{ row.employeeName }}<el-tag v-if="row.isParttime === 1" type="success" size="small" style="margin-left:4px">兼</el-tag></div><div class="emp-sub">{{ row.department }}</div></div>
+              <div v-for="d in weekDays" :key="d.date" class="gantt-day-col">
+                <template v-if="getWeekDay(row, d.date)">
+                  <div v-if="getWeekDay(row, d.date).isRestDay === 1 && row.isParttime !== 1" class="day-block rest-block">休</div>
+                  <div v-else-if="getWeekDay(row, d.date).isRestDay === 1" class="day-block empty-block"></div>
+                  <div v-else class="day-block work-block">
+                    <div class="shift-code">{{ getWeekDay(row, d.date).shiftCode || '班' }}</div>
+                    <div class="shift-time">{{ fmt(getWeekDay(row, d.date).startTime) }}-{{ fmt(getWeekDay(row, d.date).endTime) }}</div>
+                    <div
+                      v-if="getWeekDay(row, d.date).breakStartTime && row.isParttime !== 1"
+                      class="shift-break"
+                      :title="getWeekDay(row, d.date).breakCoverEmployeeName
+                        ? `休息 ${fmt(getWeekDay(row, d.date).breakStartTime)}-${fmt(getWeekDay(row, d.date).breakEndTime)}，由 ${getWeekDay(row, d.date).breakCoverEmployeeName} 顶班`
+                        : `休息 ${fmt(getWeekDay(row, d.date).breakStartTime)}-${fmt(getWeekDay(row, d.date).breakEndTime)}`"
+                    >
+                      休 {{ fmt(getWeekDay(row, d.date).breakStartTime) }}-{{ fmt(getWeekDay(row, d.date).breakEndTime) }}{{ getWeekDay(row, d.date).breakCoverEmployeeName ? ' · ' + getWeekDay(row, d.date).breakCoverEmployeeName + ' 顶' : '' }}
+                    </div>
+                  </div>
+                </template>
+                <div v-else class="day-block empty-block"></div>
+              </div>
+            </div>
+          </template>
         </div>
 
         <!-- 兼职替补需求色块：低技能岗位缺口 -->
@@ -92,6 +108,7 @@
               <template v-if="day.date">
                 <div class="cal-day-num">{{ day.dayNum }}</div>
                 <div class="cal-work">{{ day.workCount }} 上班</div>
+                <div class="cal-parttime" v-if="day.partTimeWorkCount > 0">兼职 {{ day.partTimeWorkCount }} 上班</div>
                 <div class="cal-rest" v-if="day.restCount > 0">{{ day.restCount }} 休息</div>
                 <div class="cal-shift" v-if="day.shiftSummary">{{ day.shiftSummary }}</div>
               </template>
@@ -102,16 +119,16 @@
           <el-divider content-position="left">{{ selectedDate }}</el-divider>
           <div v-loading="dailyLoading" class="matrix-wrap"><div class="matrix">
             <div class="m-row m-header"><div class="m-ws-col">工作站</div><div v-for="slot in slots" :key="slot.key" class="m-slot-col" :title="slot.display"><span v-if="isHour(slot)">{{ slot.display }}</span></div></div>
-            <div v-for="ws in dailyWorkstations" :key="ws" class="m-row"><div class="m-ws-col">{{ ws }}<el-tag v-if="wsLowSkill(ws)" type="success" size="small" style="margin-left:4px">兼</el-tag></div><div v-for="slot in slots" :key="slot.key" class="m-slot-col" :class="cellClass(ws, slot)"><div v-if="dailySlotIssues(ws, slot).length" class="gap-flag" :class="{ 'gap-flag-low': lowSkillGapIssues(ws, slot).length > 0 }" :title="gapTooltip(ws, slot)">{{ lowSkillGapIssues(ws, slot).length > 0 ? '兼' : '缺' }}</div><div v-for="emp in dailyCellUsers(ws, slot)" :key="emp.employeeId" class="emp-chip"><div class="emp-name">{{ emp.employeeName }}</div><div class="emp-shift">{{ emp.shiftCode || '--' }}</div></div></div></div>
+            <div v-for="ws in dailyWorkstations" :key="ws" class="m-row"><div class="m-ws-col">{{ ws }}<el-tag v-if="wsLowSkill(ws)" type="success" size="small" style="margin-left:4px">兼</el-tag></div><div v-for="slot in slots" :key="slot.key" class="m-slot-col" :class="cellClass(ws, slot)"><div v-if="dailySlotIssues(ws, slot).length" class="gap-flag" :class="{ 'gap-flag-low': lowSkillGapIssues(ws, slot).length > 0 }" :title="gapTooltip(ws, slot)">{{ lowSkillGapIssues(ws, slot).length > 0 ? '兼' : '缺' }}</div><div v-for="emp in dailyCellUsers(ws, slot)" :key="emp.employeeId" class="emp-chip" :class="{ 'is-parttime': emp.isParttime === 1, 'pt-first': isFirstPartTimeChip(emp, ws, slot), 'is-break': inBreak(emp, slot) }" :title="'点击切换该半小时 休息/上班'" @click.stop="openSlotStatusDialog(emp, slot)"><div class="emp-name">{{ emp.employeeName }}<span v-if="inBreak(emp, slot)" class="break-flag" :title="breakTip(emp)">休</span></div><div v-if="!inBreak(emp, slot)" class="emp-shift">{{ emp.shiftCode || '--' }}</div><div v-else class="emp-shift break-info" :title="breakTip(emp)">休息</div></div></div></div>
           </div></div>
         </div>
       </div>
 
       <div v-if="viewMode === 'day'" v-loading="loading">
-        <el-date-picker v-model="dayDate" type="date" value-format="YYYY-MM-DD" style="width: 150px; margin-bottom: 12px" placeholder="选择日期" @change="loadDay" />
+        <el-date-picker v-model="dayDate" type="date" value-format="YYYY-MM-DD" style="width: 150px; margin-bottom: 12px" placeholder="选择日期" :disabled-date="disabledDate" @change="loadDay" />
         <div v-if="dayDate" class="matrix-wrap"><div class="matrix">
           <div class="m-row m-header"><div class="m-ws-col">工作站</div><div v-for="slot in slots" :key="slot.key" class="m-slot-col" :title="slot.display"><span v-if="isHour(slot)">{{ slot.display }}</span></div></div>
-          <div v-for="ws in dailyWorkstations" :key="ws" class="m-row"><div class="m-ws-col">{{ ws }}<el-tag v-if="wsLowSkill(ws)" type="success" size="small" style="margin-left:4px">兼</el-tag></div><div v-for="slot in slots" :key="slot.key" class="m-slot-col" :class="cellClass(ws, slot)"><div v-if="dailySlotIssues(ws, slot).length" class="gap-flag" :class="{ 'gap-flag-low': lowSkillGapIssues(ws, slot).length > 0 }" :title="gapTooltip(ws, slot)">{{ lowSkillGapIssues(ws, slot).length > 0 ? '兼' : '缺' }}</div><div v-for="emp in dailyCellUsers(ws, slot)" :key="emp.employeeId" class="emp-chip"><div class="emp-name">{{ emp.employeeName }}</div><div class="emp-shift">{{ emp.shiftCode || '--' }}</div></div></div></div>
+          <div v-for="ws in dailyWorkstations" :key="ws" class="m-row"><div class="m-ws-col">{{ ws }}<el-tag v-if="wsLowSkill(ws)" type="success" size="small" style="margin-left:4px">兼</el-tag></div><div v-for="slot in slots" :key="slot.key" class="m-slot-col" :class="cellClass(ws, slot)"><div v-if="dailySlotIssues(ws, slot).length" class="gap-flag" :class="{ 'gap-flag-low': lowSkillGapIssues(ws, slot).length > 0 }" :title="gapTooltip(ws, slot)">{{ lowSkillGapIssues(ws, slot).length > 0 ? '兼' : '缺' }}</div><div v-for="emp in dailyCellUsers(ws, slot)" :key="emp.employeeId" class="emp-chip" :class="{ 'is-parttime': emp.isParttime === 1, 'pt-first': isFirstPartTimeChip(emp, ws, slot), 'is-break': inBreak(emp, slot) }" :title="'点击切换该半小时 休息/上班'" @click.stop="openSlotStatusDialog(emp, slot)"><div class="emp-name">{{ emp.employeeName }}<span v-if="inBreak(emp, slot)" class="break-flag" :title="breakTip(emp)">休</span></div><div v-if="!inBreak(emp, slot)" class="emp-shift">{{ emp.shiftCode || '--' }}</div><div v-else class="emp-shift break-info" :title="breakTip(emp)">休息</div></div></div></div>
         </div></div>
       </div>
 
@@ -160,20 +177,40 @@
           <el-table-column prop="workDate" label="日期" width="110" />
           <el-table-column label="时段" width="90"><template #default="{ row }">{{ row.timeSlot ? String(row.timeSlot).substring(0, 5) : '整周期' }}</template></el-table-column>
           <el-table-column prop="workstationName" label="工作站" width="120"><template #default="{ row }">{{ row.workstationName || '--' }}</template></el-table-column>
-          <el-table-column label="类型" width="110"><template #default="{ row }"><el-tag v-if="row.issueType === 'STAFFING_GAP'" type="danger" size="small">岗位缺口</el-tag><el-tag v-else-if="row.issueType === 'SKILL_MISMATCH'" type="warning" size="small">技能不匹配</el-tag><el-tag v-else-if="row.issueType === 'OVERTIME'" type="info" size="small">工时超限</el-tag><el-tag v-else-if="row.issueType === 'CONSECUTIVE_WORK'" type="info" size="small">连续工作超限</el-tag><el-tag v-else size="small">{{ row.issueType }}</el-tag></template></el-table-column>
-          <el-table-column prop="severity" label="严重度" width="80"><template #default="{ row }"><el-tag :type="row.severity === 'ERROR' ? 'danger' : 'warning'" size="small">{{ row.severity === 'ERROR' ? '错误' : '警告' }}</el-tag></template></el-table-column>
+          <el-table-column label="类型" width="110"><template #default="{ row }"><el-tag v-if="row.issueType === 'STAFFING_GAP'" type="danger" size="small">岗位缺口</el-tag><el-tag v-else-if="row.issueType === 'SKILL_MISMATCH'" type="warning" size="small">技能不匹配</el-tag><el-tag v-else-if="row.issueType === 'OVERTIME'" type="info" size="small">工时超限</el-tag><el-tag v-else-if="row.issueType === 'CONSECUTIVE_WORK'" type="info" size="small">连续工作超限</el-tag><el-tag v-else-if="row.issueType === 'BREAK_BORROW_INEXPERIENCED'" type="info" size="small">不熟练顶岗</el-tag><el-tag v-else size="small">{{ row.issueType }}</el-tag></template></el-table-column>
+          <el-table-column prop="severity" label="严重度" width="80"><template #default="{ row }"><el-tag :type="row.severity === 'ERROR' ? 'danger' : (row.severity === 'INFO' ? 'info' : 'warning')" size="small">{{ row.severity === 'ERROR' ? '错误' : (row.severity === 'INFO' ? '提示' : '警告') }}</el-tag></template></el-table-column>
           <el-table-column prop="description" label="说明" min-width="280" show-overflow-tooltip />
         </el-table>
       </div>
     </el-card>
+
+    <!-- 点击色块：切换该半小时 休息/上班 -->
+    <el-dialog v-model="slotStatusDialog.visible" title="切换时段状态" width="420px">
+      <div class="ds-info">
+        <div><span class="ds-label">员工：</span>{{ slotStatusDialog.employeeName }}（{{ slotStatusDialog.employeeNo }}）</div>
+        <div><span class="ds-label">日期：</span>{{ slotStatusDialog.date }}　<span class="ds-label">时段：</span>{{ slotStatusDialog.timeSlot }} - {{ slotStatusDialog.timeSlotEnd }}</div>
+      </div>
+      <div style="margin: 10px 0 4px; font-size: 12px; color: #909399">
+        当前状态：<el-tag size="small" :type="slotStatusDialog.currentIsBreak ? 'warning' : 'success'">{{ slotStatusDialog.currentIsBreak ? '休息' : '上班' }}</el-tag>
+      </div>
+      <el-radio-group v-model="slotStatusDialog.action" style="margin: 10px 0; width: 100%">
+        <el-radio value="work" style="margin-right: 24px">该半小时上班</el-radio>
+        <el-radio value="rest">该半小时休息</el-radio>
+      </el-radio-group>
+      <template #footer>
+        <el-button @click="slotStatusDialog.visible = false">取消</el-button>
+        <el-button type="primary" :loading="slotStatusDialog.saving" @click="submitSlotStatus">确定</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { onMounted, ref, computed, nextTick, watch } from 'vue'
+import { onMounted, ref, reactive, computed, nextTick, watch } from 'vue'
 import * as echarts from 'echarts'
 import { useRoute } from 'vue-router'
-import { getMonthView, getWeekView, getDailyView, getScheduleIssues, getScheduleRationality, getSchedules } from '../api/schedules'
+import { ElMessage } from 'element-plus'
+import { getMonthView, getWeekView, getDailyView, getScheduleIssues, getScheduleRationality, getSchedules, setSlotStatus } from '../api/schedules'
 
 const route = useRoute()
 const planId = ref(route.query.planId || '')
@@ -182,6 +219,9 @@ const errorMsg = ref('')
 const viewMode = ref(route.query.mode || 'week')
 const plans = ref([])
 const plansLoading = ref(false)
+const plansTableRef = ref(null)
+// 当前选中的排班方案（用于日期范围限制与日明细默认日期）
+const currentPlan = ref(null)
 const weekRows = ref([])
 const weekDays = ref([])
 const weekStart = ref('')
@@ -205,7 +245,17 @@ function weekdayName(i) { return ['周一','周二','周三','周四','周五','
 function fmt(t) { return t ? String(t).substring(0, 5) : '--' }
 function getWeekDay(row, date) { return row.days?.find(d => d.workDate === date) }
 
-const SLOT_COUNT = 28
+// 周视图：全职在前、兼职在后（同组按工号），供分隔行渲染
+const sortedWeekRows = computed(() => {
+  const list = [...(weekRows.value || [])]
+  list.sort((a, b) => (Number(a.isParttime) - Number(b.isParttime)) || String(a.employeeNo || '').localeCompare(String(b.employeeNo || '')))
+  return list
+})
+// 第一个兼职员工所在下标：在其前插入「兼职员工」分隔行
+const firstPartTimeIndex = computed(() => sortedWeekRows.value.findIndex(r => Number(r.isParttime) === 1))
+
+// 时间轴：13:00 为原点，每 30 分钟一段，共 35 段，覆盖到次日 06:00（凌晨 06:00 下班的班次不再被截断）
+const SLOT_COUNT = 35
 const slots = computed(() => Array.from({ length: SLOT_COUNT }, (_, i) => {
   const min = 13 * 60 + i * 30
   const isNext = min >= 24 * 60
@@ -228,11 +278,114 @@ const dailyWorkstations = computed(() => {
   return Array.from(set)
 })
 function isHour(s) { return s.key.endsWith(':00') }
-function dailyCellUsers(ws, slot) { return dailyRows.value.filter(r => r.workstationName === ws && String(r.timeSlot).substring(0,5) === slot.key) }
+// 单元格内员工：全职在前、兼职在后，兼职色块用绿色 + 虚线间隔与全职隔开
+function dailyCellUsers(ws, slot) {
+  return dailyRows.value
+    .filter(r => r.workstationName === ws && String(r.timeSlot).substring(0,5) === slot.key)
+    .sort((a, b) => (Number(a.isParttime ?? 0) - Number(b.isParttime ?? 0)) || (Number(a.employeeId) - Number(b.employeeId)))
+}
+// 是否为该单元格第一个兼职色块（且其前有全职色块）→ 显示虚线间隔
+function isFirstPartTimeChip(emp, ws, slot) {
+  const users = dailyCellUsers(ws, slot)
+  const idx = users.findIndex(u => u.employeeId === emp.employeeId)
+  const firstPt = users.findIndex(u => Number(u.isParttime) === 1)
+  return firstPt === idx && users.some(u => Number(u.isParttime) === 0)
+}
 // P3-12: 缺口按日期过滤
 function dailySlotIssues(ws, slot) {
   const currentDate = selectedDate.value || dayDate.value
   return dailyIssues.value.filter(i => i.issueType === 'STAFFING_GAP' && i.workDate === currentDate && i.workstationName === ws && i.timeSlot && String(i.timeSlot).substring(0,5) === slot.key)
+}
+// 该员工在该时段是否处于班中休息（含跨午夜回绕）
+function inBreak(row, slot) {
+  // 兼职员工不显示休息标记（排班界面直接留空）
+  if (Number(row.isParttime) === 1) return false
+  if (!row.breakStartTime || !row.breakEndTime) return false
+  const s = String(row.breakStartTime).substring(0, 5)
+  const e = String(row.breakEndTime).substring(0, 5)
+  const t = slot.key
+  if (e > s) return t >= s && t < e
+  return t >= s || t < e
+}
+// 休息时间段文本：20:00-20:30
+function breakTimeText(row) {
+  const s = String(row.breakStartTime || '').substring(0, 5)
+  const e = String(row.breakEndTime || '').substring(0, 5)
+  return (s && e) ? `${s}-${e}` : '--'
+}
+// 休息提示（仅显示休息时段）
+function breakTip(row) {
+  return `休息 ${breakTimeText(row)}`
+}
+
+// ===== 点击色块：切换该半小时 休息/上班 =====  //
+const slotStatusDialog = reactive({
+  visible: false,
+  employeeId: null,
+  employeeName: '',
+  employeeNo: '',
+  date: '',
+  timeSlot: '',
+  timeSlotEnd: '',
+  currentIsBreak: false,
+  action: 'work', // work | rest
+  saving: false
+})
+
+// 半小时 +30 分钟（跨午夜按 24 小时回绕）
+function slotEnd(time) {
+  const parts = String(time).split(':').map(Number)
+  const total = (parts[0] * 60 + (parts[1] || 0) + 30) % 1440
+  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`
+}
+
+// 打开弹窗：默认动作与当前状态相反（休息→上班，上班→休息）
+function openSlotStatusDialog(emp, slot) {
+  const date = selectedDate.value || dayDate.value
+  if (!date) return
+  const isBreak = inBreak(emp, slot)
+  slotStatusDialog.employeeId = emp.employeeId
+  slotStatusDialog.employeeName = emp.employeeName || ''
+  slotStatusDialog.employeeNo = emp.employeeNo || ''
+  slotStatusDialog.date = date
+  slotStatusDialog.timeSlot = slot.key
+  slotStatusDialog.timeSlotEnd = slotEnd(slot.key)
+  slotStatusDialog.currentIsBreak = isBreak
+  slotStatusDialog.action = isBreak ? 'work' : 'rest'
+  slotStatusDialog.saving = false
+  slotStatusDialog.visible = true
+}
+
+async function submitSlotStatus() {
+  const d = slotStatusDialog
+  const isRest = d.action === 'rest'
+  if (!planId.value || !d.employeeId || !d.date || !d.timeSlot) return
+  d.saving = true
+  try {
+    await setSlotStatus(planId.value, {
+      items: [{
+        employeeId: d.employeeId,
+        workDate: d.date,
+        timeSlot: d.timeSlot + ':00',
+        isRest: isRest ? 1 : 0
+      }]
+    })
+    ElMessage.success(isRest
+      ? `已改为休息（${d.timeSlot} - ${d.timeSlotEnd}）`
+      : `已恢复上班（${d.timeSlot} - ${d.timeSlotEnd}）`)
+    d.visible = false
+    // 刷新日明细与月视图（休息计数）
+    const date = selectedDate.value || dayDate.value
+    await loadDay(date)
+    try {
+      monthRows.value = await getMonthView(planId.value)
+      if (viewMode.value === 'month') buildCalendar()
+    } catch {}
+  } catch {
+    // 失败提示已由 request 拦截器统一弹出
+  } finally {
+    d.saving = false
+  }
 }
 // 低技能岗位缺口：绿色标记 + 兼职建议
 function lowSkillGapIssues(ws, slot) {
@@ -295,7 +448,8 @@ async function loadIssues() {
   issuesLoading.value = true
   try {
     const issues = (await getScheduleIssues(planId.value)) || []
-    issuesList.value = issues
+    // 不展示“无人顶岗”类问题（休息无人顶岗提示整体下线）
+    issuesList.value = issues.filter(i => i.issueType !== 'BREAK_UNCOVERED')
     // 优先使用后端 /rationality 端点；404/失败时回退从缺口描述解析（兼容未升级的后端）
     try {
       const rationality = await getScheduleRationality(planId.value)
@@ -309,6 +463,21 @@ async function loadIssues() {
 function getToday() {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+// 当前选中排班方案的日期范围（YYYY-MM-DD）
+function planRange() {
+  if (!currentPlan.value?.startDate || !currentPlan.value?.endDate) return null
+  return { start: currentPlan.value.startDate, end: currentPlan.value.endDate }
+}
+
+// 日期选择器限制：只能选该排班方案周期内的日期
+function disabledDate(date) {
+  const range = planRange()
+  if (!range) return false
+  const start = new Date(range.start + 'T00:00:00')
+  const end = new Date(range.end + 'T00:00:00')
+  return date < start || date > end
 }
 
 async function loadWeek() {
@@ -343,11 +512,47 @@ function hasPartTimeNeed(ws, date) {
 
 async function loadMonth() { if (!planId.value) { errorMsg.value = '请输入计划ID'; return }; monthRows.value = await getMonthView(planId.value); buildCalendar() }
 
-async function loadDay(date) { const d = date || dayDate.value; if (!planId.value || !d) return; dailyLoading.value = true; try { const [res, iss] = await Promise.all([getDailyView(planId.value, d), getScheduleIssues(planId.value)]); dailyRows.value = res || []; dailyIssues.value = iss || [] } finally { dailyLoading.value = false } }
+async function loadDay(date) {
+  if (!planId.value) return
+  let d = date || dayDate.value
+  const range = planRange()
+  // 自动筛选当前方案：日期缺省或不在方案周期内时，回落到今天（不在周期内则取方案开始日）
+  if (!d || (range && (d < range.start || d > range.end))) {
+    if (date) return
+    const today = getToday()
+    d = range ? (today >= range.start && today <= range.end ? today : range.start) : ''
+    dayDate.value = d
+    if (!d) return
+  }
+  dailyLoading.value = true
+  try {
+    // 同时拉取月视图数据：用于矩阵下方的「休息员工」区
+    const [res, iss, month] = await Promise.all([
+      getDailyView(planId.value, d),
+      getScheduleIssues(planId.value),
+      getMonthView(planId.value)
+    ])
+    dailyRows.value = res || []
+    dailyIssues.value = iss || []
+    if (Array.isArray(month)) monthRows.value = month
+  } finally { dailyLoading.value = false }
+}
 
 async function selectDate(date) { selectedDate.value = date; await loadDay(date) }
 
-function onModeChange() { selectedDate.value = ''; dailyRows.value = []; loadAll() }
+function onModeChange() {
+  selectedDate.value = ''
+  dailyRows.value = []
+  // 切到日明细时：默认日期限定在当前方案的周期内
+  if (viewMode.value === 'day') {
+    const range = planRange()
+    if (!dayDate.value || (range && (dayDate.value < range.start || dayDate.value > range.end))) {
+      const today = getToday()
+      dayDate.value = range ? (today >= range.start && today <= range.end ? today : range.start) : ''
+    }
+  }
+  loadAll()
+}
 
 function buildCalendar() {
   if (!monthRows.value.length) { weeks.value = []; return }
@@ -360,8 +565,18 @@ function buildCalendar() {
   })
   const days = Array.from(daySet).sort()
   if (days.length === 0) { weeks.value = []; return }
-  const stats = {}; days.forEach(d => { stats[d] = { w: 0, r: 0, s: new Set() } })
-  monthRows.value.forEach(row => row.days.forEach(d => { if (d.isRestDay === 1) stats[d.workDate].r++; else { stats[d.workDate].w++; if (d.shiftCode) stats[d.workDate].s.add(d.shiftCode) } }))
+  const stats = {}; days.forEach(d => { stats[d] = { w: 0, r: 0, pt: 0, s: new Set() } })
+  monthRows.value.forEach(row => row.days.forEach(d => {
+    if (d.isRestDay === 1) {
+      // 兼职员工空闲日不算休息（排班界面直接留空）
+      if (Number(row.isParttime) !== 1) stats[d.workDate].r++
+    } else {
+      stats[d.workDate].w++
+      // 兼职上班人数单独统计，月历里与全职分开显示
+      if (Number(row.isParttime) === 1) stats[d.workDate].pt++
+      if (d.shiftCode) stats[d.workDate].s.add(d.shiftCode)
+    }
+  }))
   const fd = new Date(days[0] + 'T00:00:00'), ld = new Date(days[days.length - 1] + 'T00:00:00')
   const cs = new Date(fd); cs.setDate(fd.getDate() - ((fd.getDay() + 6) % 7))
   const ce = new Date(ld); ce.setDate(ld.getDate() + (6 - (ld.getDay() + 6) % 7))
@@ -370,8 +585,8 @@ function buildCalendar() {
     const w = []
     for (let i = 0; i < 7; i++) {
       const k = `${c.getFullYear()}-${String(c.getMonth()+1).padStart(2,'0')}-${String(c.getDate()).padStart(2,'0')}`
-      if (c >= fd && c <= ld && stats[k]) { const s = stats[k]; w.push({ date: k, dayNum: c.getDate(), workCount: s.w, restCount: s.r, shiftSummary: Array.from(s.s).slice(0,3).join(' ') }) }
-      else w.push({ date: '', dayNum: '', workCount: 0, restCount: 0, shiftSummary: '' })
+      if (c >= fd && c <= ld && stats[k]) { const s = stats[k]; w.push({ date: k, dayNum: c.getDate(), workCount: s.w, partTimeWorkCount: s.pt, restCount: s.r, shiftSummary: Array.from(s.s).slice(0,3).join(' ') }) }
+      else w.push({ date: '', dayNum: '', workCount: 0, partTimeWorkCount: 0, restCount: 0, shiftSummary: '' })
       c.setDate(c.getDate() + 1)
     }
     ws.push(w)
@@ -382,6 +597,7 @@ function buildCalendar() {
 // P3-39: 切换计划时重置所有状态
 function selectPlan(row) {
   if (!row) return
+  currentPlan.value = row
   planId.value = row.id
   weekStart.value = row.startDate || ''
   selectedDate.value = ''
@@ -390,11 +606,25 @@ function selectPlan(row) {
   dailyIssues.value = []
   monthRows.value = []
   issuesList.value = []
-  viewMode.value = 'week'
+  // 保持当前视图，各视图按新方案自动重新加载；日明细日期会自动落到新方案周期内
   loadAll()
 }
 
-async function loadPlans() { plansLoading.value = true; try { const res = await getSchedules({ page: 1, pageSize: 100 }); plans.value = res.items || [] } finally { plansLoading.value = false } }
+async function loadPlans() {
+  plansLoading.value = true
+  try {
+    const res = await getSchedules({ page: 1, pageSize: 100 })
+    plans.value = res.items || []
+    // 自动选中当前 planId 对应的排班方案：高亮表格行并记录其周期范围
+    if (planId.value) {
+      const matched = plans.value.find(p => String(p.id) === String(planId.value))
+      if (matched) {
+        currentPlan.value = matched
+        nextTick(() => plansTableRef.value?.setCurrentRow(matched))
+      }
+    }
+  } finally { plansLoading.value = false }
+}
 
 const issueStats = computed(() => {
   const list = issuesList.value
@@ -522,6 +752,9 @@ onMounted(() => { loadPlans(); if (planId.value) loadAll(); nextTick(() => rende
 <style scoped>
 .gantt { border: 1px solid #ebeef5; border-radius: 4px; }
 .gantt-row { display: flex; border-bottom: 1px solid #ebeef5; }
+.gantt-row-parttime .gantt-emp-col { background: #f7fdf5; }
+.gantt-divider { background: #f0f9eb; color: #67c23a; font-weight: 600; font-size: 12px; padding: 5px 10px; border-bottom: 1px solid #c2e7b0; display: flex; align-items: center; gap: 6px; }
+.gantt-divider-badge { display: inline-block; background: #67c23a; color: #fff; border-radius: 3px; font-size: 11px; padding: 0 5px; line-height: 16px; }
 .gantt-header { background: #f5f7fa; font-weight: 600; }
 .gantt-emp-col { width: 140px; flex-shrink: 0; padding: 6px 8px; border-right: 1px solid #ebeef5; }
 .gantt-day-col { flex: 1; min-width: 100px; padding: 4px; border-right: 1px solid #ebeef5; }
@@ -533,6 +766,7 @@ onMounted(() => { loadPlans(); if (planId.value) loadAll(); nextTick(() => rende
 .empty-block { background: #fafafa; }
 .shift-code { font-weight: 600; }
 .shift-time { font-size: 11px; color: #909399; }
+.shift-break { margin-top: 2px; font-size: 10px; color: #e6a23c; line-height: 1.4; }
 .emp-name { font-size: 12px; font-weight: 600; }
 .emp-sub { font-size: 11px; color: #909399; }
 .calendar { border: 1px solid #ebeef5; border-radius: 4px; }
@@ -546,6 +780,7 @@ onMounted(() => { loadPlans(); if (planId.value) loadAll(); nextTick(() => rende
 .cal-cell.is-selected { background: #e6f7ff; box-shadow: inset 0 0 0 2px #409eff; }
 .cal-day-num { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
 .cal-work { font-size: 12px; color: #409eff; }
+.cal-parttime { font-size: 12px; color: #67c23a; }
 .cal-rest { font-size: 12px; color: #f56c6c; }
 .cal-shift { font-size: 11px; color: #909399; margin-top: 4px; }
 .matrix-wrap { overflow-x: auto; }
@@ -565,7 +800,21 @@ onMounted(() => { loadPlans(); if (planId.value) loadAll(); nextTick(() => rende
 .emp-chip { background: #409eff; color: #fff; border-radius: 3px; padding: 2px 4px; margin-bottom: 2px; font-size: 11px; }
 .emp-chip .emp-name { font-weight: 600; }
 .emp-chip .emp-shift { opacity: 0.85; font-size: 10px; }
+/* 兼职色块：绿色，且与前面的全职色块用虚线间隔隔开 */
+.emp-chip.is-parttime { background: #67c23a; }
+.emp-chip.pt-first { border-top: 1px dashed #a3d98a; padding-top: 3px; margin-top: 1px; }
+/* 班中休息色块：灰色 + 橙色「休」标记，第二行显示休息时间段与顶岗人 */
+.emp-chip.is-break { background: #909399; }
+.emp-chip.is-break .break-info { color: #ffe6a7; }
+.break-flag { display: inline-block; background: #e6a23c; color: #fff; border-radius: 2px; padding: 0 3px; margin-left: 4px; font-size: 10px; line-height: 14px; }
 .next-day .emp-chip { background: #e6a23c; }
+.next-day .emp-chip.is-parttime { background: #67c23a; }
+.next-day .emp-chip.is-break { background: #909399; }
+/* 色块可点击：切换该半小时 休息/上班 */
+.emp-chip { cursor: pointer; }
+.emp-chip:hover { opacity: 0.85; }
+.ds-info { font-size: 13px; color: #303133; }
+.ds-label { color: #909399; }
 .stat-num { font-size: 28px; font-weight: 700; color: #303133; }
 .stat-label { font-size: 13px; color: #909399; margin-top: 4px; }
 .pie-wrap { display: flex; align-items: center; gap: 16px; }

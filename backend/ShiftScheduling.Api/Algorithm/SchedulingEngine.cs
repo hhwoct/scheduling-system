@@ -42,17 +42,23 @@ public sealed class SchedulingEngine
         var staffingGaps = new List<ScheduleIssueOutput>();
         var workstationAssignments = workstationAllocator.Allocate(input, effectiveRestDays, shiftAssignments, staffingGaps);
 
+        // 阶段四：班中休息分配（30 分钟固定休息：错峰 → 借调 → 告警）
+        var breakAllocator = new BreakAllocator();
+        var breakIssues = new List<ScheduleIssueOutput>();
+        var breakAssignments = breakAllocator.Allocate(input, shiftAssignments, workstationAssignments, breakIssues);
+
         // 生成日汇总
         var daySummaries = BuildDaySummaries(input, effectiveRestDays, shiftAssignments, workstationAssignments);
 
-        // 合规检查（合并岗位缺口与合规违规）
+        // 合规检查（合并岗位缺口、休息告警与合规违规）
         var complianceIssues = BuildComplianceIssues(input, effectiveRestDays, shiftAssignments, workstationAssignments, daySummaries);
-        var issues = staffingGaps.Concat(complianceIssues).ToList();
+        var issues = staffingGaps.Concat(breakIssues).Concat(complianceIssues).ToList();
 
         return new SchedulingOutput(
             restDays,
             shiftAssignments,
             workstationAssignments,
+            breakAssignments,
             daySummaries,
             issues);
     }
@@ -79,7 +85,7 @@ public sealed class SchedulingEngine
         var skills = await _dbContext.EmployeeSkills
             .AsNoTracking()
             .Where(x => x.Status == 1 && x.SkillScore > 0)
-            .Select(x => new SkillInput(x.EmployeeId, x.WorkstationId, x.SkillScore))
+            .Select(x => new SkillInput(x.EmployeeId, x.WorkstationId, x.SkillScore, x.IsPrimarySkill))
             .ToListAsync(cancellationToken);
 
         var dateParameters = await _dbContext.DateParameters
@@ -139,6 +145,14 @@ public sealed class SchedulingEngine
             .Select(x => new ApprovedLeaveInput(x.EmployeeId, x.StartDate, x.EndDate))
             .ToListAsync(cancellationToken);
 
+        // 高峰禁休时段（无配置时算法使用默认 20:00-22:00）
+        var peakRestrictedHours = await _dbContext.PeakRestrictedHours
+            .AsNoTracking()
+            .Where(x => x.StoreId == storeId && x.Status == 1)
+            .OrderBy(x => x.StartTime)
+            .Select(x => new PeakRestrictedHourInput(x.StartTime, x.EndTime))
+            .ToListAsync(cancellationToken);
+
         var rules = await _dbContext.RuleConfigs
             .AsNoTracking()
             .Where(x => x.StoreId == storeId && x.Status == 1)
@@ -163,6 +177,7 @@ public sealed class SchedulingEngine
             shiftInputs,
             staffingRequirements,
             approvedLeaves,
+            peakRestrictedHours,
             lowSkillWorkstationIds,
             defaultMonthlyRestDays,
             maxWeeklyHours,

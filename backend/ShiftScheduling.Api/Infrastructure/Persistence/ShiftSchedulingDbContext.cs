@@ -45,6 +45,8 @@ public sealed class ShiftSchedulingDbContext : DbContext
 
     public DbSet<ShiftSwapEntity> ShiftSwaps => Set<ShiftSwapEntity>();
 
+    public DbSet<PeakRestrictedHourEntity> PeakRestrictedHours => Set<PeakRestrictedHourEntity>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<StoreEntity>(entity =>
@@ -248,6 +250,10 @@ public sealed class ShiftSchedulingDbContext : DbContext
             entity.Property(x => x.EndTime).HasColumnName("end_time");
             entity.Property(x => x.WorkHours).HasColumnName("work_hours").HasPrecision(5, 2);
             entity.Property(x => x.CoveredWorkstations).HasColumnName("covered_workstations");
+            entity.Property(x => x.BreakStartTime).HasColumnName("break_start_time");
+            entity.Property(x => x.BreakEndTime).HasColumnName("break_end_time");
+            entity.Property(x => x.BreakCoverEmployeeId).HasColumnName("break_cover_employee_id");
+            entity.Property(x => x.BreakWorkstationId).HasColumnName("break_workstation_id");
             entity.Property(x => x.CreatedAt).HasColumnName("created_at");
             entity.Property(x => x.UpdatedAt).HasColumnName("updated_at");
         });
@@ -337,6 +343,19 @@ public sealed class ShiftSchedulingDbContext : DbContext
             entity.Property(x => x.ReviewUserId).HasColumnName("review_user_id");
             entity.Property(x => x.ReviewTime).HasColumnName("review_time");
             entity.Property(x => x.ReviewRemark).HasColumnName("review_remark");
+            entity.Property(x => x.CreatedAt).HasColumnName("created_at");
+            entity.Property(x => x.UpdatedAt).HasColumnName("updated_at");
+        });
+
+        modelBuilder.Entity<PeakRestrictedHourEntity>(entity =>
+        {
+            entity.ToTable("peak_restricted_hours");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Id).HasColumnName("id");
+            entity.Property(x => x.StoreId).HasColumnName("store_id");
+            entity.Property(x => x.StartTime).HasColumnName("start_time");
+            entity.Property(x => x.EndTime).HasColumnName("end_time");
+            entity.Property(x => x.Status).HasColumnName("status");
             entity.Property(x => x.CreatedAt).HasColumnName("created_at");
             entity.Property(x => x.UpdatedAt).HasColumnName("updated_at");
         });

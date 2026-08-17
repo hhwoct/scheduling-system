@@ -1,0 +1,37 @@
+USE shift_mvp;
+
+-- 班中休息功能：schedule_summaries 增加休息时段与顶岗字段；
+-- 新增高峰禁休时段表 peak_restricted_hours（admin 端增删改查）。
+START TRANSACTION;
+
+-- 1. 班中休息字段（30 分钟固定休息；break_cover_employee_id = NULL 表示无人顶岗）
+ALTER TABLE schedule_summaries
+  ADD COLUMN break_start_time time DEFAULT NULL COMMENT '班中休息开始时间' AFTER covered_workstations,
+  ADD COLUMN break_end_time time DEFAULT NULL COMMENT '班中休息结束时间' AFTER break_start_time,
+  ADD COLUMN break_cover_employee_id bigint DEFAULT NULL COMMENT '顶岗员工ID（NULL=无人顶岗）' AFTER break_end_time,
+  ADD COLUMN break_workstation_id bigint DEFAULT NULL COMMENT '休息时所在工作站（主工作站）' AFTER break_cover_employee_id;
+
+-- 2. 高峰禁休时段表（按门店配置，可多条）
+CREATE TABLE IF NOT EXISTS peak_restricted_hours (
+  id bigint NOT NULL AUTO_INCREMENT,
+  store_id bigint NOT NULL,
+  start_time time NOT NULL COMMENT '高峰开始（含）',
+  end_time time NOT NULL COMMENT '高峰结束（不含）',
+  status tinyint NOT NULL DEFAULT 1 COMMENT '1启用 0停用',
+  created_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_peak_hours_store (store_id),
+  CONSTRAINT fk_peak_hours_store FOREIGN KEY (store_id) REFERENCES stores (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 3. 为所有现有门店插入默认高峰时段 20:00-22:00
+INSERT INTO peak_restricted_hours (store_id, start_time, end_time)
+SELECT id, '20:00:00', '22:00:00' FROM stores;
+
+-- 4. 审计
+INSERT INTO audit_logs (store_id, operator_user_id, operator_name, action_type, target_type, remark)
+VALUES (1, 1, '系统管理员', 'MIGRATE_BREAK_PEAK_HOURS', 'SCHEMA',
+        '新增班中休息字段与高峰禁休时段表，默认高峰时段 20:00-22:00');
+
+COMMIT;

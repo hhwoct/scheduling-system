@@ -30,7 +30,7 @@
 
       <div v-loading="loading" class="matrix-wrap">
         <div class="matrix">
-          <!-- 表头：时间轴（13:00 为原点，跨天到次日凌晨） -->
+          <!-- 表头：时间轴（13:00 为原点，跨天到次日 06:00） -->
           <div class="m-row m-header">
             <div class="m-ws-col">工作站</div>
             <div v-for="slot in slots" :key="slot.key" class="m-slot-col" :title="slot.display">
@@ -43,9 +43,13 @@
             <div class="m-ws-col">{{ ws }}</div>
             <div v-for="slot in slots" :key="slot.key" class="m-slot-col" :class="cellClass(ws, slot)">
               <div v-if="slotIssues(ws, slot).length" class="gap-flag">缺</div>
-              <div v-for="emp in cellUsers(ws, slot)" :key="emp.employeeId" class="emp-chip">
-                <div class="emp-name">{{ emp.employeeName }}</div>
-                <div class="emp-shift">{{ emp.shiftCode || '--' }}</div>
+              <div v-for="emp in cellUsers(ws, slot)" :key="emp.employeeId" class="emp-chip" :class="{ 'is-break': inBreak(emp, slot) }">
+                <div class="emp-name">
+                  {{ emp.employeeName }}
+                  <span v-if="inBreak(emp, slot)" class="break-flag" :title="breakTip(emp)">休</span>
+                </div>
+                <div v-if="!inBreak(emp, slot)" class="emp-shift">{{ emp.shiftCode || '--' }}</div>
+                <div v-else class="emp-shift break-info">{{ emp.breakCoverEmployeeName ? `顶班 ${emp.breakCoverEmployeeName}` : '' }}</div>
                 <div class="emp-pos">{{ emp.employeePosition || '--' }}</div>
               </div>
             </div>
@@ -54,7 +58,7 @@
       </div>
 
       <div style="margin-top: 12px; display: flex; gap: 16px; align-items: center; flex-wrap: wrap">
-        <span style="font-size: 12px; color: #909399">色块从上到下：名字 / 班次 / 职位；时间轴从当日 13:00 到次日凌晨（+1 表示次日）</span>
+        <span style="font-size: 12px; color: #909399">色块从上到下：名字 / 班次 / 职位；时间轴从当日 13:00 到次日 06:00（+1 表示次日）</span>
         <el-tag size="small" type="warning">次日</el-tag>
         <el-tag size="small" type="danger">缺</el-tag>
         <span style="font-size: 12px; color: #909399">该工作站该时段存在岗位缺口</span>
@@ -80,8 +84,8 @@ const rows = ref([])
 const issues = ref([])
 const errorMsg = ref('')
 
-// 时间轴：13:00 为原点，每 30 分钟一段，共 28 段（到次日 03:00）
-const SLOT_COUNT = 28
+// 时间轴：13:00 为原点，每 30 分钟一段，共 35 段（到次日 06:00，覆盖凌晨下班的班次）
+const SLOT_COUNT = 35
 const slots = computed(() => {
   const list = []
   const startMin = 13 * 60
@@ -112,6 +116,26 @@ function cellUsers(ws, slot) {
     const hm = String(r.timeSlot).substring(0, 5)
     return hm === slot.key
   })
+}
+
+// 该员工在该时段是否处于班中休息（含跨午夜回绕）
+function inBreak(row, slot) {
+  // 兼职员工不显示休息标记（排班界面直接留空）
+  if (Number(row.isParttime) === 1) return false
+  if (!row.breakStartTime || !row.breakEndTime) return false
+  const s = String(row.breakStartTime).substring(0, 5)
+  const e = String(row.breakEndTime).substring(0, 5)
+  const t = slot.key
+  if (e > s) return t >= s && t < e
+  return t >= s || t < e
+}
+
+function breakTip(row) {
+  const s = String(row.breakStartTime).substring(0, 5)
+  const e = String(row.breakEndTime).substring(0, 5)
+  return row.breakCoverEmployeeName
+    ? `休息 ${s}-${e}，由 ${row.breakCoverEmployeeName} 顶班`
+    : `休息 ${s}-${e}`
 }
 
 // 该格子对应的岗位缺口（按 日期+工作站+时段 匹配）
@@ -172,6 +196,9 @@ onMounted(loadData)
 .has-gap { box-shadow: inset 0 0 0 2px #f56c6c; }
 .gap-flag { position: absolute; top: 1px; right: 1px; background: #f56c6c; color: #fff; font-size: 10px; border-radius: 2px; padding: 0 3px; line-height: 14px; }
 .emp-chip { background: #409eff; color: #fff; border-radius: 3px; padding: 2px 4px; margin-bottom: 2px; font-size: 11px; }
+.emp-chip.is-break { background: #909399; }
+.emp-chip.is-break .break-info { color: #ffe6a7; }
+.break-flag { display: inline-block; background: #e6a23c; color: #fff; border-radius: 2px; padding: 0 3px; margin-left: 4px; font-size: 10px; line-height: 14px; }
 .emp-chip .emp-name { font-weight: 600; }
 .emp-chip .emp-shift { opacity: 0.95; }
 .emp-chip .emp-pos { opacity: 0.8; font-size: 10px; }

@@ -30,6 +30,7 @@
               <div class="cal-day-num">{{ day.dayNum }}</div>
               <div class="cal-work">{{ day.workCount }} 上班</div>
               <div class="cal-rest" v-if="day.restCount > 0">{{ day.restCount }} 休息</div>
+              <div class="cal-break" v-if="day.breakCount > 0">{{ day.breakCount }} 人班中休</div>
               <div class="cal-shift" v-if="day.shiftSummary">{{ day.shiftSummary }}</div>
             </template>
           </div>
@@ -55,9 +56,13 @@
               <div class="m-ws-col">{{ ws }}</div>
               <div v-for="slot in slots" :key="slot.key" class="m-slot-col" :class="cellClass(ws, slot, selectedDate)">
                 <div v-if="dailySlotIssues(ws, slot, selectedDate).length" class="gap-flag">缺</div>
-                <div v-for="emp in dailyCellUsers(ws, slot)" :key="emp.employeeId" class="emp-chip">
-                  <div class="emp-name">{{ emp.employeeName }}</div>
-                  <div class="emp-shift">{{ emp.shiftCode || '--' }}</div>
+                <div v-for="emp in dailyCellUsers(ws, slot)" :key="emp.employeeId" class="emp-chip" :class="{ 'is-break': inBreak(emp, slot) }">
+                  <div class="emp-name">
+                    {{ emp.employeeName }}
+                    <span v-if="inBreak(emp, slot)" class="break-flag" :title="breakTip(emp)">休</span>
+                  </div>
+                  <div v-if="!inBreak(emp, slot)" class="emp-shift">{{ emp.shiftCode || '--' }}</div>
+                  <div v-else class="emp-shift break-info">{{ emp.breakCoverEmployeeName ? `顶班 ${emp.breakCoverEmployeeName}` : '' }}</div>
                 </div>
               </div>
             </div>
@@ -86,7 +91,8 @@ const dailyRows = ref([])
 const dailyIssues = ref([])
 const dailyLoading = ref(false)
 
-const SLOT_COUNT = 28
+// 时间轴：13:00 为原点，每 30 分钟一段，共 35 段，到次日 06:00
+const SLOT_COUNT = 35
 const slots = computed(() => {
   const list = []
   const startMin = 13 * 60
@@ -123,6 +129,26 @@ function dailyCellUsers(ws, slot) {
     const hm = String(r.timeSlot).substring(0, 5)
     return hm === slot.key
   })
+}
+
+// 该员工在该时段是否处于班中休息（含跨午夜回绕）
+function inBreak(row, slot) {
+  // 兼职员工不显示休息标记（排班界面直接留空）
+  if (Number(row.isParttime) === 1) return false
+  if (!row.breakStartTime || !row.breakEndTime) return false
+  const s = String(row.breakStartTime).substring(0, 5)
+  const e = String(row.breakEndTime).substring(0, 5)
+  const t = slot.key
+  if (e > s) return t >= s && t < e
+  return t >= s || t < e
+}
+
+function breakTip(row) {
+  const s = String(row.breakStartTime).substring(0, 5)
+  const e = String(row.breakEndTime).substring(0, 5)
+  return row.breakCoverEmployeeName
+    ? `休息 ${s}-${e}，由 ${row.breakCoverEmployeeName} 顶班`
+    : `休息 ${s}-${e}`
 }
 
 function dailySlotIssues(ws, slot, date) {
@@ -201,13 +227,16 @@ function buildCalendar() {
   }
 
   const dayStats = {}
-  days.forEach(d => { dayStats[d] = { workCount: 0, restCount: 0, shifts: new Set() } })
+  days.forEach(d => { dayStats[d] = { workCount: 0, restCount: 0, breakCount: 0, shifts: new Set() } })
 
   rows.value.forEach(row => {
     row.days.forEach(d => {
-      if (d.isRestDay === 1) dayStats[d.workDate].restCount++
-      else {
+      if (d.isRestDay === 1) {
+        // 兼职员工空闲日不算休息（排班界面直接留空）
+        if (Number(row.isParttime) !== 1) dayStats[d.workDate].restCount++
+      } else {
         dayStats[d.workDate].workCount++
+        if (d.breakStartTime && Number(row.isParttime) !== 1) dayStats[d.workDate].breakCount++
         if (d.shiftCode) dayStats[d.workDate].shifts.add(d.shiftCode)
       }
     })
@@ -236,10 +265,11 @@ function buildCalendar() {
           dayNum: cursor.getDate(),
           workCount: stat.workCount,
           restCount: stat.restCount,
+          breakCount: stat.breakCount,
           shiftSummary: Array.from(stat.shifts).slice(0, 3).join(' ')
         })
       } else {
-        week.push({ date: '', dayNum: '', workCount: 0, restCount: 0, shiftSummary: '' })
+        week.push({ date: '', dayNum: '', workCount: 0, restCount: 0, breakCount: 0, shiftSummary: '' })
       }
       cursor.setDate(cursor.getDate() + 1)
     }
@@ -269,6 +299,7 @@ onMounted(loadData)
 .cal-day-num { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
 .cal-work { font-size: 12px; color: #409eff; }
 .cal-rest { font-size: 12px; color: #f56c6c; }
+.cal-break { font-size: 12px; color: #e6a23c; }
 .cal-shift { font-size: 11px; color: #909399; margin-top: 4px; }
 
 .matrix-wrap { overflow-x: auto; }
@@ -285,6 +316,9 @@ onMounted(loadData)
 .has-gap { box-shadow: inset 0 0 0 2px #f56c6c; }
 .gap-flag { position: absolute; top: 1px; right: 1px; background: #f56c6c; color: #fff; font-size: 10px; border-radius: 2px; padding: 0 3px; line-height: 14px; }
 .emp-chip { background: #409eff; color: #fff; border-radius: 3px; padding: 2px 4px; margin-bottom: 2px; font-size: 11px; }
+.emp-chip.is-break { background: #909399; }
+.emp-chip.is-break .break-info { color: #ffe6a7; }
+.break-flag { display: inline-block; background: #e6a23c; color: #fff; border-radius: 2px; padding: 0 3px; margin-left: 4px; font-size: 10px; line-height: 14px; }
 .emp-chip .emp-name { font-weight: 600; }
 .emp-chip .emp-shift { opacity: 0.85; font-size: 10px; }
 .next-day .emp-chip { background: #e6a23c; }

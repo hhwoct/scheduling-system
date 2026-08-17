@@ -11,6 +11,7 @@ using ShiftScheduling.Api.Application.Auth;
 using ShiftScheduling.Api.Application.Common;
 using ShiftScheduling.Api.Application.Employees;
 using ShiftScheduling.Api.Application.EmployeeSkills;
+using ShiftScheduling.Api.Application.PeakHours;
 using ShiftScheduling.Api.Application.RuleConfigs;
 using ShiftScheduling.Api.Application.Schedules;
 using ShiftScheduling.Api.Application.Security;
@@ -39,6 +40,7 @@ builder.Services.AddScoped<IShiftTemplateService, ShiftTemplateService>();
 builder.Services.AddScoped<IRuleConfigService, RuleConfigService>();
 builder.Services.AddScoped<SchedulingEngine>();
 builder.Services.AddScoped<IScheduleService, ScheduleService>();
+builder.Services.AddScoped<IPeakHourService, PeakHourService>();
 
 var connectionString = builder.Configuration.GetConnectionString("ShiftMvp");
 if (string.IsNullOrWhiteSpace(connectionString))
@@ -102,14 +104,27 @@ builder.Services
                     return;
                 }
 
-                var dbContext = context.HttpContext.RequestServices.GetRequiredService<ShiftSchedulingDbContext>();
-                var userExists = await dbContext.Users
-                    .AsNoTracking()
-                    .AnyAsync(x => x.Id == userId && x.Status == 1, context.HttpContext.RequestAborted);
+                var passwordVersionValue = context.Principal?.FindFirst("password_version")?.Value;
+                if (!int.TryParse(passwordVersionValue, out var tokenPasswordVersion))
+                {
+                    context.Fail("令牌缺少密码版本");
+                    return;
+                }
 
-                if (!userExists)
+                var dbContext = context.HttpContext.RequestServices.GetRequiredService<ShiftSchedulingDbContext>();
+                var user = await dbContext.Users
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(x => x.Id == userId && x.Status == 1, context.HttpContext.RequestAborted);
+
+                if (user is null)
                 {
                     context.Fail("用户不存在或已被停用");
+                    return;
+                }
+
+                if (user.PasswordVersion != tokenPasswordVersion)
+                {
+                    context.Fail("令牌已失效，请重新登录");
                 }
             },
             OnChallenge = async context =>
@@ -196,9 +211,10 @@ var api = app.MapGroup("/api");
 
 api.MapGet("/health", () => ApiResponse.Ok(new { status = "UP", service = "ShiftScheduling.Api" }, "后端服务运行正常"));
 
-api.MapPost("/auth/login", async (LoginRequest request, IAuthService authService, CancellationToken cancellationToken) =>
+api.MapPost("/auth/login", async (LoginRequest request, IAuthService authService, HttpContext httpContext, CancellationToken cancellationToken) =>
 {
-    var result = await authService.LoginAsync(request, cancellationToken);
+    var clientIp = httpContext.Connection.RemoteIpAddress?.ToString();
+    var result = await authService.LoginAsync(request, clientIp, cancellationToken);
     return ApiResponse.Ok(result, "登录成功");
 }).RequireRateLimiting("LoginLimiter");
 
@@ -206,6 +222,8 @@ api.MapPost("/auth/login", async (LoginRequest request, IAuthService authService
 api.MapPost("/auth/send-reset-otp", async (
     SendResetOtpRequest request,
     IAuthService authService,
+    IWebHostEnvironment environment,
+    ILoggerFactory loggerFactory,
     HttpContext httpContext,
     CancellationToken cancellationToken) =>
 {
@@ -216,7 +234,15 @@ api.MapPost("/auth/send-reset-otp", async (
 
     var clientIp = httpContext.Connection.RemoteIpAddress?.ToString();
     var otp = await authService.SendPasswordResetOtpAsync(request.Username ?? string.Empty, clientIp, cancellationToken);
-    return ApiResponse.Ok(new { DevOtp = otp }, "验证码已发送");
+
+    // 安全：验证码严禁进入响应体。短信网关接入前，仅非生产环境通过服务端日志输出。
+    if (!environment.IsProduction())
+    {
+        loggerFactory.CreateLogger("PasswordReset").LogWarning(
+            "[DEV-OTP] username={Username}, otp={Otp}", request.Username, otp);
+    }
+
+    return ApiResponse.Ok(true, "验证码已发送");
 }).RequireRateLimiting("ResetLimiter");
 
 // 忘记密码：验证用户名 + 手机号 + OTP 后重置密码
@@ -506,6 +532,70 @@ api.MapPut("/rules/{id:long}", async (
     return ApiResponse.Ok(result, "保存规则配置成功");
 }).RequireAuthorization("SystemAdminOnly");
 
+// ============ 高峰禁休时段（班中休息禁止与高峰重叠，admin 端增删改查） ============
+api.MapGet("/peak-restricted-hours", async (
+    ICurrentUser currentUser,
+    IPeakHourService peakHourService,
+    CancellationToken cancellationToken) =>
+{
+    var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
+    var result = await peakHourService.ListAsync(storeId, cancellationToken);
+    return ApiResponse.Ok(result, "获取高峰时段成功");
+}).RequireAuthorization("AdminOnly");
+
+api.MapPost("/peak-restricted-hours", async (
+    PeakHourUpsertRequest request,
+    ICurrentUser currentUser,
+    IPeakHourService peakHourService,
+    CancellationToken cancellationToken) =>
+{
+    var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
+    var result = await peakHourService.CreateAsync(
+        request,
+        storeId,
+        currentUser.UserId ?? 0,
+        currentUser.Nickname ?? currentUser.Username ?? "匿名",
+        cancellationToken);
+
+    return ApiResponse.Ok(result, "新增高峰时段成功");
+}).RequireAuthorization("AdminOnly");
+
+api.MapPut("/peak-restricted-hours/{id:long}", async (
+    long id,
+    PeakHourUpsertRequest request,
+    ICurrentUser currentUser,
+    IPeakHourService peakHourService,
+    CancellationToken cancellationToken) =>
+{
+    var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
+    var result = await peakHourService.UpdateAsync(
+        id,
+        request,
+        storeId,
+        currentUser.UserId ?? 0,
+        currentUser.Nickname ?? currentUser.Username ?? "匿名",
+        cancellationToken);
+
+    return ApiResponse.Ok(result, "修改高峰时段成功");
+}).RequireAuthorization("AdminOnly");
+
+api.MapDelete("/peak-restricted-hours/{id:long}", async (
+    long id,
+    ICurrentUser currentUser,
+    IPeakHourService peakHourService,
+    CancellationToken cancellationToken) =>
+{
+    var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
+    await peakHourService.DeleteAsync(
+        id,
+        storeId,
+        currentUser.UserId ?? 0,
+        currentUser.Nickname ?? currentUser.Username ?? "匿名",
+        cancellationToken);
+
+    return ApiResponse.Ok(true, "删除高峰时段成功");
+}).RequireAuthorization("AdminOnly");
+
 // ============ 排班业务 ============
 api.MapPost("/schedules/generate", async (
     GenerateScheduleRequest request,
@@ -612,6 +702,44 @@ api.MapPut("/schedules/{planId:long}/adjust", async (
     return ApiResponse.Ok(true, "手动调整排班成功");
 }).RequireAuthorization("AdminOnly");
 
+api.MapPut("/schedules/{planId:long}/day-status", async (
+    long planId,
+    SetDayStatusRequest request,
+    ICurrentUser currentUser,
+    IScheduleService scheduleService,
+    CancellationToken cancellationToken) =>
+{
+    var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
+    await scheduleService.SetDayStatusAsync(
+        planId,
+        request,
+        storeId,
+        currentUser.UserId ?? 0,
+        currentUser.Nickname ?? currentUser.Username ?? "匿名",
+        cancellationToken);
+
+    return ApiResponse.Ok(true, "设置员工休息/上班状态成功");
+}).RequireAuthorization("AdminOnly");
+
+api.MapPut("/schedules/{planId:long}/slot-status", async (
+    long planId,
+    SetSlotStatusRequest request,
+    ICurrentUser currentUser,
+    IScheduleService scheduleService,
+    CancellationToken cancellationToken) =>
+{
+    var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
+    await scheduleService.SetSlotStatusAsync(
+        planId,
+        request,
+        storeId,
+        currentUser.UserId ?? 0,
+        currentUser.Nickname ?? currentUser.Username ?? "匿名",
+        cancellationToken);
+
+    return ApiResponse.Ok(true, "调整时段状态成功");
+}).RequireAuthorization("AdminOnly");
+
 api.MapPost("/schedules/{planId:long}/publish", async (
     long planId,
     ICurrentUser currentUser,
@@ -676,7 +804,7 @@ api.MapGet("/notifications", async (
     if (lookupNo != null)
     {
         var emp = await db.Employees.AsNoTracking()
-            .FirstOrDefaultAsync(x => x.EmployeeNo == lookupNo && x.Status == 1);
+            .FirstOrDefaultAsync(x => x.EmployeeNo == lookupNo && x.StoreId == storeId && x.Status == 1);
         if (emp != null)
             query = query.Where(x => x.ReceiverEmployeeId == emp.Id);
         else
@@ -719,7 +847,7 @@ api.MapGet("/notifications/unread-count", async (
     if (lookupNo != null)
     {
         var emp = await db.Employees.AsNoTracking()
-            .FirstOrDefaultAsync(x => x.EmployeeNo == lookupNo && x.Status == 1);
+            .FirstOrDefaultAsync(x => x.EmployeeNo == lookupNo && x.StoreId == storeId && x.Status == 1);
         if (emp != null)
             query = query.Where(x => x.ReceiverEmployeeId == emp.Id);
         else
@@ -917,6 +1045,19 @@ api.MapGet("/employee/my-schedule", async (
         .OrderBy(x => x.WorkDate)
         .ToListAsync(cancellationToken);
 
+    // 班中休息顶岗人姓名
+    var coverIds = summaries
+        .Where(x => x.BreakCoverEmployeeId is not null)
+        .Select(x => x.BreakCoverEmployeeId!.Value)
+        .Distinct()
+        .ToList();
+    var coverNames = coverIds.Count == 0
+        ? new Dictionary<long, string>()
+        : await dbContext.Employees
+            .AsNoTracking()
+            .Where(x => coverIds.Contains(x.Id))
+            .ToDictionaryAsync(x => x.Id, x => x.Name, cancellationToken);
+
     var byPlan = summaries
         .GroupBy(x => x.PlanId)
         .ToDictionary(g => g.Key, g => g.ToList());
@@ -935,12 +1076,51 @@ api.MapGet("/employee/my-schedule", async (
                 ShiftCode = s.ShiftTemplateId is null ? null : shiftCodes.GetValueOrDefault(s.ShiftTemplateId.Value),
                 s.StartTime,
                 s.EndTime,
-                s.WorkHours
+                s.WorkHours,
+                s.BreakStartTime,
+                s.BreakEndTime,
+                CoverEmployeeName = s.BreakCoverEmployeeId is null ? null : coverNames.GetValueOrDefault(s.BreakCoverEmployeeId.Value)
             })
             .ToList()
     }).ToList();
 
-    return ApiResponse.Ok(new { Employee = new { employee.Id, employee.EmployeeNo, employee.Name, employee.Department }, Plans = result }, "获取我的班表成功");
+    // 我顶岗他人的记录（借调视角）
+    var coverRows = await dbContext.ScheduleSummaries
+        .AsNoTracking()
+        .Where(x => planIds.Contains(x.PlanId) && x.BreakCoverEmployeeId == employee.Id && x.BreakStartTime != null)
+        .Select(x => new { x.WorkDate, x.BreakStartTime, x.BreakEndTime, x.EmployeeId, x.BreakWorkstationId })
+        .ToListAsync(cancellationToken);
+
+    var coverEmpIds = coverRows.Select(x => x.EmployeeId).Distinct().ToList();
+    var coverEmpNames = coverEmpIds.Count == 0
+        ? new Dictionary<long, string>()
+        : await dbContext.Employees.AsNoTracking()
+            .Where(x => coverEmpIds.Contains(x.Id))
+            .ToDictionaryAsync(x => x.Id, x => x.Name, cancellationToken);
+
+    var coverWsIds = coverRows.Where(x => x.BreakWorkstationId is not null)
+        .Select(x => x.BreakWorkstationId!.Value).Distinct().ToList();
+    var coverWsNames = coverWsIds.Count == 0
+        ? new Dictionary<long, string>()
+        : await dbContext.Workstations.AsNoTracking()
+            .Where(x => coverWsIds.Contains(x.Id))
+            .ToDictionaryAsync(x => x.Id, x => x.Name, cancellationToken);
+
+    var covers = coverRows.Select(x => new
+    {
+        x.WorkDate,
+        x.BreakStartTime,
+        x.BreakEndTime,
+        ForEmployeeName = coverEmpNames.GetValueOrDefault(x.EmployeeId, $"员工{x.EmployeeId}"),
+        WorkstationName = x.BreakWorkstationId is null ? null : coverWsNames.GetValueOrDefault(x.BreakWorkstationId.Value)
+    }).ToList();
+
+    return ApiResponse.Ok(new
+    {
+        Employee = new { employee.Id, employee.EmployeeNo, employee.Name, employee.Department },
+        Plans = result,
+        Covers = covers
+    }, "获取我的班表成功");
 }).RequireAuthorization();
 
 // 员工：获取可换班的已发布排班计划（仅登录即可，不限制管理员）
@@ -1427,16 +1607,13 @@ api.MapPut("/shift-swaps/{id:long}/review", async (
 
     var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
 
-    var swap = await db.ShiftSwaps.FirstOrDefaultAsync(x => x.Id == id && x.StoreId == storeId, ct)
+    var swap = await db.ShiftSwaps.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id && x.StoreId == storeId, ct)
         ?? throw new NotFoundException("换班申请不存在");
 
     if (swap.Status != "PENDING")
         throw new BusinessException("该申请已审批", "ALREADY_REVIEWED");
 
-    swap.ReviewUserId = currentUser.UserId;
-    swap.ReviewTime = DateTime.UtcNow;
-    swap.ReviewRemark = review.Remark;
-    swap.UpdatedAt = DateTime.UtcNow;
+    var newStatus = review.Approved ? "APPROVED" : "REJECTED";
 
     if (review.Approved)
     {
@@ -1445,9 +1622,21 @@ api.MapPut("/shift-swaps/{id:long}/review", async (
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         try
         {
-            // 先更新状态（行级锁持有至事务提交，防止并发重复审批）
-            swap.Status = "APPROVED";
-            await db.SaveChangesAsync(ct);
+            // 原子抢占状态：仅当仍为 PENDING 才置为 APPROVED，防止并发重复审批
+            var claimed = await db.ShiftSwaps
+                .Where(x => x.Id == id && x.StoreId == storeId && x.Status == "PENDING")
+                .ExecuteUpdateAsync(s => s
+                    .SetProperty(x => x.Status, "APPROVED")
+                    .SetProperty(x => x.ReviewUserId, currentUser.UserId)
+                    .SetProperty(x => x.ReviewTime, DateTime.UtcNow)
+                    .SetProperty(x => x.ReviewRemark, review.Remark)
+                    .SetProperty(x => x.UpdatedAt, DateTime.UtcNow), ct);
+
+            if (claimed == 0)
+            {
+                await db.Database.RollbackTransactionAsync(ct);
+                throw new BusinessException("该申请已审批", "ALREADY_REVIEWED");
+            }
 
             // 交换 schedule_results（无唯一约束，直接互换）
             var resultsA = await db.ScheduleResults
@@ -1478,7 +1667,11 @@ api.MapPut("/shift-swaps/{id:long}/review", async (
                     PlanId = sumA.PlanId, StoreId = sumA.StoreId, EmployeeId = swap.TargetEmployeeId,
                     WorkDate = sumA.WorkDate, IsRestDay = sumA.IsRestDay, ShiftTemplateId = sumA.ShiftTemplateId,
                     StartTime = sumA.StartTime, EndTime = sumA.EndTime, WorkHours = sumA.WorkHours,
-                    CoveredWorkstations = sumA.CoveredWorkstations
+                    CoveredWorkstations = sumA.CoveredWorkstations,
+                    BreakStartTime = sumA.BreakStartTime,
+                    BreakEndTime = sumA.BreakEndTime,
+                    BreakCoverEmployeeId = sumA.BreakCoverEmployeeId,
+                    BreakWorkstationId = sumA.BreakWorkstationId
                 };
                 db.ScheduleSummaries.Add(newA);
             }
@@ -1503,8 +1696,17 @@ api.MapPut("/shift-swaps/{id:long}/review", async (
     }
     else
     {
-        swap.Status = "REJECTED";
-        await db.SaveChangesAsync(ct);
+        var claimed = await db.ShiftSwaps
+            .Where(x => x.Id == id && x.StoreId == storeId && x.Status == "PENDING")
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(x => x.Status, "REJECTED")
+                .SetProperty(x => x.ReviewUserId, currentUser.UserId)
+                .SetProperty(x => x.ReviewTime, DateTime.UtcNow)
+                .SetProperty(x => x.ReviewRemark, review.Remark)
+                .SetProperty(x => x.UpdatedAt, DateTime.UtcNow), ct);
+
+        if (claimed == 0)
+            throw new BusinessException("该申请已审批", "ALREADY_REVIEWED");
     }
 
     // 通知换班员工（申请人 + 同伴）
@@ -1519,9 +1721,9 @@ api.MapPut("/shift-swaps/{id:long}/review", async (
     await db.SaveChangesAsync(ct);
 
     await audit.WriteAsync(storeId, currentUser.UserId, currentUser.Nickname, "REVIEW_SWAP", "SHIFT_SWAP", swap.Id,
-        null, $"审批换班 {swap.Id} -> {swap.Status}", swap.Status == "APPROVED" ? "批准换班" : "驳回换班", ct);
+        null, $"审批换班 {swap.Id} -> {newStatus}", newStatus == "APPROVED" ? "批准换班" : "驳回换班", ct);
 
-    return ApiResponse.Ok(new { swap.Id, swap.Status }, swap.Status == "APPROVED" ? "换班已批准并生效" : "已驳回");
+    return ApiResponse.Ok(new { swap.Id, Status = newStatus }, newStatus == "APPROVED" ? "换班已批准并生效" : "已驳回");
 }).RequireAuthorization("AdminOnly");
 
 // ============ 删除排班计划 ============
@@ -1655,6 +1857,15 @@ api.MapGet("/schedules/{planId:long}/rationality", async (
         .Select(g => new { g.Key.WorkDate, g.Key.WorkstationId, g.Key.TimeSlot, Count = g.Select(x => x.EmployeeId).Distinct().Count() })
         .ToListAsync(cancellationToken);
 
+    // 无人顶岗的班中休息：该时段该工作站覆盖人数 -1（有借调顶岗的不扣减）
+    var uncoveredBreaks = (await dbContext.ScheduleSummaries.AsNoTracking()
+            .Where(x => x.PlanId == planId && x.BreakStartTime != null &&
+                        x.BreakCoverEmployeeId == null && x.BreakWorkstationId != null)
+            .Select(x => new { x.WorkDate, x.BreakStartTime, x.BreakEndTime, x.BreakWorkstationId })
+            .ToListAsync(cancellationToken))
+        .Select(x => new { x.WorkDate, Start = x.BreakStartTime!.Value, End = x.BreakEndTime!.Value, Ws = x.BreakWorkstationId!.Value })
+        .ToList();
+
     var rationality = new List<object>();
     foreach (var date in dates)
     {
@@ -1668,7 +1879,14 @@ api.MapGet("/schedules/{planId:long}/rationality", async (
         {
             if (dailyReqs.TryGetValue((c.WorkstationId!.Value, c.TimeSlot), out var req))
             {
-                covered += Math.Min(c.Count, req);
+                // 休息覆盖该时段（含跨午夜回绕：End <= Start 视为跨午夜）
+                var uncovered = uncoveredBreaks.Any(b =>
+                    b.WorkDate == c.WorkDate && b.Ws == c.WorkstationId.Value &&
+                    (b.End > b.Start
+                        ? c.TimeSlot >= b.Start && c.TimeSlot < b.End
+                        : c.TimeSlot >= b.Start || c.TimeSlot < b.End));
+                var count = Math.Max(0, c.Count - (uncovered ? 1 : 0));
+                covered += Math.Min(count, req);
             }
         }
         var pct = totalDemand > 0 ? (int)Math.Round(covered * 100.0 / totalDemand) : 100;

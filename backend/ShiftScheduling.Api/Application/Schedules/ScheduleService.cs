@@ -117,9 +117,13 @@ public sealed class ScheduleService : IScheduleService
             });
         }
 
+        var breakByEmployeeDate = output.BreakAssignments
+            .GroupBy(x => (x.EmployeeId, x.WorkDate))
+            .ToDictionary(g => g.Key, g => g.First());
+
         foreach (var summary in output.DaySummaries)
         {
-            _dbContext.ScheduleSummaries.Add(new ScheduleSummaryEntity
+            var entity = new ScheduleSummaryEntity
             {
                 PlanId = plan.Id,
                 StoreId = storeId,
@@ -133,7 +137,18 @@ public sealed class ScheduleService : IScheduleService
                 CoveredWorkstations = summary.CoveredWorkstations,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
-            });
+            };
+
+            // 班中休息（每次固定 30 分钟）：跨午夜槽结束时间按 24 小时制回绕
+            if (breakByEmployeeDate.TryGetValue((summary.EmployeeId, summary.WorkDate), out var br))
+            {
+                entity.BreakStartTime = br.BreakStartTime;
+                entity.BreakEndTime = TimeSpan.FromMinutes(((int)br.BreakStartTime.TotalMinutes + 30) % 1440);
+                entity.BreakCoverEmployeeId = br.CoverEmployeeId;
+                entity.BreakWorkstationId = br.WorkstationId;
+            }
+
+            _dbContext.ScheduleSummaries.Add(entity);
         }
 
         foreach (var issue in output.Issues)
@@ -266,7 +281,7 @@ public sealed class ScheduleService : IScheduleService
         var employees = await _dbContext.Employees
             .AsNoTracking()
             .Where(x => x.StoreId == storeId)
-            .Select(x => new { x.Id, x.EmployeeNo, x.Name, x.Department })
+            .Select(x => new { x.Id, x.EmployeeNo, x.Name, x.Department, x.IsParttime })
             .ToListAsync(cancellationToken);
 
         return summaries
@@ -279,11 +294,16 @@ public sealed class ScheduleService : IScheduleService
                         s.WorkDate,
                         s.IsRestDay,
                         s.ShiftTemplateId is null ? null : shiftCodes.GetValueOrDefault(s.ShiftTemplateId.Value),
-                        s.WorkHours))
+                        s.WorkHours,
+                        s.BreakStartTime,
+                        s.BreakEndTime))
                     .ToList();
 
-                return new MonthViewItem(employee.Id, employee.EmployeeNo, employee.Name, employee.Department, days);
+                return new MonthViewItem(employee.Id, employee.EmployeeNo, employee.Name, employee.Department, employee.IsParttime, days);
             })
+            // 全职在前、兼职在后，同组内按工号排序
+            .OrderBy(x => x.IsParttime)
+            .ThenBy(x => x.EmployeeNo)
             .ToList();
     }
 
@@ -312,6 +332,18 @@ public sealed class ScheduleService : IScheduleService
             .Select(x => new { x.Id, x.EmployeeNo, x.Name, x.Department, x.IsParttime })
             .ToListAsync(cancellationToken);
 
+        var coverIds = summaries
+            .Where(x => x.BreakCoverEmployeeId is not null)
+            .Select(x => x.BreakCoverEmployeeId!.Value)
+            .Distinct()
+            .ToList();
+        var coverNames = coverIds.Count == 0
+            ? new Dictionary<long, string>()
+            : await _dbContext.Employees
+                .AsNoTracking()
+                .Where(x => coverIds.Contains(x.Id))
+                .ToDictionaryAsync(x => x.Id, x => x.Name, cancellationToken);
+
         return summaries
             .GroupBy(x => x.EmployeeId)
             .Select(g =>
@@ -325,11 +357,17 @@ public sealed class ScheduleService : IScheduleService
                         s.StartTime,
                         s.EndTime,
                         s.WorkHours,
-                        s.CoveredWorkstations))
+                        s.CoveredWorkstations,
+                        s.BreakStartTime,
+                        s.BreakEndTime,
+                        s.BreakCoverEmployeeId is null ? null : coverNames.GetValueOrDefault(s.BreakCoverEmployeeId.Value)))
                     .ToList();
 
                 return new WeekViewItem(employee.Id, employee.EmployeeNo, employee.Name, employee.Department, employee.IsParttime, days);
             })
+            // 全职在前、兼职在后，同组内按工号排序
+            .OrderBy(x => x.IsParttime)
+            .ThenBy(x => x.EmployeeNo)
             .ToList();
     }
 
@@ -349,7 +387,7 @@ public sealed class ScheduleService : IScheduleService
         var employees = await _dbContext.Employees
             .AsNoTracking()
             .Where(x => x.StoreId == storeId)
-            .Select(x => new { x.Id, x.EmployeeNo, x.Name, x.PrimaryPosition })
+            .Select(x => new { x.Id, x.EmployeeNo, x.Name, x.PrimaryPosition, x.IsParttime })
             .ToListAsync(cancellationToken);
 
         var shiftCodes = await _dbContext.ShiftTemplates
@@ -360,24 +398,52 @@ public sealed class ScheduleService : IScheduleService
             .AsNoTracking()
             .ToDictionaryAsync(x => x.Id, x => x.Name, cancellationToken);
 
+        // 当日班中休息与顶岗信息
+        var breaksToday = await _dbContext.ScheduleSummaries
+            .AsNoTracking()
+            .Where(x => x.PlanId == planId && x.WorkDate == workDate && x.BreakStartTime != null)
+            .Select(x => new { x.EmployeeId, x.BreakStartTime, x.BreakEndTime, x.BreakCoverEmployeeId })
+            .ToListAsync(cancellationToken);
+
+        var breakByEmployee = breaksToday
+            .GroupBy(x => x.EmployeeId)
+            .ToDictionary(g => g.Key, g => g.First());
+
+        var coverIds = breaksToday
+            .Where(x => x.BreakCoverEmployeeId is not null)
+            .Select(x => x.BreakCoverEmployeeId!.Value)
+            .Distinct()
+            .ToList();
+        var coverNames = coverIds.Count == 0
+            ? new Dictionary<long, string>()
+            : await _dbContext.Employees
+                .AsNoTracking()
+                .Where(x => coverIds.Contains(x.Id))
+                .ToDictionaryAsync(x => x.Id, x => x.Name, cancellationToken);
+
         return results
             .OrderBy(x => x.TimeSlot)
             .ThenBy(x => x.EmployeeId)
             .Select(r =>
             {
                 var employee = employees.FirstOrDefault(e => e.Id == r.EmployeeId);
+                var brk = breakByEmployee.TryGetValue(r.EmployeeId, out var b) ? b : null;
                 return new DailyViewItem(
                     r.WorkDate,
                     r.EmployeeId,
                     employee?.EmployeeNo ?? "--",
                     employee?.Name ?? "--",
                     employee?.PrimaryPosition,
+                    employee?.IsParttime ?? 0,
                     r.ShiftTemplateId,
                     r.ShiftTemplateId is null ? null : shiftCodes.GetValueOrDefault(r.ShiftTemplateId.Value),
                     r.WorkstationId,
                     r.WorkstationId is null ? null : workstationNames.GetValueOrDefault(r.WorkstationId.Value),
                     r.TimeSlot,
-                    r.SkillScore);
+                    r.SkillScore,
+                    brk?.BreakStartTime,
+                    brk?.BreakEndTime,
+                    brk?.BreakCoverEmployeeId is null ? null : coverNames.GetValueOrDefault(brk.BreakCoverEmployeeId.Value));
             })
             .ToList();
     }
@@ -516,6 +582,276 @@ public sealed class ScheduleService : IScheduleService
             null,
             JsonSerializer.Serialize(request.Items),
             $"手动调整排班 {plan.PlanName}，共 {request.Items.Count} 项",
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// 设置员工某天的休息/上班状态（日明细点色块调整）：
+    /// 设为休息 → 删除当天全部明细并把日汇总改为休息；
+    /// 设为上班 → 按所选班次重建当天明细（工作站默认取员工技能分最高的），并更新日汇总。
+    /// 仅允许调整草稿计划。
+    /// </summary>
+    public async Task SetDayStatusAsync(
+        long planId,
+        SetDayStatusRequest request,
+        long storeId,
+        long operatorUserId,
+        string operatorName,
+        CancellationToken cancellationToken)
+    {
+        var plan = await GetPlanAsync(planId, storeId, cancellationToken);
+
+        if (plan.Status == "PUBLISHED")
+        {
+            throw new BusinessException("已发布的排班不能直接调整，请作废后重新生成", "SCHEDULE_PUBLISHED");
+        }
+
+        foreach (var item in request.Items)
+        {
+            if (item.IsRestDay == 1)
+            {
+                // 设为休息：删除当天全部明细，日汇总改为休息
+                await _dbContext.ScheduleResults
+                    .Where(x => x.PlanId == planId && x.EmployeeId == item.EmployeeId && x.WorkDate == item.WorkDate)
+                    .ExecuteDeleteAsync(cancellationToken);
+
+                var restSummary = await _dbContext.ScheduleSummaries
+                    .FirstOrDefaultAsync(x => x.PlanId == planId && x.EmployeeId == item.EmployeeId && x.WorkDate == item.WorkDate, cancellationToken);
+
+                if (restSummary is null)
+                {
+                    _dbContext.ScheduleSummaries.Add(new ScheduleSummaryEntity
+                    {
+                        PlanId = planId,
+                        StoreId = storeId,
+                        EmployeeId = item.EmployeeId,
+                        WorkDate = item.WorkDate,
+                        IsRestDay = 1,
+                        CreatedAt = DateTime.UtcNow,
+                        UpdatedAt = DateTime.UtcNow
+                    });
+                }
+                else
+                {
+                    restSummary.IsRestDay = 1;
+                    restSummary.ShiftTemplateId = null;
+                    restSummary.StartTime = null;
+                    restSummary.EndTime = null;
+                    restSummary.WorkHours = 0;
+                    restSummary.CoveredWorkstations = null;
+                    restSummary.BreakStartTime = null;
+                    restSummary.BreakEndTime = null;
+                    restSummary.BreakCoverEmployeeId = null;
+                    restSummary.BreakWorkstationId = null;
+                    restSummary.UpdatedAt = DateTime.UtcNow;
+                }
+            }
+            else
+            {
+                // 设为上班：必须指定班次
+                if (item.ShiftTemplateId is null)
+                {
+                    throw new BusinessException("设为上班必须选择班次", "INVALID_ADJUST");
+                }
+
+                var shift = await _dbContext.ShiftTemplates
+                    .FirstOrDefaultAsync(x => x.Id == item.ShiftTemplateId && x.StoreId == storeId && x.Status == 1, cancellationToken)
+                    ?? throw new BusinessException("班次不存在或已停用", "INVALID_SHIFT");
+
+                var shiftWsIds = await _dbContext.ShiftWorkstations
+                    .Where(x => x.ShiftTemplateId == shift.Id)
+                    .Select(x => x.WorkstationId)
+                    .ToListAsync(cancellationToken);
+
+                if (shiftWsIds.Count == 0)
+                {
+                    throw new BusinessException("该班次未关联工作站，无法安排", "INVALID_SHIFT");
+                }
+
+                var skills = await _dbContext.EmployeeSkills
+                    .Where(x => x.EmployeeId == item.EmployeeId && x.Status == 1 && x.SkillScore > 0)
+                    .ToDictionaryAsync(x => x.WorkstationId, x => x.SkillScore, cancellationToken);
+
+                long? targetWs;
+                if (item.WorkstationId is not null)
+                {
+                    if (!shiftWsIds.Contains(item.WorkstationId.Value))
+                    {
+                        throw new BusinessException("所选工作站不属于该班次", "INVALID_ADJUST");
+                    }
+
+                    if (!skills.ContainsKey(item.WorkstationId.Value))
+                    {
+                        throw new BusinessException("员工不具备所选工作站技能，无法安排", "INVALID_ADJUST");
+                    }
+
+                    targetWs = item.WorkstationId.Value;
+                }
+                else
+                {
+                    // 默认取该班次覆盖工作站中员工技能分最高的
+                    targetWs = shiftWsIds
+                        .Where(skills.ContainsKey)
+                        .OrderByDescending(ws => skills[ws])
+                        .FirstOrDefault();
+                }
+
+                if (targetWs is null)
+                {
+                    throw new BusinessException("员工在该班次覆盖的工作站上无技能，无法安排", "INVALID_ADJUST");
+                }
+
+                var skillScore = skills.GetValueOrDefault(targetWs.Value);
+                var shiftHours = SchedulingTimeHelper.GetShiftHours(shift.StartTime, shift.EndTime, shift.IsCrossDay);
+                var slots = SchedulingTimeHelper.GetShiftSlots(shift.StartTime, shift.EndTime, shift.IsCrossDay);
+
+                // 幂等：先删除该员工该日全部明细，再按新班次重建
+                await _dbContext.ScheduleResults
+                    .Where(x => x.PlanId == planId && x.EmployeeId == item.EmployeeId && x.WorkDate == item.WorkDate)
+                    .ExecuteDeleteAsync(cancellationToken);
+
+                foreach (var slot in slots)
+                {
+                    _dbContext.ScheduleResults.Add(new ScheduleResultEntity
+                    {
+                        PlanId = planId,
+                        StoreId = storeId,
+                        EmployeeId = item.EmployeeId,
+                        WorkDate = item.WorkDate,
+                        ShiftTemplateId = shift.Id,
+                        TimeSlot = slot,
+                        WorkstationId = targetWs,
+                        SkillScore = skillScore,
+                        Status = plan.Status,
+                        Version = 1,
+                        CreatedAt = DateTime.UtcNow,
+                        UpdatedAt = DateTime.UtcNow
+                    });
+                }
+
+                var workSummary = await _dbContext.ScheduleSummaries
+                    .FirstOrDefaultAsync(x => x.PlanId == planId && x.EmployeeId == item.EmployeeId && x.WorkDate == item.WorkDate, cancellationToken);
+
+                if (workSummary is null)
+                {
+                    _dbContext.ScheduleSummaries.Add(new ScheduleSummaryEntity
+                    {
+                        PlanId = planId,
+                        StoreId = storeId,
+                        EmployeeId = item.EmployeeId,
+                        WorkDate = item.WorkDate,
+                        IsRestDay = 0,
+                        ShiftTemplateId = shift.Id,
+                        StartTime = shift.StartTime,
+                        EndTime = shift.EndTime,
+                        WorkHours = shiftHours,
+                        CoveredWorkstations = targetWs.Value.ToString(),
+                        CreatedAt = DateTime.UtcNow,
+                        UpdatedAt = DateTime.UtcNow
+                    });
+                }
+                else
+                {
+                    workSummary.IsRestDay = 0;
+                    workSummary.ShiftTemplateId = shift.Id;
+                    workSummary.StartTime = shift.StartTime;
+                    workSummary.EndTime = shift.EndTime;
+                    workSummary.WorkHours = shiftHours;
+                    workSummary.CoveredWorkstations = targetWs.Value.ToString();
+                    workSummary.BreakStartTime = null;
+                    workSummary.BreakEndTime = null;
+                    workSummary.BreakCoverEmployeeId = null;
+                    workSummary.BreakWorkstationId = null;
+                    workSummary.UpdatedAt = DateTime.UtcNow;
+                }
+            }
+        }
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        await _auditLogService.WriteAsync(
+            storeId,
+            operatorUserId,
+            operatorName,
+            "SET_DAY_STATUS",
+            "SCHEDULE_PLAN",
+            planId,
+            null,
+            JsonSerializer.Serialize(request.Items),
+            $"手动设置员工休息/上班状态 {plan.PlanName}，共 {request.Items.Count} 项",
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// 调整员工某天某个半小时时段的状态（甘特图/日明细点色块）：
+    /// IsRest=1 → 该半小时改为休息（记为班中休息：BreakStartTime=该时段，30 分钟）；
+    /// IsRest=0 → 该半小时恢复上班（清除休息标记）。
+    /// 仅允许调整草稿计划。
+    /// </summary>
+    public async Task SetSlotStatusAsync(
+        long planId,
+        SetSlotStatusRequest request,
+        long storeId,
+        long operatorUserId,
+        string operatorName,
+        CancellationToken cancellationToken)
+    {
+        var plan = await GetPlanAsync(planId, storeId, cancellationToken);
+
+        if (plan.Status == "PUBLISHED")
+        {
+            throw new BusinessException("已发布的排班不能直接调整，请作废后重新生成", "SCHEDULE_PUBLISHED");
+        }
+
+        foreach (var item in request.Items)
+        {
+            // 该员工该时段必须有排班明细（休息标记基于班次存在）
+            var slotResult = await _dbContext.ScheduleResults
+                .AsNoTracking()
+                .FirstOrDefaultAsync(x =>
+                    x.PlanId == planId && x.EmployeeId == item.EmployeeId &&
+                    x.WorkDate == item.WorkDate && x.TimeSlot == item.TimeSlot,
+                    cancellationToken)
+                ?? throw new BusinessException("该员工在该时段没有排班记录，无法调整", "SLOT_NOT_FOUND");
+
+            var summary = await _dbContext.ScheduleSummaries
+                .FirstOrDefaultAsync(x =>
+                    x.PlanId == planId && x.EmployeeId == item.EmployeeId && x.WorkDate == item.WorkDate,
+                    cancellationToken)
+                ?? throw new BusinessException("该员工当天没有排班汇总记录，无法调整", "SLOT_NOT_FOUND");
+
+            if (item.IsRest == 1)
+            {
+                // 该半小时改为休息：休息时间段固定 30 分钟，从该时段开始（跨午夜按 24 小时回绕）
+                summary.BreakStartTime = item.TimeSlot;
+                summary.BreakEndTime = TimeSpan.FromMinutes(((int)item.TimeSlot.TotalMinutes + 30) % 1440);
+                summary.BreakCoverEmployeeId = null;
+                summary.BreakWorkstationId = slotResult.WorkstationId;
+            }
+            else
+            {
+                // 该半小时恢复上班：清除休息标记
+                summary.BreakStartTime = null;
+                summary.BreakEndTime = null;
+                summary.BreakCoverEmployeeId = null;
+                summary.BreakWorkstationId = null;
+            }
+
+            summary.UpdatedAt = DateTime.UtcNow;
+        }
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        await _auditLogService.WriteAsync(
+            storeId,
+            operatorUserId,
+            operatorName,
+            "SET_SLOT_STATUS",
+            "SCHEDULE_PLAN",
+            planId,
+            null,
+            JsonSerializer.Serialize(request.Items),
+            $"手动调整时段休息/上班状态 {plan.PlanName}，共 {request.Items.Count} 项",
             cancellationToken);
     }
 

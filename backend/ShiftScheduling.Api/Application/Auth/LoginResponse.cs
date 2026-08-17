@@ -10,4 +10,5 @@ public sealed record CurrentUserResponse(
     long? StoreId,
     string Username,
     string Nickname,
-    string Role);
+    string Role,
+    int PasswordVersion);

@@ -45,6 +45,22 @@ public interface IScheduleService
         string operatorName,
         CancellationToken cancellationToken);
 
+    Task SetDayStatusAsync(
+        long planId,
+        SetDayStatusRequest request,
+        long storeId,
+        long operatorUserId,
+        string operatorName,
+        CancellationToken cancellationToken);
+
+    Task SetSlotStatusAsync(
+        long planId,
+        SetSlotStatusRequest request,
+        long storeId,
+        long operatorUserId,
+        string operatorName,
+        CancellationToken cancellationToken);
+
     Task PublishAsync(
         long planId,
         long storeId,

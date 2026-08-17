@@ -42,7 +42,7 @@ public sealed class EmployeeService : IEmployeeService
 
         var total = await query.CountAsync(cancellationToken);
 
-        var items = await query
+        var items = (await query
             .OrderBy(x => x.EmployeeNo)
             .Skip((request.Page - 1) * request.PageSize)
             .Take(request.PageSize)
@@ -57,7 +57,9 @@ public sealed class EmployeeService : IEmployeeService
                 x.MaxWeeklyHours,
                 x.IsParttime,
                 x.Status))
-            .ToListAsync(cancellationToken);
+            .ToListAsync(cancellationToken))
+            .Select(x => x with { Phone = MaskPhone(x.Phone) })
+            .ToList();
 
         return PagedResult<EmployeeListItem>.Create(request.Page, request.PageSize, total, items);
     }
@@ -255,7 +257,7 @@ public sealed class EmployeeService : IEmployeeService
             employee.Id,
             employee.EmployeeNo,
             employee.Name,
-            employee.Phone,
+            MaskPhone(employee.Phone),
             employee.Department,
             employee.HireDate,
             employee.PrimaryPosition,
@@ -264,4 +266,23 @@ public sealed class EmployeeService : IEmployeeService
             employee.Status,
             employee.CreatedAt,
             employee.UpdatedAt);
+
+    /// <summary>
+    /// 手机号脱敏：保留前 3 位与后 4 位，中间以 **** 代替（如 138****1234）。
+    /// </summary>
+    private static string? MaskPhone(string? phone)
+    {
+        if (string.IsNullOrWhiteSpace(phone))
+        {
+            return phone;
+        }
+
+        var p = phone.Trim();
+        if (p.Length <= 7)
+        {
+            return p[..1] + "****";
+        }
+
+        return p[..3] + "****" + p[^4..];
+    }
 }
