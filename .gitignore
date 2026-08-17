@@ -9,6 +9,7 @@ node_modules/
 
 # ===== 敏感配置（连接字符串/密钥通过 User Secrets 或环境变量） =====
 appsettings.Production.json
+appsettings.Development.json
 *.local.json
 
 # ===== 敏感数据（含明文密码的备份不提交） =====
