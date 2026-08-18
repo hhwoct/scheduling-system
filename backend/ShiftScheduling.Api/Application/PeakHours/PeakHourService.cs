@@ -142,8 +142,8 @@ public sealed class PeakHourService : IPeakHourService
     private static (TimeSpan Start, TimeSpan End) ParseAndValidate(PeakHourUpsertRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.StartTime) ||
-            !TimeSpan.TryParse(request.StartTime, out var start) ||
-            !TimeSpan.TryParse(request.EndTime, out var end))
+            !TimeSpan.TryParse(request.StartTime, System.Globalization.CultureInfo.InvariantCulture, out var start) ||
+            !TimeSpan.TryParse(request.EndTime, System.Globalization.CultureInfo.InvariantCulture, out var end))
         {
             throw new BusinessException("高峰时段格式不正确，请使用 HH:mm", "INVALID_PEAK_HOUR");
         }

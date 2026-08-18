@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Security.Cryptography;
+using System.Text;
 using ShiftScheduling.Api.Application.Common;
 
 namespace ShiftScheduling.Api.Application.Auth;
@@ -14,8 +15,9 @@ public sealed class PasswordResetService : IPasswordResetService
     private const int RateLimitWindowMinutes = 5;
     private const int LockoutThreshold = 5;
     private const int LockoutMinutes = 15;
+    private const int ResendCooldownSeconds = 60;
 
-    private sealed record OtpEntry(string Otp, string? Phone, DateTime ExpiresAt, bool Used);
+    private sealed record OtpEntry(string Otp, string? Phone, DateTime CreatedAt, DateTime ExpiresAt, bool Used);
 
     private sealed record AttemptEntry(DateTime Timestamp);
 
@@ -31,8 +33,16 @@ public sealed class PasswordResetService : IPasswordResetService
     public string GenerateOtp(string username, string? phone)
     {
         var key = BuildKey(username, phone);
+        var now = DateTime.UtcNow;
+
+        // 重发冷却：60 秒内不允许重复生成，防止短信轰炸与内存占用攻击
+        if (_otps.TryGetValue(key, out var existing) && existing.CreatedAt.AddSeconds(ResendCooldownSeconds) > now)
+        {
+            throw new BusinessException("验证码发送过于频繁，请稍后再试", "OTP_RATE_LIMITED");
+        }
+
         var otp = RandomNumberGenerator.GetInt32(100000, 1000000).ToString("D6");
-        _otps[key] = new OtpEntry(otp, phone?.Trim(), DateTime.UtcNow.AddMinutes(OtpTtlMinutes), Used: false);
+        _otps[key] = new OtpEntry(otp, phone?.Trim(), now, now.AddMinutes(OtpTtlMinutes), Used: false);
         CleanupExpired();
         return otp;
     }
@@ -51,7 +61,10 @@ public sealed class PasswordResetService : IPasswordResetService
         // 时间过期或已验证过
         if (entry.ExpiresAt < DateTime.UtcNow || entry.Used) return false;
 
-        var valid = entry.Otp.Equals(otp.Trim(), StringComparison.Ordinal);
+        // 常数时间比较，防止时序侧信道枚举验证码
+        var valid = CryptographicOperations.FixedTimeEquals(
+            Encoding.ASCII.GetBytes(entry.Otp),
+            Encoding.ASCII.GetBytes(otp.Trim()));
         if (valid)
         {
             // 原子更新 Used=true；并发时只有一个线程能成功更新
@@ -81,11 +94,7 @@ public sealed class PasswordResetService : IPasswordResetService
         foreach (var key in new[] { userKey, ipKey })
         {
             var queue = _attempts.GetOrAdd(key, _ => new ConcurrentQueue<AttemptEntry>());
-            var cutoff = now.AddMinutes(-RateLimitWindowMinutes);
-            while (queue.TryPeek(out var oldest) && oldest.Timestamp < cutoff)
-            {
-                queue.TryDequeue(out _);
-            }
+            TrimQueue(queue, now);
             if (queue.Count >= MaxAttemptsPerWindow)
             {
                 throw new BusinessException("操作过于频繁，请稍后再试", "RATE_LIMITED");
@@ -99,21 +108,25 @@ public sealed class PasswordResetService : IPasswordResetService
         var ipKey = $"ip:{clientIp ?? "unknown"}";
         var now = DateTime.UtcNow;
 
+        // 锁内完成"检查 + 记录"，消除 CheckRateLimit 与 RecordFailure 之间的竞态窗口
         foreach (var key in new[] { userKey, ipKey })
         {
             var queue = _attempts.GetOrAdd(key, _ => new ConcurrentQueue<AttemptEntry>());
-            queue.Enqueue(new AttemptEntry(now));
+            lock (queue)
+            {
+                TrimQueue(queue, now);
+                if (queue.Count >= MaxAttemptsPerWindow)
+                {
+                    throw new BusinessException("操作过于频繁，请稍后再试", "RATE_LIMITED");
+                }
+                queue.Enqueue(new AttemptEntry(now));
 
-            // 如果窗口内失败次数达到阈值则锁定
-            var cutoff = now.AddMinutes(-RateLimitWindowMinutes);
-            while (queue.TryPeek(out var oldest) && oldest.Timestamp < cutoff)
-            {
-                queue.TryDequeue(out _);
-            }
-            if (queue.Count >= LockoutThreshold)
-            {
-                _lockouts[key] = new LockoutEntry(now.AddMinutes(LockoutMinutes));
-                queue.Clear();
+                // 如果窗口内失败次数达到阈值则锁定
+                if (queue.Count >= LockoutThreshold)
+                {
+                    _lockouts[key] = new LockoutEntry(now.AddMinutes(LockoutMinutes));
+                    queue.Clear();
+                }
             }
         }
     }
@@ -124,10 +137,9 @@ public sealed class PasswordResetService : IPasswordResetService
         _attempts.TryRemove(userKey, out _);
         _lockouts.TryRemove(userKey, out _);
 
-        // 成功登录同时清除对应 IP 的失败计数与锁定，避免误伤共享出口 IP / 残留全站桶
-        var ipKey = $"ip:{clientIp ?? "unknown"}";
-        _attempts.TryRemove(ipKey, out _);
-        _lockouts.TryRemove(ipKey, out _);
+        // 只清除用户自己的失败计数；IP 维度计数保留至窗口自然过期，
+        // 防止攻击者用自己的账号成功登录来清空共享出口 IP 的失败计数（锁定绕过）。
+        _ = clientIp;
     }
 
     public bool IsLocked(string username, string? clientIp)
@@ -137,6 +149,15 @@ public sealed class PasswordResetService : IPasswordResetService
         var now = DateTime.UtcNow;
         return (_lockouts.TryGetValue(userKey, out var l1) && l1.LockedUntil > now)
             || (_lockouts.TryGetValue(ipKey, out var l2) && l2.LockedUntil > now);
+    }
+
+    private static void TrimQueue(ConcurrentQueue<AttemptEntry> queue, DateTime now)
+    {
+        var cutoff = now.AddMinutes(-RateLimitWindowMinutes);
+        while (queue.TryPeek(out var oldest) && oldest.Timestamp < cutoff)
+        {
+            queue.TryDequeue(out _);
+        }
     }
 
     private void CleanupExpired()

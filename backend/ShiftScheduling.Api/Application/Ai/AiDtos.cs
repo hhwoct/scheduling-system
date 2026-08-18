@@ -12,7 +12,12 @@ public sealed record AiConfigItem(
 public sealed record AiConfigSaveRequest(
     string? ApiKey,
     string? BaseUrl,
-    string? Model);
+    string? Model)
+{
+    /// <summary>重写 ToString 防止 record 默认打印把 ApiKey 泄漏进日志。</summary>
+    public override string ToString()
+        => $"AiConfigSaveRequest {{ ApiKey = {(string.IsNullOrWhiteSpace(ApiKey) ? "<null>" : "***")}, BaseUrl = {BaseUrl}, Model = {Model} }}";
+}
 
 /// <summary>
 /// AI 解析请求。Kind = sheet 时用 Rows（表格内容）；Kind = image 时用 ImageBase64 + ImageMimeType。

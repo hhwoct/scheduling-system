@@ -70,7 +70,7 @@ if (string.IsNullOrWhiteSpace(jwtOptions.Issuer) || string.IsNullOrWhiteSpace(jw
     throw new InvalidOperationException("Jwt:Issuer 和 Jwt:Audience 不能为空");
 }
 
-if (Encoding.UTF8.GetByteCount(jwtOptions.SigningKey) < 32)
+if (string.IsNullOrWhiteSpace(jwtOptions.SigningKey) || Encoding.UTF8.GetByteCount(jwtOptions.SigningKey) < 32)
 {
     throw new InvalidOperationException("Jwt:SigningKey 至少需要 32 字节，请通过 User Secrets 或环境变量配置");
 }
@@ -131,6 +131,19 @@ builder.Services
                 if (user.PasswordVersion != tokenPasswordVersion)
                 {
                     context.Fail("令牌已失效，请重新登录");
+                    return;
+                }
+
+                // 校验用户所属门店仍处于启用状态：门店停用即吊销访问
+                if (user.StoreId is not null)
+                {
+                    var storeActive = await dbContext.Stores
+                        .AsNoTracking()
+                        .AnyAsync(x => x.Id == user.StoreId.Value && x.Status == 1, context.HttpContext.RequestAborted);
+                    if (!storeActive)
+                    {
+                        context.Fail("所属门店已停用");
+                    }
                 }
             },
             OnChallenge = async context =>
@@ -157,23 +170,41 @@ builder.Services
 
 builder.Services.AddRateLimiter(options =>
 {
-    // 登录端点限流：1 分钟最多 5 次尝试
-    options.AddFixedWindowLimiter("LoginLimiter", opt =>
-    {
-        opt.PermitLimit = 5;
-        opt.Window = TimeSpan.FromMinutes(1);
-        opt.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
-        opt.QueueLimit = 0;
-    });
+    // 2.4 修复：按客户端 IP 分区限流。原来 AddFixedWindowLimiter 是全局单桶
+    // （全店共享配额），任何人 5 次失败即可让全店 1 分钟内无法登录（未认证 DoS）。
+    // 登录端点：每个 IP 每分钟最多 5 次尝试
+    options.AddPolicy("LoginLimiter", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 5,
+                Window = TimeSpan.FromMinutes(1),
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                QueueLimit = 0
+            }));
 
-    // 密码重置限流：15 分钟最多 3 次尝试
-    options.AddFixedWindowLimiter("ResetLimiter", opt =>
+    // 密码重置限流：每个 IP 15 分钟最多 3 次尝试
+    options.AddPolicy("ResetLimiter", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 3,
+                Window = TimeSpan.FromMinutes(15),
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                QueueLimit = 0
+            }));
+
+    // 被限流时返回统一 JSON 错误结构（前端拦截器直接解析 message 提示）
+    options.OnRejected = async (context, cancellationToken) =>
     {
-        opt.PermitLimit = 3;
-        opt.Window = TimeSpan.FromMinutes(15);
-        opt.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
-        opt.QueueLimit = 0;
-    });
+        await ApiResponseWriter.WriteErrorAsync(
+            context.HttpContext,
+            HttpStatusCode.TooManyRequests,
+            "操作过于频繁，请稍后再试",
+            "RATE_LIMITED");
+    };
 });
 
 builder.Services.AddAuthorization(options =>
@@ -190,18 +221,9 @@ builder.Services.AddOpenApi();
 
 var app = builder.Build();
 
-// P2-30: 应用启动时自动执行数据库迁移（失败不阻断启动）
-try
-{
-    using var migrateScope = app.Services.CreateScope();
-    var migrateDb = migrateScope.ServiceProvider.GetRequiredService<ShiftSchedulingDbContext>();
-    await migrateDb.Database.MigrateAsync();
-}
-catch (Exception ex)
-{
-    Console.WriteLine($"[迁移警告] 数据库迁移执行失败（应用将继续启动）：{ex.Message}");
-}
-
+// 3.15 修复：项目不使用 EF Core Migrations（无迁移文件），数据库结构由
+// database/init_shift_mvp.sql 与 database/migrations/ 脚本管理；
+// 移除启动时 MigrateAsync，避免无迁移可应用时的空转与模型/DDL 漂移风险。
 app.UseMiddleware<ApiExceptionMiddleware>();
 app.UseRateLimiter();
 
@@ -228,8 +250,6 @@ api.MapPost("/auth/login", async (LoginRequest request, IAuthService authService
 api.MapPost("/auth/send-reset-otp", async (
     SendResetOtpRequest request,
     IAuthService authService,
-    IWebHostEnvironment environment,
-    ILoggerFactory loggerFactory,
     HttpContext httpContext,
     CancellationToken cancellationToken) =>
 {
@@ -239,14 +259,8 @@ api.MapPost("/auth/send-reset-otp", async (
     }
 
     var clientIp = httpContext.Connection.RemoteIpAddress?.ToString();
-    var otp = await authService.SendPasswordResetOtpAsync(request.Username ?? string.Empty, clientIp, cancellationToken);
-
-    // 安全：验证码严禁进入响应体。短信网关接入前，仅非生产环境通过服务端日志输出。
-    if (!environment.IsProduction())
-    {
-        loggerFactory.CreateLogger("PasswordReset").LogWarning(
-            "[DEV-OTP] username={Username}, otp={Otp}", request.Username, otp);
-    }
+    // 验证码只保留在服务层（短信发送/开发日志），严禁进入 HTTP 响应体
+    await authService.SendPasswordResetOtpAsync(request.Username ?? string.Empty, clientIp, cancellationToken);
 
     return ApiResponse.Ok(true, "验证码已发送");
 }).RequireRateLimiting("ResetLimiter");
@@ -266,7 +280,7 @@ api.MapPost("/auth/forgot-password", async (
     var clientIp = httpContext.Connection.RemoteIpAddress?.ToString();
     await authService.ForgotPasswordAsync(request, clientIp, cancellationToken);
     return ApiResponse.Ok(true, "密码重置成功，请使用新密码登录");
-});
+}).RequireRateLimiting("ResetLimiter");
 
 api.MapGet("/auth/me", async (IAuthService authService, CancellationToken cancellationToken) =>
 {
@@ -322,7 +336,7 @@ api.MapGet("/employees", async (
     CancellationToken cancellationToken = default) =>
 {
     var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
-    if (page < 1 || pageSize is < 1 or > 100)
+    if (page < 1 || page > 100000 || pageSize is < 1 or > 100)
     {
         throw new BusinessException("分页参数不正确", "INVALID_PAGINATION");
     }
@@ -730,7 +744,12 @@ api.MapGet("/staffing-requirements/preview", async (
 
         foreach (var group in slotAgg.GroupBy(x => x.Key.Type))
         {
-            var acc = aggregates[group.Key];
+            // 3.12 修复：数据库中出现未支持的日期类型时跳过统计，而非 KeyNotFound → 500
+            if (!aggregates.TryGetValue(group.Key, out var acc))
+            {
+                continue;
+            }
+
             aggregates[group.Key] = (
                 acc.Days,
                 acc.MinHours + group.Sum(x => x.Value.Min) * 0.5m,
@@ -846,7 +865,7 @@ api.MapGet("/schedules", async (
     CancellationToken cancellationToken = default) =>
 {
     var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
-    if (page < 1 || pageSize is < 1 or > 100)
+    if (page < 1 || page > 100000 || pageSize is < 1 or > 100)
     {
         throw new BusinessException("分页参数不正确", "INVALID_PAGINATION");
     }
@@ -998,32 +1017,8 @@ api.MapPost("/schedules/{planId:long}/publish", async (
         force,
         cancellationToken);
 
-    // 生成排班发布通知
-    var acc = app.Services.GetRequiredService<IHttpContextAccessor>();
-    var ctx = acc.HttpContext!;
-    var db = ctx.RequestServices.GetRequiredService<ShiftSchedulingDbContext>();
-    var plan = await db.SchedulePlans.AsNoTracking()
-        .FirstOrDefaultAsync(x => x.Id == planId && x.StoreId == storeId, cancellationToken);
-    if (plan != null)
-    {
-        var employeeIds = await db.ScheduleSummaries.AsNoTracking()
-            .Where(x => x.PlanId == planId)
-            .Select(x => x.EmployeeId)
-            .Distinct()
-            .ToListAsync(cancellationToken);
-
-        db.Notifications.AddRange(employeeIds.Select(empId => new NotificationEntity
-        {
-            StoreId = storeId,
-            ReceiverEmployeeId = empId,
-            NotificationType = "SCHEDULE_PUBLISHED",
-            Title = "排班已发布",
-            Content = $"排班计划「{WebUtility.HtmlEncode(plan.PlanName)}」已发布，请查看您的班表",
-            CreatedAt = DateTime.UtcNow
-        }));
-        await db.SaveChangesAsync(cancellationToken);
-    }
-
+    // 3.9 修复：员工发布通知已在 ScheduleService.PublishAsync 事务内生成，
+    // 此处不再重复发送（原实现位于事务外，失败会 500 但排班已发布）
     return ApiResponse.Ok(true, "排班发布成功");
 }).RequireAuthorization("AdminOnly");
 
@@ -1058,9 +1053,9 @@ api.MapGet("/notifications", async (
     }
     else
     {
-        // 管理端未指定员工：仅显示门店级通知（新请假/新换班等提醒），
-        // 不显示发给员工的个人通知（如「您的请假已批准」）
-        query = query.Where(x => x.ReceiverEmployeeId == null && x.ReceiverUserId == null);
+        // 管理端未指定员工：显示门店级通知（新请假/新换班等提醒）+ 发给当前管理员本人的通知
+        // （如「排班已发布」），不显示发给员工的个人通知（如「您的请假已批准」）
+        query = query.Where(x => x.ReceiverEmployeeId == null && (x.ReceiverUserId == null || x.ReceiverUserId == currentUser.UserId));
     }
 
     var items = await query.OrderByDescending(x => x.CreatedAt)
@@ -1101,8 +1096,8 @@ api.MapGet("/notifications/unread-count", async (
     }
     else
     {
-        // 管理端未指定员工：仅统计门店级未读通知
-        query = query.Where(x => x.ReceiverEmployeeId == null && x.ReceiverUserId == null);
+        // 管理端未指定员工：统计门店级未读通知 + 发给当前管理员本人的未读通知
+        query = query.Where(x => x.ReceiverEmployeeId == null && (x.ReceiverUserId == null || x.ReceiverUserId == currentUser.UserId));
     }
 
     var count = await query.CountAsync();
@@ -1119,14 +1114,20 @@ api.MapPut("/notifications/{id:long}/read", async (
 {
     var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
 
-    // 员工只能标记自己的通知；管理端可标记门店内任意通知
+    // 员工只能标记本人通知；店长可标记本人 + 门店级通知；系统管理员可标记门店内任意通知
     var query = db.Notifications.Where(x => x.Id == id && x.StoreId == storeId);
-    if (currentUser.Role == "EMPLOYEE" || currentUser.Role == "STORE_MANAGER")
+    if (currentUser.Role == "EMPLOYEE")
     {
         var emp = await db.Employees.AsNoTracking()
-            .FirstOrDefaultAsync(x => x.EmployeeNo == currentUser.Username && x.Status == 1, ct);
-        if (emp == null)
-            throw new NotFoundException("员工档案不存在");
+            .FirstOrDefaultAsync(x => x.EmployeeNo == currentUser.Username && x.StoreId == storeId && x.Status == 1, ct)
+            ?? throw new NotFoundException("员工档案不存在");
+        query = query.Where(x => x.ReceiverEmployeeId == emp.Id);
+    }
+    else if (currentUser.Role == "STORE_MANAGER")
+    {
+        var emp = await db.Employees.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.EmployeeNo == currentUser.Username && x.StoreId == storeId && x.Status == 1, ct)
+            ?? throw new NotFoundException("员工档案不存在");
         query = query.Where(x => x.ReceiverEmployeeId == emp.Id || x.ReceiverEmployeeId == null);
     }
 
@@ -1151,14 +1152,17 @@ api.MapPut("/notifications/read-all", async (
 
     if (currentUser.Role == "EMPLOYEE")
     {
+        // 2.3 修复：档案缺失/停用必须终止，否则 query 保持全店范围会清空整店未读
         var emp = await db.Employees.AsNoTracking()
-            .FirstOrDefaultAsync(x => x.EmployeeNo == currentUser.Username && x.Status == 1, ct);
-        if (emp != null)
-            query = query.Where(x => x.ReceiverEmployeeId == emp.Id);
+            .FirstOrDefaultAsync(x => x.EmployeeNo == currentUser.Username && x.StoreId == storeId && x.Status == 1, ct)
+            ?? throw new NotFoundException("员工档案不存在");
+        query = query.Where(x => x.ReceiverEmployeeId == emp.Id);
     }
     else
     {
-        // 管理端显示门店下所有通知
+        // 管理端默认列表只展示门店级通知，全部已读也只作用于门店级通知，
+        // 避免连带清掉员工个人通知的未读状态
+        query = query.Where(x => x.ReceiverEmployeeId == null && x.ReceiverUserId == null);
     }
 
     var now = DateTime.UtcNow;
@@ -1178,7 +1182,7 @@ api.MapGet("/audit-logs", async (
     CancellationToken cancellationToken = default) =>
 {
     var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
-    if (page < 1 || pageSize is < 1 or > 100)
+    if (page < 1 || page > 100000 || pageSize is < 1 or > 100)
     {
         throw new BusinessException("分页参数不正确", "INVALID_PAGINATION");
     }
@@ -1587,29 +1591,31 @@ api.MapPut("/leave-requests/{id:long}/review", async (
 
     var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
 
-    var leave = await db.LeaveRequests.FirstOrDefaultAsync(x => x.Id == id && x.StoreId == storeId, ct)
+    var leave = await db.LeaveRequests.AsNoTracking()
+        .FirstOrDefaultAsync(x => x.Id == id && x.StoreId == storeId, ct)
         ?? throw new NotFoundException("请假申请不存在");
 
     if (leave.Status != "PENDING")
         throw new BusinessException("该申请已审批", "ALREADY_REVIEWED");
 
-    if (review.Approved)
-    {
-        leave.Status = "APPROVED";
-    }
-    else
-    {
-        leave.Status = "REJECTED";
-    }
-    leave.ReviewUserId = currentUser.UserId;
-    leave.ReviewTime = DateTime.UtcNow;
-    leave.ReviewRemark = review.Remark;
-    leave.UpdatedAt = DateTime.UtcNow;
+    var newStatus = review.Approved ? "APPROVED" : "REJECTED";
+    var reviewTime = DateTime.UtcNow;
 
-    await db.SaveChangesAsync(ct);
+    // 原子抢占：仅当仍为 PENDING 时更新，防止并发重复审批（与换班审批一致）
+    var claimed = await db.LeaveRequests
+        .Where(x => x.Id == id && x.StoreId == storeId && x.Status == "PENDING")
+        .ExecuteUpdateAsync(s => s
+            .SetProperty(x => x.Status, newStatus)
+            .SetProperty(x => x.ReviewUserId, currentUser.UserId)
+            .SetProperty(x => x.ReviewTime, reviewTime)
+            .SetProperty(x => x.ReviewRemark, review.Remark)
+            .SetProperty(x => x.UpdatedAt, reviewTime), ct);
+
+    if (claimed == 0)
+        throw new BusinessException("该申请已审批", "ALREADY_REVIEWED");
 
     await audit.WriteAsync(storeId, currentUser.UserId, currentUser.Nickname, "REVIEW_LEAVE", "LEAVE_REQUEST", leave.Id,
-        null, $"审批请假 {leave.Id} -> {leave.Status}", leave.Status == "APPROVED" ? "批准请假" : "驳回请假", ct);
+        null, $"审批请假 {leave.Id} -> {newStatus}", newStatus == "APPROVED" ? "批准请假" : "驳回请假", ct);
 
     // 通知员工审批结果
     var leaveEmp = await db.Employees.AsNoTracking().FirstOrDefaultAsync(x => x.Id == leave.EmployeeId, ct);
@@ -1619,16 +1625,16 @@ api.MapPut("/leave-requests/{id:long}/review", async (
         {
             StoreId = storeId,
             ReceiverEmployeeId = leave.EmployeeId,
-            NotificationType = leave.Status == "APPROVED" ? "LEAVE_APPROVED" : "LEAVE_REJECTED",
-            Title = leave.Status == "APPROVED" ? "请假已批准" : "请假已驳回",
-            Content = $"您的{leave.StartDate:yyyy-MM-dd}至{leave.EndDate:yyyy-MM-dd}的请假申请已被{(leave.Status == "APPROVED" ? "批准" : "驳回")}",
+            NotificationType = newStatus == "APPROVED" ? "LEAVE_APPROVED" : "LEAVE_REJECTED",
+            Title = newStatus == "APPROVED" ? "请假已批准" : "请假已驳回",
+            Content = $"您的{leave.StartDate:yyyy-MM-dd}至{leave.EndDate:yyyy-MM-dd}的请假申请已被{(newStatus == "APPROVED" ? "批准" : "驳回")}",
             CreatedAt = DateTime.UtcNow
         };
         db.Notifications.Add(leaveNotif);
         await db.SaveChangesAsync(ct);
     }
 
-    return ApiResponse.Ok(new { leave.Id, leave.Status }, leave.Status == "APPROVED" ? "已批准" : "已驳回");
+    return ApiResponse.Ok(new { leave.Id, Status = newStatus }, newStatus == "APPROVED" ? "已批准" : "已驳回");
 }).RequireAuthorization("AdminOnly");
 
 // ============ 换班申请 ============

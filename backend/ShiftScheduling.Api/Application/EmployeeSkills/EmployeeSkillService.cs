@@ -176,6 +176,35 @@ public sealed class EmployeeSkillService : IEmployeeSkillService
             throw new NotFoundException("员工不存在");
         }
 
+        // 3.10 修复：空列表/条数上限/主技能标记/重复工作站/主技能唯一性校验
+        if (request.Skills is null || request.Skills.Count == 0)
+        {
+            throw new BusinessException("技能列表不能为空", "INVALID_SKILLS");
+        }
+
+        if (request.Skills.Count > 500)
+        {
+            throw new BusinessException("单次最多提交 500 条技能", "TOO_MANY_SKILLS");
+        }
+
+        if (request.Skills.Any(x => x.IsPrimarySkill is not (0 or 1)))
+        {
+            throw new BusinessException("主技能标记只能为 0 或 1", "INVALID_SKILL");
+        }
+
+        if (request.Skills.Count(x => x.IsPrimarySkill == 1) > 1)
+        {
+            throw new BusinessException("一个员工只能有一个主技能", "INVALID_SKILL");
+        }
+
+        var duplicateWorkstation = request.Skills
+            .GroupBy(x => x.WorkstationId)
+            .FirstOrDefault(g => g.Count() > 1);
+        if (duplicateWorkstation is not null)
+        {
+            throw new BusinessException($"工作站 {duplicateWorkstation.Key} 重复提交", "DUPLICATE_SKILL");
+        }
+
         var workstationIds = request.Skills.Select(x => x.WorkstationId).Distinct().ToList();
         var validWorkstations = await _dbContext.Workstations
             .AsNoTracking()

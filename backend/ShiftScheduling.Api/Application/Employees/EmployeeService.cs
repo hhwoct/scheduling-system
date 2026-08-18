@@ -17,6 +17,10 @@ public sealed class EmployeeService : IEmployeeService
         _auditLogService = auditLogService;
     }
 
+    /// <summary>同步查重（用于捕获 DbUpdateException 时的并发兜底判断）。</summary>
+    private bool ExistsEmployeeNo(long storeId, string employeeNo)
+        => _dbContext.Employees.Any(x => x.StoreId == storeId && x.EmployeeNo == employeeNo);
+
     public async Task<PagedResult<EmployeeListItem>> QueryAsync(EmployeeQueryRequest request, long storeId, CancellationToken cancellationToken)
     {
         // 修复 EF Core 无法比较 int 与 int?：将 nullable 提升为局部变量
@@ -115,7 +119,15 @@ public sealed class EmployeeService : IEmployeeService
         };
 
         _dbContext.Employees.Add(employee);
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException) when (ExistsEmployeeNo(storeId, normalizedEmployeeNo))
+        {
+            // 并发兜底：查重与保存之间的竞态由数据库唯一索引拦截，转成友好错误
+            throw new BusinessException($"员工工号 {normalizedEmployeeNo} 已存在", "EMPLOYEE_NO_EXISTS");
+        }
 
         await _auditLogService.WriteAsync(
             storeId,
@@ -172,7 +184,15 @@ public sealed class EmployeeService : IEmployeeService
         employee.MaxWeeklyHours = request.MaxWeeklyHours;
         employee.UpdatedAt = DateTime.UtcNow;
 
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException) when (ExistsEmployeeNo(storeId, normalizedEmployeeNo))
+        {
+            // 并发兜底：查重与保存之间的竞态由数据库唯一索引拦截，转成友好错误
+            throw new BusinessException($"员工工号 {normalizedEmployeeNo} 已被其他员工使用", "EMPLOYEE_NO_EXISTS");
+        }
 
         await _auditLogService.WriteAsync(
             storeId,

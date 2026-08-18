@@ -1,3 +1,4 @@
+using System.Net;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using ShiftScheduling.Api.Algorithm;
@@ -42,19 +43,30 @@ public sealed class ScheduleService : IScheduleService
         }
 
         // 幂等保护：同门店同一周期已发布的排班不允许重复生成；
-        // 若存在 DRAFT 草稿计划，则自动级联删除旧计划后重新生成（使算法更新可重新应用）。
+        // 若存在 DRAFT 草稿计划，则重新生成时在同一事务内级联替换（使算法更新可重新应用）。
         var existingPlan = await _dbContext.SchedulePlans
             .AsNoTracking()
             .FirstOrDefaultAsync(x => x.StoreId == storeId && x.StartDate == request.StartDate && x.EndDate == request.EndDate, cancellationToken);
+        if (existingPlan is not null && existingPlan.Status == "PUBLISHED")
+        {
+            throw new BusinessException("该排班周期已存在已发布的排班计划，请勿重复生成", "DUPLICATE_SCHEDULE_PLAN");
+        }
+
+        // 修复：先执行新排班生成，再在同一事务内删除旧草稿并写入新数据。
+        // 若生成失败，旧草稿保持不变，避免"先删旧、后生成失败"导致上一版草稿永久丢失。
+        var output = await _schedulingEngine.GenerateAsync(storeId, request.StartDate, request.EndDate, cancellationToken);
+
+        var planName = request.PlanName?.Trim();
+        if (string.IsNullOrWhiteSpace(planName))
+        {
+            planName = $"{request.StartDate:yyyy-MM-dd} 至 {request.EndDate:yyyy-MM-dd} 排班";
+        }
+
+        await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
+
+        // 级联删除旧草稿及其关联数据（与新数据写入同一事务，失败整体回滚）
         if (existingPlan is not null)
         {
-            if (existingPlan.Status == "PUBLISHED")
-            {
-                throw new BusinessException("该排班周期已存在已发布的排班计划，请勿重复生成", "DUPLICATE_SCHEDULE_PLAN");
-            }
-
-            // 级联删除草稿旧计划及其关联数据
-            await using var cleanupTransaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
             await _dbContext.ShiftSwaps
                 .Where(x => x.PlanId == existingPlan.Id)
                 .ExecuteDeleteAsync(cancellationToken);
@@ -67,21 +79,10 @@ public sealed class ScheduleService : IScheduleService
             await _dbContext.ScheduleIssues
                 .Where(x => x.PlanId == existingPlan.Id)
                 .ExecuteDeleteAsync(cancellationToken);
-            _dbContext.SchedulePlans.Remove(await _dbContext.SchedulePlans
-                .FirstAsync(x => x.Id == existingPlan.Id, cancellationToken));
-            await _dbContext.SaveChangesAsync(cancellationToken);
-            await cleanupTransaction.CommitAsync(cancellationToken);
+            await _dbContext.SchedulePlans
+                .Where(x => x.Id == existingPlan.Id)
+                .ExecuteDeleteAsync(cancellationToken);
         }
-
-        var output = await _schedulingEngine.GenerateAsync(storeId, request.StartDate, request.EndDate, cancellationToken);
-
-        var planName = request.PlanName?.Trim();
-        if (string.IsNullOrWhiteSpace(planName))
-        {
-            planName = $"{request.StartDate:yyyy-MM-dd} 至 {request.EndDate:yyyy-MM-dd} 排班";
-        }
-
-        await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
 
         var plan = new SchedulePlanEntity
         {
@@ -118,9 +119,10 @@ public sealed class ScheduleService : IScheduleService
             });
         }
 
+        // 每员工每天一个班次、一次班中休息；按开始时间取最早一条（汇总表仅存单条休息）
         var breakByEmployeeDate = output.BreakAssignments
             .GroupBy(x => (x.EmployeeId, x.WorkDate))
-            .ToDictionary(g => g.Key, g => g.First());
+            .ToDictionary(g => g.Key, g => g.OrderBy(x => x.BreakStartTime).First());
 
         foreach (var summary in output.DaySummaries)
         {
@@ -285,17 +287,20 @@ public sealed class ScheduleService : IScheduleService
             .AsNoTracking()
             .ToDictionaryAsync(x => x.Id, x => x.Code, cancellationToken);
 
-        var employees = await _dbContext.Employees
+        var employeeById = (await _dbContext.Employees
             .AsNoTracking()
             .Where(x => x.StoreId == storeId)
             .Select(x => new { x.Id, x.EmployeeNo, x.Name, x.Department, x.IsParttime })
-            .ToListAsync(cancellationToken);
+            .ToListAsync(cancellationToken))
+            .ToDictionary(x => x.Id);
 
         return summaries
             .GroupBy(x => x.EmployeeId)
+            // 3.14 修复：孤儿汇总（员工档案缺失）跳过而非抛异常 → 500
+            .Where(g => employeeById.ContainsKey(g.Key))
             .Select(g =>
             {
-                var employee = employees.First(e => e.Id == g.Key);
+                var employee = employeeById[g.Key];
                 var days = g.OrderBy(x => x.WorkDate)
                     .Select(s => new MonthDayCell(
                         s.WorkDate,
@@ -333,11 +338,12 @@ public sealed class ScheduleService : IScheduleService
             .AsNoTracking()
             .ToDictionaryAsync(x => x.Id, x => x.Code, cancellationToken);
 
-        var employees = await _dbContext.Employees
+        var employeeById = (await _dbContext.Employees
             .AsNoTracking()
             .Where(x => x.StoreId == storeId)
             .Select(x => new { x.Id, x.EmployeeNo, x.Name, x.Department, x.IsParttime })
-            .ToListAsync(cancellationToken);
+            .ToListAsync(cancellationToken))
+            .ToDictionary(x => x.Id);
 
         var coverIds = summaries
             .Where(x => x.BreakCoverEmployeeId is not null)
@@ -353,9 +359,11 @@ public sealed class ScheduleService : IScheduleService
 
         return summaries
             .GroupBy(x => x.EmployeeId)
+            // 3.14 修复：孤儿汇总跳过而非抛异常 → 500
+            .Where(g => employeeById.ContainsKey(g.Key))
             .Select(g =>
             {
-                var employee = employees.First(e => e.Id == g.Key);
+                var employee = employeeById[g.Key];
                 var days = g.OrderBy(x => x.WorkDate)
                     .Select(s => new WeekDayShift(
                         s.WorkDate,
@@ -495,6 +503,10 @@ public sealed class ScheduleService : IScheduleService
             throw new BusinessException("已发布的排班不能直接调整，请作废后重新生成", "SCHEDULE_PUBLISHED");
         }
 
+        // 修复：多槽位班次必须整体调整——原来只改第一条明细，其余槽位残留旧班次/旧工作站；
+        // 删除+重建使用 ExecuteDeleteAsync（立即落库），与后续 SaveChanges 之间包事务保证原子性。
+        await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
+
         foreach (var item in request.Items)
         {
             if (item.ShiftTemplateId is null && item.WorkstationId is null)
@@ -502,82 +514,162 @@ public sealed class ScheduleService : IScheduleService
                 throw new BusinessException("调整项必须指定班次或工作站", "INVALID_ADJUST");
             }
 
-            var result = await _dbContext.ScheduleResults
-                .FirstOrDefaultAsync(x =>
+            var dayRows = await _dbContext.ScheduleResults
+                .AsNoTracking()
+                .Where(x =>
                     x.PlanId == planId &&
                     x.EmployeeId == item.EmployeeId &&
-                    x.WorkDate == item.WorkDate &&
-                    (item.TimeSlot == null || x.TimeSlot == item.TimeSlot),
-                    cancellationToken);
+                    x.WorkDate == item.WorkDate)
+                .OrderBy(x => x.TimeSlot)
+                .ToListAsync(cancellationToken);
 
-            if (result is null)
+            if (dayRows.Count == 0)
             {
                 throw new BusinessException($"未找到员工 {item.EmployeeId} 在 {item.WorkDate:yyyy-MM-dd} 的排班记录", "ADJUST_NOT_FOUND");
             }
 
+            ShiftTemplateEntity? newShift = null;
             if (item.ShiftTemplateId is not null)
             {
-                var shiftExists = await _dbContext.ShiftTemplates
-                    .AnyAsync(x => x.Id == item.ShiftTemplateId && x.StoreId == storeId && x.Status == 1, cancellationToken);
-
-                if (!shiftExists)
-                {
-                    throw new BusinessException("调整的班次不存在或已停用", "INVALID_SHIFT");
-                }
+                newShift = await _dbContext.ShiftTemplates
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(x => x.Id == item.ShiftTemplateId && x.StoreId == storeId && x.Status == 1, cancellationToken)
+                    ?? throw new BusinessException("调整的班次不存在或已停用", "INVALID_SHIFT");
             }
 
+            // 目标工作站：显式指定则校验技能；仅改班次时取新班次覆盖站中技能分最高者
+            long? targetWs = null;
+            var skillScore = 0;
             if (item.WorkstationId is not null)
             {
-                var skill = await _dbContext.EmployeeSkills
-                    .AnyAsync(x =>
+                skillScore = await _dbContext.EmployeeSkills
+                    .Where(x =>
                         x.EmployeeId == item.EmployeeId &&
                         x.WorkstationId == item.WorkstationId &&
                         x.SkillScore > 0 &&
-                        x.Status == 1,
-                        cancellationToken);
+                        x.Status == 1)
+                    .Select(x => (int?)x.SkillScore)
+                    .FirstOrDefaultAsync(cancellationToken) ?? 0;
 
-                if (!skill)
+                if (skillScore == 0)
                 {
                     throw new BusinessException("员工不具备目标工作站技能，无法调整", "INVALID_ADJUST");
                 }
 
-                result.WorkstationId = item.WorkstationId;
+                targetWs = item.WorkstationId;
+            }
+            else if (newShift is not null)
+            {
+                var shiftWsIds = await _dbContext.ShiftWorkstations
+                    .Where(x => x.ShiftTemplateId == newShift.Id)
+                    .Select(x => x.WorkstationId)
+                    .ToListAsync(cancellationToken);
+
+                var skills = await _dbContext.EmployeeSkills
+                    .Where(x => x.EmployeeId == item.EmployeeId && x.Status == 1 && x.SkillScore > 0)
+                    .ToDictionaryAsync(x => x.WorkstationId, x => x.SkillScore, cancellationToken);
+
+                var bestWs = shiftWsIds
+                    .Where(skills.ContainsKey)
+                    .OrderByDescending(ws => skills[ws])
+                    .FirstOrDefault();
+
+                if (bestWs == 0)
+                {
+                    throw new BusinessException("员工在新班次覆盖的工作站上无技能，无法调整", "INVALID_ADJUST");
+                }
+
+                targetWs = bestWs;
+                skillScore = skills[bestWs];
             }
 
-            if (item.ShiftTemplateId is not null)
+            if (newShift is not null)
             {
-                result.ShiftTemplateId = item.ShiftTemplateId;
-
-                // 同步更新日汇总（班次变化影响工时和覆盖范围）
-                var summary = await _dbContext.ScheduleSummaries
-                    .FirstOrDefaultAsync(x =>
-                        x.PlanId == planId &&
-                        x.EmployeeId == item.EmployeeId &&
-                        x.WorkDate == item.WorkDate,
-                        cancellationToken);
-
-                if (summary is not null)
+                if (targetWs is not null)
                 {
-                    var newShift = await _dbContext.ShiftTemplates
-                        .AsNoTracking()
-                        .FirstOrDefaultAsync(x => x.Id == item.ShiftTemplateId, cancellationToken);
-
-                    if (newShift is not null)
+                    var shiftWsIds = await _dbContext.ShiftWorkstations
+                        .Where(x => x.ShiftTemplateId == newShift.Id)
+                        .Select(x => x.WorkstationId)
+                        .ToListAsync(cancellationToken);
+                    if (!shiftWsIds.Contains(targetWs.Value))
                     {
-                        summary.ShiftTemplateId = newShift.Id;
-                        summary.StartTime = newShift.StartTime;
-                        summary.EndTime = newShift.EndTime;
-                        summary.WorkHours = SchedulingTimeHelper.GetShiftHours(newShift.StartTime, newShift.EndTime, newShift.IsCrossDay);
-                        summary.UpdatedAt = DateTime.UtcNow;
+                        throw new BusinessException("所选工作站不属于新班次", "INVALID_ADJUST");
                     }
                 }
+
+                // 重建当天全部明细：按新班次的所有时段（含跨午夜回绕）写入
+                await _dbContext.ScheduleResults
+                    .Where(x => x.PlanId == planId && x.EmployeeId == item.EmployeeId && x.WorkDate == item.WorkDate)
+                    .ExecuteDeleteAsync(cancellationToken);
+
+                var slots = SchedulingTimeHelper.GetShiftSlots(newShift.StartTime, newShift.EndTime, newShift.IsCrossDay);
+                foreach (var slot in slots)
+                {
+                    _dbContext.ScheduleResults.Add(new ScheduleResultEntity
+                    {
+                        PlanId = planId,
+                        StoreId = storeId,
+                        EmployeeId = item.EmployeeId,
+                        WorkDate = item.WorkDate,
+                        ShiftTemplateId = newShift.Id,
+                        TimeSlot = slot,
+                        WorkstationId = targetWs,
+                        SkillScore = skillScore,
+                        Status = plan.Status,
+                        Version = 1,
+                        CreatedAt = DateTime.UtcNow,
+                        UpdatedAt = DateTime.UtcNow
+                    });
+                }
+            }
+            else
+            {
+                // 仅改工作站：更新当天【全部】槽位明细（原来只改第一条）
+                await _dbContext.ScheduleResults
+                    .Where(x => x.PlanId == planId && x.EmployeeId == item.EmployeeId && x.WorkDate == item.WorkDate)
+                    .ExecuteUpdateAsync(s => s
+                        .SetProperty(x => x.WorkstationId, targetWs!.Value)
+                        .SetProperty(x => x.SkillScore, skillScore)
+                        .SetProperty(x => x.UpdatedAt, DateTime.UtcNow)
+                        .SetProperty(x => x.Version, x => x.Version + 1), cancellationToken);
             }
 
-            result.UpdatedAt = DateTime.UtcNow;
-            result.Version++;
+            // 同步日汇总（班次变化影响工时和覆盖范围）
+            var summary = await _dbContext.ScheduleSummaries
+                .FirstOrDefaultAsync(x =>
+                    x.PlanId == planId &&
+                    x.EmployeeId == item.EmployeeId &&
+                    x.WorkDate == item.WorkDate,
+                    cancellationToken);
+
+            if (summary is not null)
+            {
+                if (newShift is not null)
+                {
+                    summary.ShiftTemplateId = newShift.Id;
+                    summary.StartTime = newShift.StartTime;
+                    summary.EndTime = newShift.EndTime;
+                    summary.WorkHours = SchedulingTimeHelper.GetShiftHours(newShift.StartTime, newShift.EndTime, newShift.IsCrossDay);
+                }
+
+                if (targetWs is not null)
+                {
+                    summary.CoveredWorkstations = targetWs.Value.ToString();
+                }
+
+                summary.UpdatedAt = DateTime.UtcNow;
+            }
+
+            // 该员工当天班次/工作站已变化：清理当天其他员工休息记录中对他的顶岗引用，避免残留失效顶岗
+            await _dbContext.ScheduleSummaries
+                .Where(x => x.PlanId == planId && x.WorkDate == item.WorkDate && x.BreakCoverEmployeeId == item.EmployeeId)
+                .ExecuteUpdateAsync(s => s
+                    .SetProperty(x => x.BreakCoverEmployeeId, (long?)null)
+                    .SetProperty(x => x.UpdatedAt, DateTime.UtcNow), cancellationToken);
         }
 
         await _dbContext.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
 
         await _auditLogService.WriteAsync(
             storeId,
@@ -612,6 +704,11 @@ public sealed class ScheduleService : IScheduleService
         {
             throw new BusinessException("已发布的排班不能直接调整，请作废后重新生成", "SCHEDULE_PUBLISHED");
         }
+
+        // 2.1 修复：ExecuteDeleteAsync 立即落库、新增明细在最后 SaveChanges 才提交，
+        // 若中途失败会留下「明细已删、汇总未改」的损坏数据；整体放入事务保证原子性。
+        // （await using 保证异常传播时事务自动回滚）
+        await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
 
         foreach (var item in request.Items)
         {
@@ -772,11 +869,18 @@ public sealed class ScheduleService : IScheduleService
                     workSummary.UpdatedAt = DateTime.UtcNow;
                 }
             }
+
+            // 该员工当天状态已变化：清理当天其他员工休息记录中对他的顶岗引用，避免残留失效顶岗
+            await _dbContext.ScheduleSummaries
+                .Where(x => x.PlanId == planId && x.WorkDate == item.WorkDate && x.BreakCoverEmployeeId == item.EmployeeId)
+                .ExecuteUpdateAsync(s => s
+                    .SetProperty(x => x.BreakCoverEmployeeId, (long?)null)
+                    .SetProperty(x => x.UpdatedAt, DateTime.UtcNow), cancellationToken);
         }
 
-        await _dbContext.SaveChangesAsync(cancellationToken);
-
-        await _auditLogService.WriteAsync(
+        // 审计与业务数据在同一事务内原子提交
+        _auditLogService.AddAuditEntity(
+            _dbContext,
             storeId,
             operatorUserId,
             operatorName,
@@ -786,7 +890,10 @@ public sealed class ScheduleService : IScheduleService
             null,
             JsonSerializer.Serialize(request.Items),
             $"手动设置员工休息/上班状态 {plan.PlanName}，共 {request.Items.Count} 项",
-            cancellationToken);
+            DateTime.UtcNow);
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
     }
 
     /// <summary>
@@ -877,8 +984,8 @@ public sealed class ScheduleService : IScheduleService
             throw new BusinessException("已发布的排班不能直接调整，请作废后重新生成", "SCHEDULE_PUBLISHED");
         }
 
-        if (!TimeSpan.TryParse(request.FromTimeSlot, out var fromSlot) ||
-            !TimeSpan.TryParse(request.ToTimeSlot, out var toSlot))
+        if (!TimeSpan.TryParse(request.FromTimeSlot, System.Globalization.CultureInfo.InvariantCulture, out var fromSlot) ||
+            !TimeSpan.TryParse(request.ToTimeSlot, System.Globalization.CultureInfo.InvariantCulture, out var toSlot))
         {
             throw new BusinessException("时段格式不正确（需 HH:mm）", "INVALID_TIME_SLOT");
         }
@@ -939,6 +1046,9 @@ public sealed class ScheduleService : IScheduleService
             }
         }
 
+        // 修复：移动 + 顶岗引用清理 + 审计在同一事务内原子提交
+        await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
+
         // 应用移动
         foreach (var row in segmentRows)
         {
@@ -974,7 +1084,12 @@ public sealed class ScheduleService : IScheduleService
             }
         }
 
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        // 移动后该员工在原工作站该时段的覆盖失效：清理当天其他员工休息记录中对他的顶岗引用
+        await _dbContext.ScheduleSummaries
+            .Where(x => x.PlanId == planId && x.WorkDate == request.WorkDate && x.BreakCoverEmployeeId == request.EmployeeId)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(x => x.BreakCoverEmployeeId, (long?)null)
+                .SetProperty(x => x.UpdatedAt, DateTime.UtcNow), cancellationToken);
 
         _auditLogService.AddAuditEntity(
             _dbContext,
@@ -988,6 +1103,11 @@ public sealed class ScheduleService : IScheduleService
             $"{request.ToWorkstationId}|{request.ToTimeSlot}",
             $"拖动移动员工 {request.EmployeeId} 的半小时（平移 {deltaMinutes} 分钟，工作站 {request.FromWorkstationId}→{request.ToWorkstationId}）",
             DateTime.UtcNow);
+
+        // 审计实体须在 SaveChanges 之前加入，否则不会被持久化
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        await transaction.CommitAsync(cancellationToken);
 
         return new MoveScheduleSegmentResult(segmentRows.Count, request.FromTimeSlot, request.ToTimeSlot, request.ToWorkstationId);
     }
@@ -1030,17 +1150,40 @@ public sealed class ScheduleService : IScheduleService
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 
+        // 3.8 修复：PlanName 为管理员输入，入库前 HtmlEncode（与员工通知一致）
+        var encodedPlanName = WebUtility.HtmlEncode(plan.PlanName);
         var notify = new NotificationEntity
         {
             StoreId = storeId,
             ReceiverUserId = operatorUserId,
             NotificationType = "SCHEDULE_PUBLISHED",
-            Title = $"排班已发布：{plan.PlanName}",
-            Content = $"排班计划 {plan.PlanName}（{plan.StartDate:yyyy-MM-dd} 至 {plan.EndDate:yyyy-MM-dd}）已正式发布。",
+            Title = $"排班已发布：{encodedPlanName}",
+            Content = $"排班计划 {encodedPlanName}（{plan.StartDate:yyyy-MM-dd} 至 {plan.EndDate:yyyy-MM-dd}）已正式发布。",
             IsRead = 0,
             CreatedAt = DateTime.UtcNow
         };
         _dbContext.Notifications.Add(notify);
+
+        // 3.9 修复：员工班表发布通知纳入同一事务（原先在端点层事务外发送，
+        // 通知保存失败会返回 500 但排班已发布）
+        var employeeIds = await _dbContext.ScheduleSummaries.AsNoTracking()
+            .Where(x => x.PlanId == planId)
+            .Select(x => x.EmployeeId)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+        foreach (var empId in employeeIds)
+        {
+            _dbContext.Notifications.Add(new NotificationEntity
+            {
+                StoreId = storeId,
+                ReceiverEmployeeId = empId,
+                NotificationType = "SCHEDULE_PUBLISHED",
+                Title = "排班已发布",
+                Content = $"排班计划「{encodedPlanName}」已发布，请查看您的班表",
+                IsRead = 0,
+                CreatedAt = DateTime.UtcNow
+            });
+        }
 
         // P1-7 修复：审计日志与业务数据在同一事务内原子提交
         _auditLogService.AddAuditEntity(

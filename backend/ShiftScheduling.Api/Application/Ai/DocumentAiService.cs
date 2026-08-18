@@ -100,7 +100,26 @@ public sealed class DocumentAiService : IDocumentAiService
                 throw new BusinessException("图片内容为空", "INVALID_AI_IMAGE");
             }
 
-            var mime = string.IsNullOrWhiteSpace(request.ImageMimeType) ? "image/png" : request.ImageMimeType;
+            // 3.1 修复：MIME 白名单 + 大小上限（MaxImageBytes 此前从未被使用）
+            var mime = (string.IsNullOrWhiteSpace(request.ImageMimeType) ? "image/png" : request.ImageMimeType)
+                .Trim().ToLowerInvariant();
+            var allowedMimes = new[] { "image/png", "image/jpeg", "image/jpg", "image/webp", "image/gif" };
+            if (!allowedMimes.Contains(mime))
+            {
+                throw new BusinessException("仅支持 png/jpeg/webp/gif 格式的图片", "INVALID_AI_IMAGE_MIME");
+            }
+
+            // base64 长度上限按 6MB 原始字节折算（base64 约 4:3 膨胀）
+            if (request.ImageBase64.Length > (long)MaxImageBytes * 4 / 3)
+            {
+                throw new BusinessException("图片过大（最大 6MB）", "AI_IMAGE_TOO_LARGE");
+            }
+
+            if (!System.Text.RegularExpressions.Regex.IsMatch(request.ImageBase64, "^[A-Za-z0-9+/=]+$"))
+            {
+                throw new BusinessException("图片数据格式不正确", "INVALID_AI_IMAGE");
+            }
+
             return new
             {
                 role = "user",
@@ -173,9 +192,23 @@ public sealed class DocumentAiService : IDocumentAiService
         }
 
         using var doc = JsonDocument.Parse(body);
-        var choice = doc.RootElement.GetProperty("choices")[0];
-        var message = choice.GetProperty("message");
-        var content = message.GetProperty("content").GetString();
+        // 3.4 修复：校验 choices/message 结构，避免空数组或缺字段时抛未处理异常 → 500
+        if (!doc.RootElement.TryGetProperty("choices", out var choicesEl) ||
+            choicesEl.ValueKind != JsonValueKind.Array ||
+            choicesEl.GetArrayLength() == 0)
+        {
+            throw new BusinessException("DeepSeek 返回格式异常（缺少 choices）", "AI_API_ERROR");
+        }
+
+        var choice = choicesEl[0];
+        if (!choice.TryGetProperty("message", out var message))
+        {
+            throw new BusinessException("DeepSeek 返回格式异常（缺少 message）", "AI_API_ERROR");
+        }
+
+        var content = message.TryGetProperty("content", out var contentEl) && contentEl.ValueKind == JsonValueKind.String
+            ? contentEl.GetString()
+            : null;
         var finishReason = choice.TryGetProperty("finish_reason", out var fr) ? fr.GetString() : null;
 
         if (string.IsNullOrWhiteSpace(content))
@@ -202,19 +235,22 @@ public sealed class DocumentAiService : IDocumentAiService
 
         try
         {
+            // 3.5 修复：仅提取 JSON 错误对象的 message 字段并截断；
+            // 非 JSON 错误体不回显，避免 BaseUrl 指向内部服务时把任意响应透传给客户端
             using var doc = JsonDocument.Parse(body);
             if (doc.RootElement.TryGetProperty("error", out var err) &&
-                err.TryGetProperty("message", out var msg))
+                err.TryGetProperty("message", out var msg) &&
+                msg.GetString() is { Length: > 0 } message)
             {
-                return msg.GetString() ?? body;
+                return message.Length > 200 ? message[..200] : message;
             }
         }
         catch
         {
-            // 非 JSON 错误体，原样截断返回
+            // 非 JSON 错误体
         }
 
-        return body.Length > 300 ? body[..300] : body;
+        return "接口调用失败，请检查 AI 配置";
     }
 
     // ============ 输出解析与校验 ============
@@ -260,7 +296,7 @@ public sealed class DocumentAiService : IDocumentAiService
                 }
 
                 var (min, ideal) = ParseCount(item);
-                if (min is null)
+                if (min is null || ideal is null)
                 {
                     warnings.Add("跳过：人数无效（" + JsonSerializer.Serialize(item) + "）");
                     continue;
@@ -384,7 +420,7 @@ public sealed class DocumentAiService : IDocumentAiService
 
         var h = int.Parse(match.Groups["h"].Value);
         var m = int.Parse(match.Groups["m"].Value);
-        if (h > 23 || m % 30 != 0)
+        if (h > 23 || m > 59 || m % 30 != 0)
         {
             return false;
         }
@@ -409,7 +445,7 @@ public sealed class DocumentAiService : IDocumentAiService
 
         var minValue = min.Value;
         var idealValue = ideal.Value;
-        if (minValue < 0 || idealValue > 99)
+        if (minValue < 0 || minValue > 99 || idealValue > 99)
         {
             return (null, null);
         }

@@ -42,7 +42,7 @@ public sealed class BreakAllocator
                 g => g.Key,
                 g => g.ToDictionary(s => s.WorkstationId, s => (Score: s.SkillScore, IsPrimary: s.IsPrimarySkill)));
 
-        // 员工在某个时段的原工作站：(employeeId, date) -> slot -> workstationId
+        // 员工在某个时段的原工作站：(employeeId, 班次开始日期) -> slot -> workstationId
         var wsByEmployeeDateSlot = workstationAssignments
             .GroupBy(a => (a.EmployeeId, a.WorkDate))
             .ToDictionary(g => g.Key, g => g.ToDictionary(a => a.TimeSlot, a => a.WorkstationId));
@@ -57,46 +57,22 @@ public sealed class BreakAllocator
                       .Select(x => x.Key)
                       .First());
 
-        // 需求：(dayType) -> (slot, workstationId) -> requiredCount
-        var requirementsByDayType = input.StaffingRequirements
-            .GroupBy(r => r.DayType)
-            .ToDictionary(
-                g => g.Key,
-                g => g.GroupBy(r => (r.TimeSlot, r.WorkstationId))
-                      .ToDictionary(x => x.Key, x => x.Max(r => r.RequiredCount)));
-
-        // 营业日口径：某天的需求 = 当天类型（06:00 起）+ 前一天类型（00:00-05:30）
-        static Dictionary<(TimeSpan Slot, long Ws), int> MergeDayRequirements(
-            string dayType,
-            string prevType,
-            IReadOnlyDictionary<string, Dictionary<(TimeSpan Slot, long Ws), int>> requirementsByDayType)
-        {
-            var merged = new Dictionary<(TimeSpan Slot, long Ws), int>();
-            if (requirementsByDayType.TryGetValue(dayType, out var dayReqs))
-            {
-                foreach (var kv in dayReqs.Where(x => x.Key.Slot >= TimeSpan.FromHours(6)))
-                {
-                    merged[kv.Key] = kv.Value;
-                }
-            }
-
-            if (requirementsByDayType.TryGetValue(prevType, out var prevReqs))
-            {
-                foreach (var kv in prevReqs.Where(x => x.Key.Slot < TimeSpan.FromHours(6)))
-                {
-                    merged[kv.Key] = kv.Value;
-                }
-            }
-
-            return merged;
-        }
-
+        // 需求：(日历日, 时段, 工作站) -> requiredCount。
+        // 营业日口径：某日历日 00:00-05:30 归属上一营业日（用前一天日期类型取需求）。
         var dayTypeByDate = input.DateParameters.ToDictionary(d => d.WorkDate, d => d.DayType);
+        var dayReqs = BuildDayRequirements(input, dayTypeByDate);
 
-        // 基础在岗人数
-        var baseCounts = workstationAssignments
-            .GroupBy(a => (a.WorkDate, a.TimeSlot, a.WorkstationId))
-            .ToDictionary(g => g.Key, g => g.Count());
+        // 基础在岗人数：(日历日, 时段, 工作站) -> 人数。
+        // 跨天班次的午夜回绕时段按次日日历日计数。
+        var baseCounts = new Dictionary<(DateOnly Date, TimeSpan Slot, long Ws), int>();
+        foreach (var a in workstationAssignments)
+        {
+            var calendarDate = shiftById.TryGetValue(a.ShiftTemplateId, out var tpl)
+                ? SchedulingTimeHelper.SlotCalendarDate(a.TimeSlot, tpl.StartTime, a.WorkDate)
+                : a.WorkDate;
+            var key = (calendarDate, a.TimeSlot, a.WorkstationId);
+            baseCounts[key] = baseCounts.GetValueOrDefault(key) + 1;
+        }
 
         // 动态增量：休息者离岗 -1；借调者顶岗 +1、离开原岗位 -1
         var delta = new Dictionary<(DateOnly Date, TimeSpan Slot, long Ws), int>();
@@ -153,11 +129,6 @@ public sealed class BreakAllocator
                 continue;
             }
 
-            var dayType = dayTypeByDate.GetValueOrDefault(date.WorkDate) ?? "WORKDAY";
-            // 营业日口径：凌晨时段（< 06:00）按前一天的日期类型取需求
-            var prevType = dayTypeByDate.GetValueOrDefault(date.WorkDate.AddDays(-1)) ?? dayType;
-            var dayReqs = MergeDayRequirements(dayType, prevType, requirementsByDayType);
-
             // 每日重置休息分散计数与借调次数
             breakCountBySlot.Clear();
             borrowCount.Clear();
@@ -201,7 +172,7 @@ public sealed class BreakAllocator
                     issueCollector?.Add(new ScheduleIssueOutput(
                         "BREAK_UNCOVERED",
                         "WARN",
-                        date.WorkDate,
+                        BreakCalendarDate(forced, template.StartTime, date.WorkDate),
                         TimeSpan.FromMinutes(forced),
                         employeeId,
                         hasWs ? mainWs : null,
@@ -211,17 +182,17 @@ public sealed class BreakAllocator
 
                 // 选择休息槽：错峰优先。
                 // 1) 先保证休息后不缺人（Redundancy >= 0）；
-                // 2) 在安全的槽位里挑“已安排休息人数最少”的槽位 → 大家错开休息，
-                //    而不是都挤在冗余最大的同一时段（例如 00:00）；
+                // 2) 在安全的槽位里挑"已安排休息人数最少"的槽位 → 大家错开休息；
                 // 3) 同槽人数相同时再比冗余大小、离高峰距离。
                 var best = candidates
                     .Select(abs => new
                     {
                         Abs = abs,
                         Slot = TimeSpan.FromMinutes(abs),
+                        BreakDate = BreakCalendarDate(abs, template.StartTime, date.WorkDate),
                         Redundancy = hasWs
-                            ? EffectiveCount(date.WorkDate, TimeSpan.FromMinutes(abs), mainWs) - 1
-                              - dayReqs.GetValueOrDefault((TimeSpan.FromMinutes(abs), mainWs))
+                            ? EffectiveCount(BreakCalendarDate(abs, template.StartTime, date.WorkDate), TimeSpan.FromMinutes(abs), mainWs) - 1
+                              - dayReqs.GetValueOrDefault((BreakCalendarDate(abs, template.StartTime, date.WorkDate), TimeSpan.FromMinutes(abs), mainWs))
                             : int.MaxValue,
                         PeakDist = PeakDistance(abs),
                         SlotBreaks = breakCountBySlot.GetValueOrDefault(abs)
@@ -234,7 +205,7 @@ public sealed class BreakAllocator
 
                 if (best.Redundancy >= 0)
                 {
-                    ApplyBreak(employeeId, date.WorkDate, best.Abs, null, false, hasWs ? mainWs : 0, hasWs);
+                    ApplyBreak(employeeId, date.WorkDate, best.BreakDate, best.Abs, null, false, hasWs ? mainWs : 0, hasWs);
                 }
                 else
                 {
@@ -242,26 +213,27 @@ public sealed class BreakAllocator
                     long? borrower = null;
                     var inexperienced = false;
                     var chosenAbs = best.Abs;
+                    var chosenDate = best.BreakDate;
 
                     foreach (var cand in candidates
                                  .Select(abs => new
                                  {
                                      Abs = abs,
                                      Slot = TimeSpan.FromMinutes(abs),
+                                     BreakDate = BreakCalendarDate(abs, template.StartTime, date.WorkDate),
                                      Shortfall = hasWs
-                                         ? dayReqs.GetValueOrDefault((TimeSpan.FromMinutes(abs), mainWs))
-                                           - (EffectiveCount(date.WorkDate, TimeSpan.FromMinutes(abs), mainWs) - 1)
+                                         ? dayReqs.GetValueOrDefault((BreakCalendarDate(abs, template.StartTime, date.WorkDate), TimeSpan.FromMinutes(abs), mainWs))
+                                           - (EffectiveCount(BreakCalendarDate(abs, template.StartTime, date.WorkDate), TimeSpan.FromMinutes(abs), mainWs) - 1)
                                          : 0,
                                      SlotBreaks = breakCountBySlot.GetValueOrDefault(abs)
                                  })
                                  .Where(x => x.Shortfall > 0)
                                  .OrderBy(x => x.Shortfall)
-                                 // 缺人相同时优先选休息人数少的槽位（同样错开）
                                  .ThenBy(x => x.SlotBreaks)
                                  .ThenBy(x => x.Abs))
                     {
                         var found = FindBorrower(
-                            date.WorkDate,
+                            cand.BreakDate,
                             cand.Slot,
                             mainWs,
                             employeeId,
@@ -280,20 +252,21 @@ public sealed class BreakAllocator
                             borrower = bId;
                             inexperienced = inexp;
                             chosenAbs = cand.Abs;
+                            chosenDate = cand.BreakDate;
                             break;
                         }
                     }
 
                     if (borrower is not null)
                     {
-                        ApplyBreak(employeeId, date.WorkDate, chosenAbs, borrower, inexperienced, hasWs ? mainWs : 0, hasWs);
+                        ApplyBreak(employeeId, date.WorkDate, chosenDate, chosenAbs, borrower, inexperienced, hasWs ? mainWs : 0, hasWs);
 
                         if (inexperienced)
                         {
                             issueCollector?.Add(new ScheduleIssueOutput(
                                 "BREAK_BORROW_INEXPERIENCED",
                                 "INFO",
-                                date.WorkDate,
+                                chosenDate,
                                 TimeSpan.FromMinutes(chosenAbs),
                                 employeeId,
                                 hasWs ? mainWs : null,
@@ -302,11 +275,11 @@ public sealed class BreakAllocator
                     }
                     else
                     {
-                        ApplyBreak(employeeId, date.WorkDate, best.Abs, null, false, hasWs ? mainWs : 0, hasWs);
+                        ApplyBreak(employeeId, date.WorkDate, best.BreakDate, best.Abs, null, false, hasWs ? mainWs : 0, hasWs);
                         issueCollector?.Add(new ScheduleIssueOutput(
                             "BREAK_UNCOVERED",
                             "WARN",
-                            date.WorkDate,
+                            best.BreakDate,
                             TimeSpan.FromMinutes(best.Abs),
                             employeeId,
                             hasWs ? mainWs : null,
@@ -323,9 +296,10 @@ public sealed class BreakAllocator
         string EmpName(long id)
             => employeeName.TryGetValue(id, out var n) ? n : $"员工{id}";
 
-        void ApplyBreak(long employeeId, DateOnly date, int absStart, long? coverId, bool inexp, long? breakWs, bool hasWs)
+        void ApplyBreak(long employeeId, DateOnly shiftDate, DateOnly breakDate, int absStart, long? coverId, bool inexp, long? breakWs, bool hasWs)
         {
-            breaks.Add(new BreakAssignment(employeeId, date, TimeSpan.FromMinutes(absStart), coverId, inexp, breakWs));
+            // 休息记录仍挂在班次开始日期下（持久化约定）；需求/人数按休息的实际日历日期计算
+            breaks.Add(new BreakAssignment(employeeId, shiftDate, TimeSpan.FromMinutes(absStart), coverId, inexp, breakWs));
             breakCountBySlot[absStart] = breakCountBySlot.GetValueOrDefault(absStart) + 1;
 
             if (!hasWs || breakWs <= 0)
@@ -335,27 +309,63 @@ public sealed class BreakAllocator
 
             var slot = TimeSpan.FromMinutes(absStart);
             var ws = breakWs ?? 0;
-            var key = (date, slot, ws);
+            var key = (breakDate, slot, ws);
             delta[key] = delta.GetValueOrDefault(key) - 1; // 休息者离岗
 
             if (coverId is not null && ws > 0 &&
-                wsByEmployeeDateSlot.TryGetValue((coverId.Value, date), out var ownBySlot) &&
+                wsByEmployeeDateSlot.TryGetValue((coverId.Value, shiftDate), out var ownBySlot) &&
                 ownBySlot.TryGetValue(slot, out var ownWs))
             {
                 delta[key] += 1; // 借调者顶岗
-                var ownKey = (date, slot, ownWs);
+                var ownKey = (breakDate, slot, ownWs);
                 delta[ownKey] = delta.GetValueOrDefault(ownKey) - 1; // 借调者离开原岗位
             }
         }
     }
 
+    /// <summary>休息槽（绝对分钟）的实际日历日期：午夜回绕部分属于次日。</summary>
+    private static DateOnly BreakCalendarDate(int absStartMin, TimeSpan shiftStart, DateOnly shiftDate)
+        => SchedulingTimeHelper.SlotCalendarDate(TimeSpan.FromMinutes(absStartMin), shiftStart, shiftDate);
+
+    /// <summary>按日历日构建需求字典：(日历日, 时段, 工作站) -> 最少人数。</summary>
+    private static Dictionary<(DateOnly Date, TimeSpan Slot, long Ws), int> BuildDayRequirements(
+        SchedulingInput input,
+        IReadOnlyDictionary<DateOnly, string> dayTypeByDate)
+    {
+        var result = new Dictionary<(DateOnly Date, TimeSpan Slot, long Ws), int>();
+        foreach (var date in input.DateParameters.Where(x => x.WorkDate >= input.StartDate && x.WorkDate <= input.EndDate))
+        {
+            var dayType = dayTypeByDate.GetValueOrDefault(date.WorkDate) ?? "WORKDAY";
+            var prevType = dayTypeByDate.GetValueOrDefault(date.WorkDate.AddDays(-1)) ?? dayType;
+            foreach (var r in input.StaffingRequirements)
+            {
+                // 周期首日的凌晨时段归属上一营业日（不在排班周期内），跳过避免幻影缺口
+                if (r.TimeSlot < TimeSpan.FromHours(6) && date.WorkDate == input.StartDate)
+                {
+                    continue;
+                }
+
+                var expectedType = r.TimeSlot < TimeSpan.FromHours(6) ? prevType : dayType;
+                if (r.DayType != expectedType)
+                {
+                    continue;
+                }
+
+                var key = (date.WorkDate, r.TimeSlot, r.WorkstationId);
+                result[key] = Math.Max(result.GetValueOrDefault(key), r.RequiredCount);
+            }
+        }
+
+        return result;
+    }
+
     /// <summary>
     /// 为休息员工的某个时段寻找借调人：
-    /// 当班覆盖该时段 + 有目标站技能 + 该时段原分配在其他站 + 离开原岗位后原站不缺人。
+    /// 当班覆盖该时段（含实际日历日期一致）+ 有目标站技能 + 该时段原分配在其他站 + 离开原岗位后原站不缺人。
     /// 主技能（IsPrimarySkill=1）优先，技能分高者优先；每人每天最多借调 2 次。
     /// </summary>
     private static bool FindBorrower(
-        DateOnly date,
+        DateOnly breakDate,
         TimeSpan slot,
         long mainWs,
         long restingEmployeeId,
@@ -363,7 +373,7 @@ public sealed class BreakAllocator
         IReadOnlyDictionary<long, ShiftTemplateInput> shiftById,
         IReadOnlyDictionary<(long EmployeeId, DateOnly Date), Dictionary<TimeSpan, long>> wsByEmployeeDateSlot,
         IReadOnlyDictionary<long, Dictionary<long, (int Score, int IsPrimary)>> skillsByEmployee,
-        IReadOnlyDictionary<(TimeSpan Slot, long Ws), int> dayReqs,
+        IReadOnlyDictionary<(DateOnly Date, TimeSpan Slot, long Ws), int> dayReqs,
         Dictionary<long, int> borrowCount,
         Func<DateOnly, TimeSpan, long, int> effectiveCount,
         out long borrowerId,
@@ -393,8 +403,13 @@ public sealed class BreakAllocator
                 continue;
             }
 
-            // 当班且覆盖该时段
+            // 当班且覆盖该时段（跨天班次：时段实际日历日期必须与休息的日历日期一致）
             if (!SchedulingTimeHelper.GetShiftSlots(template.StartTime, template.EndTime, template.IsCrossDay).Contains(slot))
+            {
+                continue;
+            }
+
+            if (SchedulingTimeHelper.SlotCalendarDate(slot, template.StartTime, s.WorkDate) != breakDate)
             {
                 continue;
             }
@@ -407,7 +422,7 @@ public sealed class BreakAllocator
             }
 
             // 该时段原分配在其他站
-            if (!wsByEmployeeDateSlot.TryGetValue((eid, date), out var ownBySlot) ||
+            if (!wsByEmployeeDateSlot.TryGetValue((eid, s.WorkDate), out var ownBySlot) ||
                 !ownBySlot.TryGetValue(slot, out var ownWs) ||
                 ownWs == mainWs)
             {
@@ -415,8 +430,8 @@ public sealed class BreakAllocator
             }
 
             // 离开原岗位后原站不缺人
-            var ownInDuty = effectiveCount(date, slot, ownWs);
-            var ownDemand = dayReqs.GetValueOrDefault((slot, ownWs));
+            var ownInDuty = effectiveCount(breakDate, slot, ownWs);
+            var ownDemand = dayReqs.GetValueOrDefault((breakDate, slot, ownWs));
             if (ownInDuty - 1 < ownDemand)
             {
                 continue;

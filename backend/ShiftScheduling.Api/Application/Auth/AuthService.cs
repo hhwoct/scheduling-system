@@ -14,6 +14,8 @@ public sealed class AuthService : IAuthService
     private readonly ICurrentUser _currentUser;
     private readonly IAuditLogService _auditLogService;
     private readonly IPasswordResetService _passwordResetService;
+    private readonly IWebHostEnvironment _environment;
+    private readonly ILoggerFactory _loggerFactory;
 
     public AuthService(
         ShiftSchedulingDbContext dbContext,
@@ -21,7 +23,9 @@ public sealed class AuthService : IAuthService
         IPasswordService passwordService,
         ICurrentUser currentUser,
         IAuditLogService auditLogService,
-        IPasswordResetService passwordResetService)
+        IPasswordResetService passwordResetService,
+        IWebHostEnvironment environment,
+        ILoggerFactory loggerFactory)
     {
         _dbContext = dbContext;
         _jwtTokenService = jwtTokenService;
@@ -29,6 +33,8 @@ public sealed class AuthService : IAuthService
         _currentUser = currentUser;
         _auditLogService = auditLogService;
         _passwordResetService = passwordResetService;
+        _environment = environment;
+        _loggerFactory = loggerFactory;
     }
 
     public async Task<LoginResponse> LoginAsync(LoginRequest request, string? clientIp, CancellationToken cancellationToken)
@@ -109,7 +115,7 @@ public sealed class AuthService : IAuthService
         return user ?? throw new UnauthorizedBusinessException("当前用户不存在或已被停用");
     }
 
-    public async Task<string> SendPasswordResetOtpAsync(string username, string? clientIp, CancellationToken cancellationToken)
+    public async Task SendPasswordResetOtpAsync(string username, string? clientIp, CancellationToken cancellationToken)
     {
         username = username?.Trim() ?? string.Empty;
         if (string.IsNullOrWhiteSpace(username))
@@ -145,7 +151,13 @@ public sealed class AuthService : IAuthService
         var otp = _passwordResetService.GenerateOtp(username, employee.Phone);
         // TODO: 集成短信网关时在此调用发送短信
         // await _smsService.SendAsync(employee.Phone, $"您的排班系统验证码是 {otp}，10 分钟内有效。");
-        return otp;
+
+        // 安全：验证码不进入 HTTP 响应。短信网关接入前，仅非生产环境写入服务端日志便于联调。
+        if (!_environment.IsProduction())
+        {
+            _loggerFactory.CreateLogger("PasswordReset").LogWarning(
+                "[DEV-OTP] username={Username}, otp={Otp}", username, otp);
+        }
     }
 
     public async Task ForgotPasswordAsync(ForgotPasswordRequest request, string? clientIp, CancellationToken cancellationToken)

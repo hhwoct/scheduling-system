@@ -14,6 +14,9 @@ public sealed class ShiftAllocator
         ["S5"] = 8
     };
 
+    /// <summary>需求键：(工作站, 日历日, 时段)。日历日 00:00-05:30 归属上一营业日。</summary>
+    private readonly record struct DemandKey(long WorkstationId, DateOnly Date, TimeSpan Slot);
+
     public IReadOnlyList<ShiftAssignment> Allocate(
         SchedulingInput input,
         IReadOnlyList<RestDayAssignment> restDays,
@@ -35,14 +38,21 @@ public sealed class ShiftAllocator
             .OrderBy(x => x.WorkDate)
             .ToList();
 
-        // 营业日口径：12:00 起至次日 06:00 为一个营业日，凌晨时段（00:00-05:30）按前一天的类型取需求
+        // 营业日口径：某日历日 00:00-05:30 的凌晨时段归属上一营业日（用前一天类型取需求）。
+        // 需求字典【全程持久】且键带日历日期：跨天班次的午夜回绕部分按次日日历键扣减，
+        // 下一次迭代能看到本次的扣减，修复"凌晨需求匹配错营业日 + 扣减丢失"。
         var dayTypeByDate = input.DateParameters.ToDictionary(d => d.WorkDate, d => d.DayType);
+        var remaining = BuildDemandDictionary(input, dates, dayTypeByDate, ideal: false);
+        var idealRequirements = BuildDemandDictionary(input, dates, dayTypeByDate, ideal: true);
+        // 覆盖计数：(工作站, 日历日, 时段) -> 已排人数
+        var coverage = new Dictionary<DemandKey, int>();
+
+        // 员工占用时段（日历日, 时段）：防止当天新班次与前一天跨天班次的午夜回绕部分重叠（双排）
+        var busySlotsByEmployee = new Dictionary<long, HashSet<(DateOnly Date, TimeSpan Slot)>>();
 
         var weeklyHours = new Dictionary<long, decimal>();
         // 整个排班周期内的累计工时（跨周不清零）。
-        // 兼职员工按“周期累计工时从高到低”优先复用：把兼职需求尽量集中到
-        // 已在用的少数兼职人员身上（例如一二三四五六都用兼传送A，而不是
-        // 一二三用A、四五六用B），从而用更少的兼职人员。
+        // 兼职员工按“周期累计工时从高到低”优先复用，用更少的兼职人员。
         var periodHours = new Dictionary<long, decimal>();
         foreach (var employee in input.Employees)
         {
@@ -65,19 +75,6 @@ public sealed class ShiftAllocator
                 .Where(e => !restSet.TryGetValue(e.Id, out var rest) || !rest.Contains(date.WorkDate))
                 .ToList();
 
-            // ==========================================================
-            // 修复：基于“班次覆盖时段内的并发需求峰值”计算需求，
-            // 而不是把全天所有时段的需求简单累加。
-            // 例如 KITCHEN：18:00-23:30 每槽 2 人 + 0:00-3:00 每槽 1 人，
-            // 某班次覆盖这些时段时并发峰值 = max(2, 1) = 2 人（HOLIDAY 3）。
-            // ==========================================================
-            var prevType = dayTypeByDate.GetValueOrDefault(date.WorkDate.AddDays(-1)) ?? date.DayType;
-            var dayRequirements = CalculateDayRequirements(input, date.DayType, prevType);
-            var remaining = dayRequirements.ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
-            // 最好人数（软性目标）：硬性需求满足后，用剩余员工尽量补足至理想人数
-            var idealRequirements = CalculateIdealRequirements(input, date.DayType, prevType);
-            // 覆盖计数：(工作站, 时段) -> 已排人数（用于计算软性缺口）
-            var coverage = new Dictionary<(long WorkstationId, TimeSpan Slot), int>();
             var assignedToday = new HashSet<long>();
 
             // 按稀缺班次优先级分配
@@ -88,7 +85,7 @@ public sealed class ShiftAllocator
 
             foreach (var shift in orderedShifts)
             {
-                var required = DailyRequiredForShift(shift, remaining);
+                var required = DailyRequiredForShift(shift, remaining, date.WorkDate);
                 if (required <= 0)
                 {
                     continue;
@@ -96,66 +93,70 @@ public sealed class ShiftAllocator
 
                 var candidates = workingEmployees
                     .Where(e => !assignedToday.Contains(e.Id))
+                    .Where(e => !HasOverlap(busySlotsByEmployee, e.Id, shift, date.WorkDate))
                     .Where(e => weeklyHours.GetValueOrDefault(e.Id) < input.MaxWeeklyHours)
                     .Where(e => HasSkillForShift(e.Id, shift, skillsByEmployee))
                     .OrderBy(e => e.IsParttime)  // 全职优先，兼职靠后
-                    // 兼职：周期累计工时高者优先 → 复用已在用的兼职，少用兼职人员；
-                    // 全职：该键恒为 0，不影响全职原有排序。
                     .ThenByDescending(e => e.IsParttime == 1 ? periodHours.GetValueOrDefault(e.Id) : 0m)
                     .ThenByDescending(e => SkillCoverage(e.Id, shift, skillsByEmployee) * 100 + MaxSkillScore(e.Id, shift, skillsByEmployee))
-                    // 全职：周工时低者优先（均衡）；兼职：该键恒为 0，不再按工时均衡。
                     .ThenBy(e => e.IsParttime == 1 ? 0m : weeklyHours.GetValueOrDefault(e.Id))
                     .ToList();
 
                 var toAssign = Math.Min(required, candidates.Count);
                 foreach (var employee in candidates.Take(toAssign))
                 {
-                    var targetWs = SelectWorkstation(employee.Id, shift, remaining, skillsByEmployee);
+                    var targetWs = SelectWorkstation(employee.Id, shift, date.WorkDate, remaining, skillsByEmployee, input.LowSkillWorkstationIds);
+                    if (targetWs is null)
+                    {
+                        continue;  // 无技能匹配且有需求的工作站时不占用人员
+                    }
+
                     assignments.Add(new ShiftAssignment(employee.Id, date.WorkDate, shift.Id, shift.Code, targetWs));
                     assignedToday.Add(employee.Id);
+                    MarkBusy(busySlotsByEmployee, employee.Id, shift, date.WorkDate);
                     var shiftHours = SchedulingTimeHelper.GetShiftHours(shift.StartTime, shift.EndTime, shift.IsCrossDay);
                     weeklyHours[employee.Id] = weeklyHours.GetValueOrDefault(employee.Id) + shiftHours;
                     periodHours[employee.Id] = periodHours.GetValueOrDefault(employee.Id) + shiftHours;
 
-                    // 分配 1 人覆盖整个班次时段：该工作站在班次覆盖的所有时段剩余需求减 1
-                    DecrementRemaining(shift, targetWs, remaining);
-                    IncrementCoverage(shift, targetWs, coverage);
+                    DecrementRemaining(shift, targetWs, date.WorkDate, remaining);
+                    IncrementCoverage(shift, targetWs, date.WorkDate, coverage);
                 }
             }
 
             // 剩余员工分配到需求缺口最大的班次。
-            // 第一阶段：补足硬性缺口（最少人数）；第二阶段：硬性满足后，
-            // 用剩余员工尽量补足软性缺口（最好人数），补足不了也不影响排班。
+            // 第一阶段：补足硬性缺口（最少人数）；第二阶段：补足软性缺口（最好人数）。
             var unassigned = workingEmployees
                 .Where(e => !assignedToday.Contains(e.Id))
-                .OrderBy(e => e.IsParttime)  // 全职优先，兼职靠后
-                // 兼职：周期累计工时高者优先 → 复用已在用的兼职，少用兼职人员；
-                // 全职：该键恒为 0。
+                .OrderBy(e => e.IsParttime)
                 .ThenByDescending(e => e.IsParttime == 1 ? periodHours.GetValueOrDefault(e.Id) : 0m)
-                // 全职：周工时低者优先（均衡）；兼职：该键恒为 0。
                 .ThenBy(e => e.IsParttime == 1 ? 0m : weeklyHours.GetValueOrDefault(e.Id))
                 .ToList();
-            var outstandingDemand = remaining.Values.Sum();
-            var softRemaining = ComputeSoftRemaining(idealRequirements, coverage);
+
+            var softRemaining = ComputeSoftRemaining(idealRequirements, coverage, date.WorkDate);
+            var outstandingDemand = WindowDemandSum(remaining, date.WorkDate);
             foreach (var employee in unassigned)
             {
                 var hardPhase = outstandingDemand > 0;
-                if (!hardPhase && weeklyHours.GetValueOrDefault(employee.Id) >= input.MaxWeeklyHours)
+
+                // 修复：周工时上限在硬性/软性阶段都必须遵守（硬性阶段不再突破上限），
+                // 无法排班的缺口由 WorkstationAllocator 的 STAFFING_GAP 问题报告提示。
+                if (weeklyHours.GetValueOrDefault(employee.Id) >= input.MaxWeeklyHours)
                 {
-                    continue;  // 软性补足阶段不再给已达周工时上限的员工排班
+                    continue;
                 }
 
                 var demand = hardPhase ? remaining : softRemaining;
-                var demandSum = demand.Values.Sum();
+                var demandSum = WindowDemandSum(demand, date.WorkDate);
                 if (demandSum <= 0)
                 {
                     break;  // 硬性/软性需求都已满足，不再安排多余员工
                 }
 
                 var bestShift = input.ShiftTemplates
-                    .Where(s => ShiftHasOutstandingDemand(s, demand))
+                    .Where(s => ShiftHasOutstandingDemand(s, demand, date.WorkDate))
+                    .Where(s => !HasOverlap(busySlotsByEmployee, employee.Id, s, date.WorkDate))
                     .Where(s => HasSkillForShift(employee.Id, s, skillsByEmployee))
-                    .OrderByDescending(s => ShiftDemandScore(s, demand))
+                    .OrderByDescending(s => ShiftDemandScore(s, demand, date.WorkDate))
                     .ThenBy(s => SchedulingTimeHelper.GetShiftHours(s.StartTime, s.EndTime, s.IsCrossDay))
                     .FirstOrDefault();
 
@@ -169,23 +170,34 @@ public sealed class ShiftAllocator
                     break;  // 软性阶段无合适班次，停止补充
                 }
 
-                var targetWs = SelectWorkstation(employee.Id, bestShift, demand, skillsByEmployee);
+                var targetWs = SelectWorkstation(employee.Id, bestShift, date.WorkDate, demand, skillsByEmployee, input.LowSkillWorkstationIds);
+                if (targetWs is null)
+                {
+                    if (hardPhase)
+                    {
+                        continue;
+                    }
+
+                    break;
+                }
+
                 assignments.Add(new ShiftAssignment(employee.Id, date.WorkDate, bestShift.Id, bestShift.Code, targetWs));
                 assignedToday.Add(employee.Id);
+                MarkBusy(busySlotsByEmployee, employee.Id, bestShift, date.WorkDate);
                 var bestShiftHours = SchedulingTimeHelper.GetShiftHours(bestShift.StartTime, bestShift.EndTime, bestShift.IsCrossDay);
                 weeklyHours[employee.Id] = weeklyHours.GetValueOrDefault(employee.Id) + bestShiftHours;
                 periodHours[employee.Id] = periodHours.GetValueOrDefault(employee.Id) + bestShiftHours;
 
                 var beforeSum = demandSum;
-                DecrementRemaining(bestShift, targetWs, demand);
-                IncrementCoverage(bestShift, targetWs, coverage);
+                DecrementRemaining(bestShift, targetWs, date.WorkDate, demand);
+                IncrementCoverage(bestShift, targetWs, date.WorkDate, coverage);
 
                 if (hardPhase)
                 {
-                    outstandingDemand = remaining.Values.Sum();
+                    outstandingDemand = WindowDemandSum(remaining, date.WorkDate);
                     if (outstandingDemand <= 0)
                     {
-                        softRemaining = ComputeSoftRemaining(idealRequirements, coverage);
+                        softRemaining = ComputeSoftRemaining(idealRequirements, coverage, date.WorkDate);
                     }
                     else if (outstandingDemand >= beforeSum)
                     {
@@ -194,18 +206,19 @@ public sealed class ShiftAllocator
                 }
                 else
                 {
-                    softRemaining = ComputeSoftRemaining(idealRequirements, coverage);
-                    var afterSum = softRemaining.Values.Sum();
+                    softRemaining = ComputeSoftRemaining(idealRequirements, coverage, date.WorkDate);
+                    var afterSum = WindowDemandSum(softRemaining, date.WorkDate);
                     if (afterSum <= 0 || afterSum >= beforeSum)
                     {
                         break;  // 软性缺口已清空或无法再减少
                     }
                 }
             }
+
             // ========== 需求缺口自动补班次 ==========
-            // 模板班次排完后仍有硬性缺口（最少人数未满足）的时段，按连续缺口块
-            // 生成临时班次（D1、D2…），起止时间跟随需求曲线，可跨午夜。
-            if (remaining.Values.Sum() > 0)
+            // 仅为【当天日历日】的缺口生成 D 班次；次日凌晨（date+1 <06:00）的缺口
+            // 留到下一轮迭代按其当日处理（D 班次从 00:00 开始属于次日），避免班次日期错位。
+            if (remaining.Any(kv => kv.Value > 0 && kv.Key.Date == date.WorkDate))
             {
                 GenerateDemandShifts(
                     input,
@@ -218,12 +231,101 @@ public sealed class ShiftAllocator
                     weeklyHours,
                     periodHours,
                     assignments,
-                    generatedTemplates);
+                    generatedTemplates,
+                    busySlotsByEmployee);
             }
         }
 
         return assignments;
     }
+
+    /// <summary>
+    /// 按日历日构建需求字典：(工作站, 日历日, 时段) -> 人数。
+    /// 某日历日 00:00-05:30 的时段归属上一营业日（用前一天日期类型取需求）。
+    /// </summary>
+    private static Dictionary<DemandKey, int> BuildDemandDictionary(
+        SchedulingInput input,
+        IReadOnlyList<DateParameterInput> dates,
+        IReadOnlyDictionary<DateOnly, string> dayTypeByDate,
+        bool ideal)
+    {
+        var result = new Dictionary<DemandKey, int>();
+        var firstDate = dates.Count > 0 ? dates[0].WorkDate : input.StartDate;
+        foreach (var date in dates)
+        {
+            var dayType = dayTypeByDate.GetValueOrDefault(date.WorkDate) ?? "WORKDAY";
+            var prevType = dayTypeByDate.GetValueOrDefault(date.WorkDate.AddDays(-1)) ?? dayType;
+            foreach (var r in input.StaffingRequirements)
+            {
+                // 周期首日的凌晨时段归属上一营业日（不在排班周期内），跳过避免幻影缺口
+                if (r.TimeSlot < TimeSpan.FromHours(6) && date.WorkDate == firstDate)
+                {
+                    continue;
+                }
+
+                var expectedType = r.TimeSlot < TimeSpan.FromHours(6) ? prevType : dayType;
+                if (r.DayType != expectedType)
+                {
+                    continue;
+                }
+
+                var value = ideal ? (r.IdealCount > 0 ? r.IdealCount : r.RequiredCount) : r.RequiredCount;
+                if (value <= 0)
+                {
+                    continue;
+                }
+
+                var key = new DemandKey(r.WorkstationId, date.WorkDate, r.TimeSlot);
+                result[key] = Math.Max(result.GetValueOrDefault(key), value);
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>某班次覆盖的 (日历日, 时段) 序列：午夜回绕部分属于次日。</summary>
+    private static IEnumerable<(DateOnly Date, TimeSpan Slot)> ShiftSlots(ShiftTemplateInput shift, DateOnly workDate)
+        => SchedulingTimeHelper.GetShiftSlots(shift.StartTime, shift.EndTime, shift.IsCrossDay)
+            .Select(slot => (SchedulingTimeHelper.SlotCalendarDate(slot, shift.StartTime, workDate), slot));
+
+    /// <summary>记录员工新班次的全部占用时段（含跨天午夜回绕部分）。</summary>
+    private static void MarkBusy(
+        Dictionary<long, HashSet<(DateOnly Date, TimeSpan Slot)>> busySlotsByEmployee,
+        long employeeId,
+        ShiftTemplateInput shift,
+        DateOnly workDate)
+    {
+        if (!busySlotsByEmployee.TryGetValue(employeeId, out var set))
+        {
+            set = new HashSet<(DateOnly, TimeSpan)>();
+            busySlotsByEmployee[employeeId] = set;
+        }
+
+        foreach (var (date, slot) in ShiftSlots(shift, workDate))
+        {
+            set.Add((date, slot));
+        }
+    }
+
+    /// <summary>新班次是否与员工已排班次重叠（防双排：前一天跨天班次的午夜回绕与次日凌晨班次冲突）。</summary>
+    private static bool HasOverlap(
+        IReadOnlyDictionary<long, HashSet<(DateOnly Date, TimeSpan Slot)>> busySlotsByEmployee,
+        long employeeId,
+        ShiftTemplateInput shift,
+        DateOnly workDate)
+        => busySlotsByEmployee.TryGetValue(employeeId, out var set)
+           && ShiftSlots(shift, workDate).Any(p => set.Contains((p.Date, p.Slot)));
+
+    /// <summary>迭代日 d 的排班窗口：当日全部时段 + 次日凌晨（<06:00，跨天班次可覆盖）。</summary>
+    private static bool InWindow(DateOnly keyDate, TimeSpan slot, DateOnly date)
+        => keyDate == date || (keyDate == date.AddDays(1) && slot < TimeSpan.FromHours(6));
+
+    private static int WindowDemandSum(
+        IReadOnlyDictionary<DemandKey, int> demand,
+        DateOnly date)
+        => demand
+            .Where(kv => InWindow(kv.Key.Date, kv.Key.Slot, date))
+            .Sum(kv => kv.Value);
 
     private const int MaxDemandShiftBlocksPerDay = 8;
 
@@ -236,18 +338,20 @@ public sealed class ShiftAllocator
     private static void GenerateDemandShifts(
         SchedulingInput input,
         DateOnly workDate,
-        Dictionary<(long WorkstationId, TimeSpan Slot), int> remaining,
-        Dictionary<(long WorkstationId, TimeSpan Slot), int> coverage,
+        Dictionary<DemandKey, int> remaining,
+        Dictionary<DemandKey, int> coverage,
         IReadOnlyDictionary<long, Dictionary<long, int>> skillsByEmployee,
         IReadOnlyList<EmployeeInput> workingEmployees,
         HashSet<long> assignedToday,
         Dictionary<long, decimal> weeklyHours,
         Dictionary<long, decimal> periodHours,
         List<ShiftAssignment> assignments,
-        List<ShiftTemplateInput> generatedTemplates)
+        List<ShiftTemplateInput> generatedTemplates,
+        Dictionary<long, HashSet<(DateOnly Date, TimeSpan Slot)>> busySlotsByEmployee)
     {
+        // 只取【当天日历日】的缺口时段
         var gapSlots = remaining
-            .Where(kv => kv.Value > 0)
+            .Where(kv => kv.Value > 0 && kv.Key.Date == workDate)
             .Select(kv => kv.Key.Slot)
             .Distinct()
             .OrderBy(s => s)
@@ -257,7 +361,7 @@ public sealed class ShiftAllocator
             return;
         }
 
-        // 合并连续缺口块（30 分钟相邻，含跨午夜回绕）
+        // 合并连续缺口块（30 分钟相邻）
         var blocks = new List<(TimeSpan Start, TimeSpan EndExclusive)>();
         var blockStart = gapSlots[0];
         var prev = gapSlots[0];
@@ -291,7 +395,7 @@ public sealed class ShiftAllocator
 
         foreach (var block in blocks.Take(MaxDemandShiftBlocksPerDay))
         {
-            if (!BlockHasDemand(block.Start, block.EndExclusive, remaining))
+            if (!BlockHasDemand(block.Start, block.EndExclusive, remaining, workDate))
             {
                 continue;
             }
@@ -311,10 +415,11 @@ public sealed class ShiftAllocator
             generatedTemplates.Add(template);
 
             var usedThisBlock = 0;
-            while (BlockHasDemand(block.Start, block.EndExclusive, remaining) && usedThisBlock < MaxDemandShiftHeadcount)
+            while (BlockHasDemand(block.Start, block.EndExclusive, remaining, workDate) && usedThisBlock < MaxDemandShiftHeadcount)
             {
                 var candidate = workingEmployees
                     .Where(e => !assignedToday.Contains(e.Id))
+                    .Where(e => !HasOverlap(busySlotsByEmployee, e.Id, template, workDate))
                     .Where(e => weeklyHours.GetValueOrDefault(e.Id) < input.MaxWeeklyHours)
                     .Where(e => HasSkillForShift(e.Id, template, skillsByEmployee))
                     .OrderBy(e => e.IsParttime)
@@ -328,14 +433,20 @@ public sealed class ShiftAllocator
                     break;
                 }
 
-                var targetWs = SelectWorkstation(candidate.Id, template, remaining, skillsByEmployee);
+                var targetWs = SelectWorkstation(candidate.Id, template, workDate, remaining, skillsByEmployee, input.LowSkillWorkstationIds);
+                if (targetWs is null)
+                {
+                    break;
+                }
+
                 assignments.Add(new ShiftAssignment(candidate.Id, workDate, template.Id, template.Code, targetWs));
                 assignedToday.Add(candidate.Id);
+                MarkBusy(busySlotsByEmployee, candidate.Id, template, workDate);
                 var hours = SchedulingTimeHelper.GetShiftHours(template.StartTime, template.EndTime, template.IsCrossDay);
                 weeklyHours[candidate.Id] = weeklyHours.GetValueOrDefault(candidate.Id) + hours;
                 periodHours[candidate.Id] = periodHours.GetValueOrDefault(candidate.Id) + hours;
-                DecrementRemaining(template, targetWs, remaining);
-                IncrementCoverage(template, targetWs, coverage);
+                DecrementRemaining(template, targetWs, workDate, remaining);
+                IncrementCoverage(template, targetWs, workDate, coverage);
                 usedThisBlock++;
             }
         }
@@ -350,10 +461,11 @@ public sealed class ShiftAllocator
     private static bool BlockHasDemand(
         TimeSpan start,
         TimeSpan endExclusive,
-        IReadOnlyDictionary<(long WorkstationId, TimeSpan Slot), int> remaining)
+        IReadOnlyDictionary<DemandKey, int> remaining,
+        DateOnly workDate)
     {
         var slots = SchedulingTimeHelper.GetShiftSlots(start, endExclusive, endExclusive <= start ? 1 : 0);
-        return remaining.Any(kv => kv.Value > 0 && slots.Contains(kv.Key.Slot));
+        return remaining.Any(kv => kv.Value > 0 && kv.Key.Date == workDate && slots.Contains(kv.Key.Slot));
     }
 
     private static bool HasSkillForShift(
@@ -395,47 +507,20 @@ public sealed class ShiftAllocator
         return shift.WorkstationIds.Where(skills.ContainsKey).Max(ws => skills[ws]);
     }
 
-    /// <summary>
-    /// 需求键：工作站 + 具体时段。值 = 该时段该工作站的并发需求人数。
-    /// 不再按工作站对全天所有时段做 Sum 累加。
-    /// </summary>
-    private static IReadOnlyDictionary<(long WorkstationId, TimeSpan Slot), int> CalculateDayRequirements(
-        SchedulingInput input,
-        string dayType,
-        string prevType)
+    /// <summary>计算软性缺口：(工作站, 日历日, 时段) -> 最好人数 - 已排人数（仅 > 0 的保留）。</summary>
+    private static Dictionary<DemandKey, int> ComputeSoftRemaining(
+        IReadOnlyDictionary<DemandKey, int> idealRequirements,
+        IReadOnlyDictionary<DemandKey, int> coverage,
+        DateOnly date)
     {
-        // 凌晨时段（< 06:00）按前一天的日期类型取需求，其余按当天
-        return input.StaffingRequirements
-            .Where(r => r.DayType == (r.TimeSlot < TimeSpan.FromHours(6) ? prevType : dayType))
-            .GroupBy(r => (r.WorkstationId, r.TimeSlot))
-            .ToDictionary(g => g.Key, g => g.Max(r => r.RequiredCount));
-    }
-
-    /// <summary>
-    /// 最好人数需求键：工作站 + 具体时段。值 = 该时段该工作站的最好人数（软性目标）。
-    /// </summary>
-    private static IReadOnlyDictionary<(long WorkstationId, TimeSpan Slot), int> CalculateIdealRequirements(
-        SchedulingInput input,
-        string dayType,
-        string prevType)
-    {
-        // 凌晨时段（< 06:00）按前一天的日期类型取需求，其余按当天
-        return input.StaffingRequirements
-            .Where(r => r.DayType == (r.TimeSlot < TimeSpan.FromHours(6) ? prevType : dayType))
-            .GroupBy(r => (r.WorkstationId, r.TimeSlot))
-            .ToDictionary(
-                g => g.Key,
-                g => g.Max(r => r.IdealCount > 0 ? r.IdealCount : r.RequiredCount));
-    }
-
-    /// <summary>计算软性缺口：(工作站, 时段) -> 最好人数 - 已排人数（仅 > 0 的保留）。</summary>
-    private static Dictionary<(long WorkstationId, TimeSpan Slot), int> ComputeSoftRemaining(
-        IReadOnlyDictionary<(long WorkstationId, TimeSpan Slot), int> idealRequirements,
-        IReadOnlyDictionary<(long WorkstationId, TimeSpan Slot), int> coverage)
-    {
-        var soft = new Dictionary<(long WorkstationId, TimeSpan Slot), int>();
+        var soft = new Dictionary<DemandKey, int>();
         foreach (var req in idealRequirements)
         {
+            if (!InWindow(req.Key.Date, req.Key.Slot, date))
+            {
+                continue;
+            }
+
             var residual = req.Value - coverage.GetValueOrDefault(req.Key);
             if (residual > 0)
             {
@@ -450,17 +535,17 @@ public sealed class ShiftAllocator
     private static void IncrementCoverage(
         ShiftTemplateInput shift,
         long? workstationId,
-        IDictionary<(long WorkstationId, TimeSpan Slot), int> coverage)
+        DateOnly workDate,
+        IDictionary<DemandKey, int> coverage)
     {
         if (workstationId is null)
         {
             return;
         }
 
-        var slots = SchedulingTimeHelper.GetShiftSlots(shift.StartTime, shift.EndTime, shift.IsCrossDay);
-        foreach (var slot in slots)
+        foreach (var (date, slot) in ShiftSlots(shift, workDate))
         {
-            var key = (workstationId.Value, slot);
+            var key = new DemandKey(workstationId.Value, date, slot);
             coverage.TryGetValue(key, out var current);
             coverage[key] = current + 1;
         }
@@ -468,69 +553,63 @@ public sealed class ShiftAllocator
 
     /// <summary>
     /// 班次在某工作站的并发需求 = 班次覆盖的所有时段中该工作站需求的最大值。
-    /// 例如 S7 覆盖 22:00-23:30 + 0:00-3:00，KITCHEN 在上述时段需求峰值 = 2（HOLIDAY 3）。
     /// </summary>
     private static int ConcurrentForWorkstation(
         ShiftTemplateInput shift,
         long workstationId,
-        IReadOnlyDictionary<(long WorkstationId, TimeSpan Slot), int> dayRequirements)
+        IReadOnlyDictionary<DemandKey, int> dayRequirements,
+        DateOnly workDate)
     {
-        var slots = SchedulingTimeHelper.GetShiftSlots(shift.StartTime, shift.EndTime, shift.IsCrossDay);
         var max = 0;
-        foreach (var slot in slots)
+        foreach (var (date, slot) in ShiftSlots(shift, workDate))
         {
-            max = Math.Max(max, dayRequirements.GetValueOrDefault((workstationId, slot)));
+            max = Math.Max(max, dayRequirements.GetValueOrDefault(new DemandKey(workstationId, date, slot)));
         }
         return max;
     }
 
-    /// <summary>
-    /// 该班次覆盖的时段内是否仍有未被满足的需求缺口。
-    /// remaining 键 = (工作站, 时段)。
-    /// </summary>
+    /// <summary>该班次覆盖的时段内是否仍有未被满足的需求缺口。</summary>
     private static bool ShiftHasOutstandingDemand(
         ShiftTemplateInput shift,
-        IReadOnlyDictionary<(long WorkstationId, TimeSpan Slot), int> remaining)
+        IReadOnlyDictionary<DemandKey, int> remaining,
+        DateOnly workDate)
     {
-        var slots = SchedulingTimeHelper.GetShiftSlots(shift.StartTime, shift.EndTime, shift.IsCrossDay);
-        return shift.WorkstationIds.Any(ws => slots.Any(slot => remaining.GetValueOrDefault((ws, slot)) > 0));
+        return shift.WorkstationIds.Any(ws => ShiftSlots(shift, workDate)
+            .Any(p => remaining.GetValueOrDefault(new DemandKey(ws, p.Date, p.Slot)) > 0));
     }
 
-    /// <summary>
-    /// 班次总需求 = 该班次覆盖的所有工作站的并发需求之和。
-    /// 一个班次同一天需要的人数 = 各工作站覆盖时段峰值之和。
-    /// </summary>
+    /// <summary>班次总需求 = 该班次覆盖的所有工作站的并发需求之和。</summary>
     private static int DailyRequiredForShift(
         ShiftTemplateInput shift,
-        IReadOnlyDictionary<(long WorkstationId, TimeSpan Slot), int> dayRequirements)
+        IReadOnlyDictionary<DemandKey, int> dayRequirements,
+        DateOnly workDate)
     {
-        return shift.WorkstationIds.Sum(ws => ConcurrentForWorkstation(shift, ws, dayRequirements));
+        return shift.WorkstationIds.Sum(ws => ConcurrentForWorkstation(shift, ws, dayRequirements, workDate));
     }
 
     private static int ShiftDemandScore(
         ShiftTemplateInput shift,
-        IReadOnlyDictionary<(long WorkstationId, TimeSpan Slot), int> dayRequirements)
+        IReadOnlyDictionary<DemandKey, int> dayRequirements,
+        DateOnly workDate)
     {
-        return shift.WorkstationIds.Sum(ws => ConcurrentForWorkstation(shift, ws, dayRequirements));
+        return shift.WorkstationIds.Sum(ws => ConcurrentForWorkstation(shift, ws, dayRequirements, workDate));
     }
 
-    /// <summary>
-    /// 分配 1 人覆盖班次全部时段后，该工作站在这些时段的剩余需求各减 1。
-    /// </summary>
+    /// <summary>分配 1 人覆盖班次全部时段后，该工作站在这些时段的剩余需求各减 1。</summary>
     private static void DecrementRemaining(
         ShiftTemplateInput shift,
         long? workstationId,
-        IDictionary<(long WorkstationId, TimeSpan Slot), int> remaining)
+        DateOnly workDate,
+        IDictionary<DemandKey, int> remaining)
     {
         if (workstationId is null)
         {
             return;
         }
 
-        var slots = SchedulingTimeHelper.GetShiftSlots(shift.StartTime, shift.EndTime, shift.IsCrossDay);
-        foreach (var slot in slots)
+        foreach (var (date, slot) in ShiftSlots(shift, workDate))
         {
-            var key = (workstationId.Value, slot);
+            var key = new DemandKey(workstationId.Value, date, slot);
             if (remaining.TryGetValue(key, out var cnt) && cnt > 0)
             {
                 remaining[key] = cnt - 1;
@@ -540,32 +619,45 @@ public sealed class ShiftAllocator
 
     /// <summary>
     /// 为员工选择剩余需求最高的工作站，优先员工技能分最高的。
+    /// 修复：不允许把员工放到无技能的岗位——有技能时只在技能匹配的候选中选；
+    /// 无技能匹配时仅允许低技能岗位兜底；无可分配岗位时返回 null（跳过该员工）。
     /// </summary>
     private static long? SelectWorkstation(
         long employeeId,
         ShiftTemplateInput shift,
-        IReadOnlyDictionary<(long WorkstationId, TimeSpan Slot), int> remaining,
-        IReadOnlyDictionary<long, Dictionary<long, int>> skillsByEmployee)
+        DateOnly workDate,
+        IReadOnlyDictionary<DemandKey, int> remaining,
+        IReadOnlyDictionary<long, Dictionary<long, int>> skillsByEmployee,
+        IReadOnlyDictionary<long, bool> lowSkillWorkstationIds)
     {
-        var slots = SchedulingTimeHelper.GetShiftSlots(shift.StartTime, shift.EndTime, shift.IsCrossDay);
+        var slotKeys = ShiftSlots(shift, workDate).Select(x => (x.Date, x.Slot)).ToList();
 
         var candidates = shift.WorkstationIds
-            .Where(ws => slots.Any(slot => remaining.GetValueOrDefault((ws, slot)) > 0))
+            .Where(ws => slotKeys.Any(s => remaining.GetValueOrDefault(new DemandKey(ws, s.Date, s.Slot)) > 0))
             .ToList();
 
         if (candidates.Count == 0)
         {
-            return shift.WorkstationIds.FirstOrDefault();
+            return null;
         }
 
-        if (!skillsByEmployee.TryGetValue(employeeId, out var skills))
+        var hasSkills = skillsByEmployee.TryGetValue(employeeId, out var skills) && skills.Count > 0;
+        if (!hasSkills)
         {
-            return candidates.FirstOrDefault();
+            // 无任何技能的员工只允许低技能岗位
+            return candidates.FirstOrDefault(ws => lowSkillWorkstationIds.ContainsKey(ws));
         }
 
-        return candidates
-            .OrderByDescending(ws => skills.GetValueOrDefault(ws))
-            .ThenBy(ws => ws)
-            .FirstOrDefault();
+        var skilled = candidates.Where(ws => skills!.ContainsKey(ws)).ToList();
+        if (skilled.Count > 0)
+        {
+            return skilled
+                .OrderByDescending(ws => skills![ws])
+                .ThenBy(ws => ws)
+                .FirstOrDefault();
+        }
+
+        // 有技能但均不匹配有需求的岗位：仅低技能岗位可兜底
+        return candidates.FirstOrDefault(ws => lowSkillWorkstationIds.ContainsKey(ws));
     }
 }

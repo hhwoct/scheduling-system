@@ -29,7 +29,8 @@ public sealed class RuleConfigService : IRuleConfigService
                 x.RuleValue,
                 x.ValueType,
                 x.Remark,
-                x.Status))
+                x.Status,
+                x.Version))
             .ToListAsync(cancellationToken);
     }
 
@@ -56,19 +57,34 @@ public sealed class RuleConfigService : IRuleConfigService
 
         if (rule.ValueType == "number")
         {
-            if (!decimal.TryParse(request.RuleValue, out var number) || number < 0)
+            if (!decimal.TryParse(request.RuleValue, System.Globalization.CultureInfo.InvariantCulture, out var number) || number < 0)
             {
                 throw new BusinessException("数字类型规则值必须为非负数", "INVALID_RULE_VALUE");
             }
         }
 
+        // 乐观锁：客户端提供版本时执行 compare-and-swap，避免两个管理员同时保存互相覆盖
+        if (request.Version is not null && rule.Version != request.Version)
+        {
+            throw new BusinessException("规则已被他人修改，请刷新后重试", "RULE_VERSION_CONFLICT");
+        }
+
         var beforeContent = System.Text.Json.JsonSerializer.Serialize(new { rule.RuleValue, rule.Status });
 
         rule.RuleValue = request.RuleValue.Trim();
-        rule.Status = request.Status;
+        rule.Status = request.Status == 0 ? 0 : 1;
+        rule.Version++;
         rule.UpdatedAt = DateTime.UtcNow;
 
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        try
+        {
+            // Version 已配置为并发令牌：UPDATE 带 WHERE version=旧值，并发冲突抛 DbUpdateConcurrencyException
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            throw new BusinessException("规则已被他人修改，请刷新后重试", "RULE_VERSION_CONFLICT");
+        }
 
         await _auditLogService.WriteAsync(
             storeId,
@@ -89,6 +105,7 @@ public sealed class RuleConfigService : IRuleConfigService
             rule.RuleValue,
             rule.ValueType,
             rule.Remark,
-            rule.Status);
+            rule.Status,
+            rule.Version);
     }
 }

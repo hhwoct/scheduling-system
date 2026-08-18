@@ -151,10 +151,13 @@ public static class SchedulingTimeHelper
     public static IReadOnlyList<TimeSpan> GetShiftSlots(TimeSpan start, TimeSpan end, int isCrossDay)
     {
         var slots = new List<TimeSpan>();
-        var current = start;
 
         if (isCrossDay == 1)
         {
+            // 归一化：结束时间 24:00 表示当日结束边界（不再当作完整额外一天）；
+            // 大于 24:00（如 26:00）按次日 02:00 理解。
+            var nextDayEnd = end >= DayEnd ? end - DayEnd : end;
+            var current = start;
             while (current < DayEnd)
             {
                 slots.Add(current);
@@ -162,7 +165,7 @@ public static class SchedulingTimeHelper
             }
 
             current = TimeSpan.Zero;
-            while (current < end)
+            while (current < nextDayEnd)
             {
                 slots.Add(current);
                 current += TimeSpan.FromMinutes(30);
@@ -170,7 +173,9 @@ public static class SchedulingTimeHelper
         }
         else
         {
-            while (current < end)
+            var endLimit = end >= DayEnd ? DayEnd : end;
+            var current = start;
+            while (current < endLimit)
             {
                 slots.Add(current);
                 current += TimeSpan.FromMinutes(30);
@@ -184,10 +189,13 @@ public static class SchedulingTimeHelper
     {
         if (isCrossDay == 1)
         {
-            return ((decimal)(DayEnd - start).TotalMinutes + (decimal)end.TotalMinutes) / 60m;
+            // 归一化：24:00 表示当日结束边界，不再计入完整额外一天
+            var nextDayEnd = end >= DayEnd ? end - DayEnd : end;
+            return ((decimal)(DayEnd - start).TotalMinutes + (decimal)nextDayEnd.TotalMinutes) / 60m;
         }
 
-        return (decimal)(end - start).TotalMinutes / 60m;
+        var endLimit = end >= DayEnd ? DayEnd : end;
+        return (decimal)(endLimit - start).TotalMinutes / 60m;
     }
 
     /// <summary>
@@ -200,4 +208,11 @@ public static class SchedulingTimeHelper
 
     public static bool IsNightShift(ShiftTemplateInput shift)
         => shift.IsCrossDay == 1 || shift.EndTime >= TimeSpan.FromHours(20);
+
+    /// <summary>
+    /// 班次覆盖时段的日历日期：跨天班次中，早于班次开始时刻的时段（午夜回绕部分）属于次日。
+    /// 例如 22:00-02:00 的班次在 8/10 开始，其 00:00-01:30 时段的日历日期为 8/11。
+    /// </summary>
+    public static DateOnly SlotCalendarDate(TimeSpan slot, TimeSpan shiftStart, DateOnly shiftDate)
+        => slot < shiftStart ? shiftDate.AddDays(1) : shiftDate;
 }

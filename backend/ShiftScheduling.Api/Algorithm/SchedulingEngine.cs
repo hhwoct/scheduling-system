@@ -76,6 +76,7 @@ public sealed class SchedulingEngine
     /// <summary>
     /// 需求覆盖统计：按营业日口径（某天凌晨时段按前一天类型）计算周期内
     /// 最少/最好需求人·时，以及工作站分配实际覆盖的需求人·时与缺口人·时。
+    /// 覆盖按分配记录的实际日历日期归属（跨天班次午夜回绕部分计入次日）。
     /// </summary>
     private static DemandCoverageStats ComputeDemandCoverage(
         SchedulingInput input,
@@ -83,37 +84,92 @@ public sealed class SchedulingEngine
         int demandShiftCount)
     {
         var dayTypeByDate = input.DateParameters.ToDictionary(d => d.WorkDate, d => d.DayType);
+        var shiftById = input.ShiftTemplates.ToDictionary(s => s.Id);
         var demandMinHours = 0m;
         var demandIdealHours = 0m;
         var coveredHours = 0m;
         var gapHours = 0m;
 
-        foreach (var date in input.DateParameters
-                     .Where(x => x.WorkDate >= input.StartDate && x.WorkDate <= input.EndDate))
+        var periodDates = input.DateParameters
+            .Where(x => x.WorkDate >= input.StartDate && x.WorkDate <= input.EndDate)
+            .OrderBy(x => x.WorkDate)
+            .ToList();
+        var firstDate = periodDates.Count > 0 ? periodDates[0].WorkDate : input.StartDate;
+        var lastDate = periodDates.Count > 0 ? periodDates[^1].WorkDate : input.EndDate;
+
+        // 按日历日统计需求与覆盖；周期首日的凌晨时段归属上一营业日（不计入），
+        // 周期最后一天的次日凌晨（归属最后营业日）在循环外补计。
+        foreach (var date in periodDates)
         {
             var prevType = dayTypeByDate.GetValueOrDefault(date.WorkDate.AddDays(-1)) ?? date.DayType;
             var dailyDemand = input.StaffingRequirements
                 .Where(r => r.DayType == (r.TimeSlot < TimeSpan.FromHours(6) ? prevType : date.DayType))
+                .Where(r => !(r.TimeSlot < TimeSpan.FromHours(6) && date.WorkDate == firstDate))
                 .GroupBy(r => (r.WorkstationId, r.TimeSlot))
                 .ToDictionary(
                     g => g.Key,
                     g => (Min: g.Max(x => x.RequiredCount), Ideal: g.Max(x => x.IdealCount > 0 ? x.IdealCount : x.RequiredCount)));
 
-            var coverage = workstationAssignments
-                .Where(a => a.WorkDate == date.WorkDate)
-                .GroupBy(a => (a.WorkstationId, a.TimeSlot))
-                .ToDictionary(g => g.Key, g => g.Count());
+            var coverage = new Dictionary<(long WorkstationId, TimeSpan Slot), int>();
+            foreach (var a in workstationAssignments)
+            {
+                var calendarDate = shiftById.TryGetValue(a.ShiftTemplateId, out var template)
+                    ? SchedulingTimeHelper.SlotCalendarDate(a.TimeSlot, template.StartTime, a.WorkDate)
+                    : a.WorkDate;
+                if (calendarDate != date.WorkDate)
+                {
+                    continue;
+                }
+
+                var key = (a.WorkstationId, a.TimeSlot);
+                coverage[key] = coverage.GetValueOrDefault(key) + 1;
+            }
 
             foreach (var kv in dailyDemand)
             {
-                var min = kv.Value.Min;
-                var ideal = kv.Value.Ideal;
-                demandMinHours += min * 0.5m;
-                demandIdealHours += ideal * 0.5m;
-                coverage.TryGetValue(kv.Key, out var actual);
-                coveredHours += Math.Min(actual, min) * 0.5m;
-                gapHours += Math.Max(0, min - actual) * 0.5m;
+                Accumulate(kv.Key, kv.Value.Min, kv.Value.Ideal, coverage.GetValueOrDefault(kv.Key));
             }
+        }
+
+        // 补计周期最后一天的次日凌晨（跨天班次午夜回绕部分），归属最后营业日的需求
+        if (periodDates.Count > 0)
+        {
+            var lastType = dayTypeByDate.GetValueOrDefault(lastDate) ?? "WORKDAY";
+            var tailDate = lastDate.AddDays(1);
+            var tailDemand = input.StaffingRequirements
+                .Where(r => r.TimeSlot < TimeSpan.FromHours(6) && r.DayType == lastType)
+                .GroupBy(r => (r.WorkstationId, r.TimeSlot))
+                .ToDictionary(
+                    g => g.Key,
+                    g => (Min: g.Max(x => x.RequiredCount), Ideal: g.Max(x => x.IdealCount > 0 ? x.IdealCount : x.RequiredCount)));
+
+            var tailCoverage = new Dictionary<(long WorkstationId, TimeSpan Slot), int>();
+            foreach (var a in workstationAssignments)
+            {
+                var calendarDate = shiftById.TryGetValue(a.ShiftTemplateId, out var template)
+                    ? SchedulingTimeHelper.SlotCalendarDate(a.TimeSlot, template.StartTime, a.WorkDate)
+                    : a.WorkDate;
+                if (calendarDate != tailDate)
+                {
+                    continue;
+                }
+
+                var key = (a.WorkstationId, a.TimeSlot);
+                tailCoverage[key] = tailCoverage.GetValueOrDefault(key) + 1;
+            }
+
+            foreach (var kv in tailDemand)
+            {
+                Accumulate(kv.Key, kv.Value.Min, kv.Value.Ideal, tailCoverage.GetValueOrDefault(kv.Key));
+            }
+        }
+
+        void Accumulate((long WorkstationId, TimeSpan Slot) key, int min, int ideal, int actual)
+        {
+            demandMinHours += min * 0.5m;
+            demandIdealHours += ideal * 0.5m;
+            coveredHours += Math.Min(actual, min) * 0.5m;
+            gapHours += Math.Max(0, min - actual) * 0.5m;
         }
 
         var coveragePct = demandMinHours > 0 ? (int)Math.Round(coveredHours * 100m / demandMinHours) : 100;
@@ -145,9 +201,11 @@ public sealed class SchedulingEngine
                 x.IsParttime))
             .ToListAsync(cancellationToken);
 
+        // 3.11 修复：技能只取本店员工，避免跨店全量拉取
+        var storeEmployeeIds = employees.Select(x => x.Id).ToHashSet();
         var skills = await _dbContext.EmployeeSkills
             .AsNoTracking()
-            .Where(x => x.Status == 1 && x.SkillScore > 0)
+            .Where(x => x.Status == 1 && x.SkillScore > 0 && storeEmployeeIds.Contains(x.EmployeeId))
             .Select(x => new SkillInput(x.EmployeeId, x.WorkstationId, x.SkillScore, x.IsPrimarySkill))
             .ToListAsync(cancellationToken);
 
@@ -168,14 +226,17 @@ public sealed class SchedulingEngine
             .Select(x => new { x.Id, x.IsLowSkill })
             .ToListAsync(cancellationToken);
 
-        var shiftWorkstations = await _dbContext.ShiftWorkstations
-            .AsNoTracking()
-            .ToListAsync(cancellationToken);
-
         var shiftTemplates = await _dbContext.ShiftTemplates
             .AsNoTracking()
             .Where(x => x.StoreId == storeId && x.Status == 1)
             .Select(x => new { x.Id, x.Code, x.Name, x.StartTime, x.EndTime, x.IsCrossDay, x.Priority })
+            .ToListAsync(cancellationToken);
+
+        // 3.11 修复：班次-工作站关联只取本店班次，避免跨店全量拉取
+        var shiftTemplateIds = shiftTemplates.Select(x => x.Id).ToHashSet();
+        var shiftWorkstations = await _dbContext.ShiftWorkstations
+            .AsNoTracking()
+            .Where(x => shiftTemplateIds.Contains(x.ShiftTemplateId))
             .ToListAsync(cancellationToken);
 
         var shiftInputs = shiftTemplates
