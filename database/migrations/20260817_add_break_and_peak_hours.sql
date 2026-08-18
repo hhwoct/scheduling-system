@@ -9,9 +9,13 @@ ALTER TABLE schedule_summaries
   ADD COLUMN break_start_time time DEFAULT NULL COMMENT '班中休息开始时间' AFTER covered_workstations,
   ADD COLUMN break_end_time time DEFAULT NULL COMMENT '班中休息结束时间' AFTER break_start_time,
   ADD COLUMN break_cover_employee_id bigint DEFAULT NULL COMMENT '顶岗员工ID（NULL=无人顶岗）' AFTER break_end_time,
-  ADD COLUMN break_workstation_id bigint DEFAULT NULL COMMENT '休息时所在工作站（主工作站）' AFTER break_cover_employee_id;
+  ADD COLUMN break_workstation_id bigint DEFAULT NULL COMMENT '休息时所在工作站（主工作站）' AFTER break_cover_employee_id,
+  ADD CONSTRAINT fk_schedule_summaries_cover_employee FOREIGN KEY (break_cover_employee_id) REFERENCES employees (id),
+  ADD CONSTRAINT fk_schedule_summaries_break_workstation FOREIGN KEY (break_workstation_id) REFERENCES workstations (id);
 
 -- 2. 高峰禁休时段表（按门店配置，可多条）
+-- 注意：TIME 类型无法表达跨午夜区间；本表仅支持单日内区间，故加 CHECK (start_time < end_time)。
+--       跨午夜高峰需求请拆成两条（如 23:00-24:00 与 00:00-01:00）。
 CREATE TABLE IF NOT EXISTS peak_restricted_hours (
   id bigint NOT NULL AUTO_INCREMENT,
   store_id bigint NOT NULL,
@@ -22,7 +26,8 @@ CREATE TABLE IF NOT EXISTS peak_restricted_hours (
   updated_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   KEY idx_peak_hours_store (store_id),
-  CONSTRAINT fk_peak_hours_store FOREIGN KEY (store_id) REFERENCES stores (id)
+  CONSTRAINT fk_peak_hours_store FOREIGN KEY (store_id) REFERENCES stores (id),
+  CONSTRAINT chk_peak_hours_time_range CHECK (start_time < end_time)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- 3. 为所有现有门店插入默认高峰时段 20:00-22:00

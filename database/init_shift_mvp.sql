@@ -1,8 +1,20 @@
+-- ================================================================
+-- 排班系统数据库全量基线（建库建表 + 模拟数据）
+-- 本脚本已吸收 20260822 及之前全部迁移的结构变更与数据（见文件末尾「已吸收迁移清单」）。
+-- 新部署：直接执行本脚本即可，无需再跑被吸收的旧迁移。
+-- 老库升级：不要执行本脚本，按序执行 database/migrations/ 下的迁移。
+-- 20260823 起的迁移在两种路径下都仍须执行。
+-- ⚠️ 安全：所有账号密码哈希均为占位符（见 users 种子数据处说明），部署前必须替换。
+-- ================================================================
 CREATE DATABASE IF NOT EXISTS shift_mvp DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 USE shift_mvp;
 
 SET FOREIGN_KEY_CHECKS = 0;
 
+DROP TABLE IF EXISTS peak_restricted_hours;
+DROP TABLE IF EXISTS shift_swaps;
+DROP TABLE IF EXISTS leave_requests;
+DROP TABLE IF EXISTS ai_configs;
 DROP TABLE IF EXISTS audit_logs;
 DROP TABLE IF EXISTS notifications;
 DROP TABLE IF EXISTS schedule_issues;
@@ -41,6 +53,7 @@ CREATE TABLE users (
   nickname VARCHAR(100) NOT NULL,
   role VARCHAR(50) NOT NULL,
   status TINYINT NOT NULL DEFAULT 1,
+  password_version INT NOT NULL DEFAULT 1,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   INDEX idx_users_store_id (store_id),
@@ -94,7 +107,8 @@ CREATE TABLE shift_templates (
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   UNIQUE KEY uk_shift_templates_store_code (store_id, code),
   INDEX idx_shift_templates_store_status (store_id, status),
-  CONSTRAINT fk_shift_templates_store FOREIGN KEY (store_id) REFERENCES stores(id)
+  CONSTRAINT fk_shift_templates_store FOREIGN KEY (store_id) REFERENCES stores(id),
+  CONSTRAINT chk_is_cross_day CHECK (is_cross_day IN (0, 1))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE shift_workstations (
@@ -132,6 +146,7 @@ CREATE TABLE rule_configs (
   value_type VARCHAR(30) NOT NULL DEFAULT 'number',
   remark VARCHAR(255) NULL,
   status TINYINT NOT NULL DEFAULT 1,
+  version INT NOT NULL DEFAULT 1,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   UNIQUE KEY uk_rule_configs_store_key (store_id, rule_key),
@@ -180,7 +195,8 @@ CREATE TABLE schedule_plans (
   published_at DATETIME NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  INDEX idx_schedule_plans_store_date (store_id, start_date, end_date),
+  UNIQUE KEY ux_schedule_plans_store_name (store_id, plan_name),
+  UNIQUE KEY ux_schedule_plans_period (store_id, start_date, end_date),
   INDEX idx_schedule_plans_status (status),
   CONSTRAINT fk_schedule_plans_store FOREIGN KEY (store_id) REFERENCES stores(id),
   CONSTRAINT fk_schedule_plans_user FOREIGN KEY (created_by) REFERENCES users(id)
@@ -197,12 +213,15 @@ CREATE TABLE schedule_results (
   workstation_id BIGINT NULL,
   skill_score INT NOT NULL DEFAULT 0,
   status VARCHAR(30) NOT NULL DEFAULT 'DRAFT',
+  assignment_key VARCHAR(255)
+    GENERATED ALWAYS AS (CONCAT(plan_id, '|', employee_id, '|', work_date, '|', time_slot)) STORED,
   version INT NOT NULL DEFAULT 1,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   INDEX idx_schedule_results_plan_date (plan_id, work_date),
   INDEX idx_schedule_results_employee_date (employee_id, work_date),
   INDEX idx_schedule_results_workstation_slot (workstation_id, work_date, time_slot),
+  UNIQUE KEY ux_schedule_results_key (assignment_key),
   CONSTRAINT fk_schedule_results_plan FOREIGN KEY (plan_id) REFERENCES schedule_plans(id),
   CONSTRAINT fk_schedule_results_store FOREIGN KEY (store_id) REFERENCES stores(id),
   CONSTRAINT fk_schedule_results_employee FOREIGN KEY (employee_id) REFERENCES employees(id),
@@ -222,14 +241,21 @@ CREATE TABLE schedule_summaries (
   end_time TIME NULL,
   work_hours DECIMAL(5,2) NOT NULL DEFAULT 0.00,
   covered_workstations VARCHAR(500) NULL,
+  break_start_time TIME NULL,
+  break_end_time TIME NULL,
+  break_cover_employee_id BIGINT NULL,
+  break_workstation_id BIGINT NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   UNIQUE KEY uk_schedule_summary (plan_id, employee_id, work_date),
   INDEX idx_schedule_summaries_plan_date (plan_id, work_date),
+  CONSTRAINT chk_is_rest_day CHECK (is_rest_day IN (0, 1)),
   CONSTRAINT fk_schedule_summaries_plan FOREIGN KEY (plan_id) REFERENCES schedule_plans(id),
   CONSTRAINT fk_schedule_summaries_store FOREIGN KEY (store_id) REFERENCES stores(id),
   CONSTRAINT fk_schedule_summaries_employee FOREIGN KEY (employee_id) REFERENCES employees(id),
-  CONSTRAINT fk_schedule_summaries_shift FOREIGN KEY (shift_template_id) REFERENCES shift_templates(id)
+  CONSTRAINT fk_schedule_summaries_shift FOREIGN KEY (shift_template_id) REFERENCES shift_templates(id),
+  CONSTRAINT fk_schedule_summaries_cover_employee FOREIGN KEY (break_cover_employee_id) REFERENCES employees(id),
+  CONSTRAINT fk_schedule_summaries_break_workstation FOREIGN KEY (break_workstation_id) REFERENCES workstations(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE schedule_issues (
@@ -290,19 +316,94 @@ CREATE TABLE audit_logs (
   CONSTRAINT fk_audit_logs_user FOREIGN KEY (operator_user_id) REFERENCES users(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- 高峰禁休时段（20260817 并入基线）
+-- 注意：TIME 类型无法表达跨午夜区间；仅支持单日内区间，故加 CHECK (start_time < end_time)。
+CREATE TABLE peak_restricted_hours (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  store_id BIGINT NOT NULL,
+  start_time TIME NOT NULL,
+  end_time TIME NOT NULL,
+  status TINYINT NOT NULL DEFAULT 1,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_peak_hours_store (store_id),
+  CONSTRAINT fk_peak_hours_store FOREIGN KEY (store_id) REFERENCES stores(id),
+  CONSTRAINT chk_peak_hours_time_range CHECK (start_time < end_time)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 请假申请（20260807 并入基线）
+CREATE TABLE leave_requests (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  store_id BIGINT NOT NULL,
+  employee_id BIGINT NOT NULL,
+  leave_type VARCHAR(30) NOT NULL DEFAULT 'PERSONAL',
+  start_date DATE NOT NULL,
+  end_date DATE NOT NULL,
+  reason VARCHAR(500) NULL,
+  status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+  review_user_id BIGINT NULL,
+  review_time DATETIME NULL,
+  review_remark VARCHAR(255) NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_leave_requests_employee (employee_id, start_date),
+  INDEX idx_leave_requests_store_status (store_id, status),
+  INDEX idx_leave_requests_status (status),
+  INDEX idx_leave_requests_employee_dates (employee_id, start_date, end_date),
+  CONSTRAINT fk_leave_requests_store FOREIGN KEY (store_id) REFERENCES stores(id),
+  CONSTRAINT fk_leave_requests_employee FOREIGN KEY (employee_id) REFERENCES employees(id),
+  CONSTRAINT fk_leave_requests_reviewer FOREIGN KEY (review_user_id) REFERENCES users(id),
+  CONSTRAINT chk_leave_type CHECK (leave_type IN ('PERSONAL', 'SICK', 'ANNUAL')),
+  CONSTRAINT chk_leave_date_range CHECK (start_date <= end_date),
+  CONSTRAINT chk_leave_max_days CHECK (DATEDIFF(end_date, start_date) <= 30)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 换班申请（20260807 并入基线）
+CREATE TABLE shift_swaps (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  store_id BIGINT NOT NULL,
+  plan_id BIGINT NOT NULL,
+  requester_employee_id BIGINT NOT NULL,
+  target_employee_id BIGINT NOT NULL,
+  swap_date DATE NOT NULL,
+  reason VARCHAR(500) NULL,
+  status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+  review_user_id BIGINT NULL,
+  review_time DATETIME NULL,
+  review_remark VARCHAR(255) NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  pending_flag TINYINT
+    GENERATED ALWAYS AS (IF(status = 'PENDING', 1, NULL)) STORED,
+  INDEX idx_shift_swaps_requester (requester_employee_id, status),
+  INDEX idx_shift_swaps_target (target_employee_id),
+  INDEX idx_shift_swaps_store_status (store_id, status),
+  INDEX idx_shift_swaps_plan_date (plan_id, swap_date),
+  UNIQUE KEY ux_shift_swaps_pending (requester_employee_id, target_employee_id, plan_id, swap_date, pending_flag),
+  CONSTRAINT fk_shift_swaps_store FOREIGN KEY (store_id) REFERENCES stores(id),
+  CONSTRAINT fk_shift_swaps_plan FOREIGN KEY (plan_id) REFERENCES schedule_plans(id),
+  CONSTRAINT fk_shift_swaps_requester FOREIGN KEY (requester_employee_id) REFERENCES employees(id),
+  CONSTRAINT fk_shift_swaps_target FOREIGN KEY (target_employee_id) REFERENCES employees(id),
+  CONSTRAINT fk_shift_swaps_reviewer FOREIGN KEY (review_user_id) REFERENCES users(id),
+  CONSTRAINT chk_shift_swap_status CHECK (status IN ('PENDING', 'APPROVED', 'REJECTED')),
+  CONSTRAINT chk_not_self CHECK (requester_employee_id <> target_employee_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 INSERT INTO stores (id, code, name, address, max_employee_count, status) VALUES
 (1, 'KM_GUNGUN', '昆明滚滚', '昆明市模拟门店地址', 70, 1);
 
+-- 默认高峰禁休时段 20:00-22:00（20260817 并入基线）
+INSERT INTO peak_restricted_hours (store_id, start_time, end_time) VALUES (1, '20:00:00', '22:00:00');
+
 -- ⚠️ 安全警告：默认账户密码哈希已从脚本中移除（避免硬编码已知明文哈希）。
--- 部署时请通过以下方式之一初始化密码：
---  1. 应用首次启动时检测 users 表为空则生成随机密码并通过 stdout/环境变量输出
---  2. 使用环境变量 INIT_ADMIN_PASSWORD / INIT_MANAGER_PASSWORD 注入 BCrypt 哈希
---  3. 手动执行：INSERT INTO users (store_id, username, password_hash, nickname, role, status) VALUES
+-- admin / manager 账号不再预插，部署时请创建账号并注入 BCrypt 哈希：
+--  1. 手动执行：INSERT INTO users (store_id, username, password_hash, nickname, role, status) VALUES
 --     (1, 'admin', '<BCRYPT_HASH>', '系统管理员', 'SYSTEM_ADMIN', 1),
 --     (1, 'manager', '<BCRYPT_HASH>', '门店经理', 'STORE_MANAGER', 1);
-INSERT INTO users (store_id, username, password_hash, nickname, role, status) VALUES
-(1, 'admin', '$2y$12$CHANGE_ME_ADMIN_PLACEHOLDER_PW_HASH_00000000000000000000000000', '系统管理员', 'SYSTEM_ADMIN', 1),
-(1, 'manager', '$2y$12$CHANGE_ME_MANAGER_PLACEHOLDER_PW_HASH_0000000000000000000000', '门店经理', 'STORE_MANAGER', 1);
+--  2. 或由部署脚本读取环境变量 INIT_ADMIN_PASSWORD / INIT_MANAGER_PASSWORD 生成上述 SQL 注入。
+-- 员工账号（E001~E023）以合法格式但不可登录的占位哈希创建，部署时替换，或执行
+-- database/migrations/20260811_fix_password_hashes.sql（初始密码 = 工号，含 E023 账号兜底创建）。
+-- 原占位哈希（含下划线、长度不足 60）非合法 bcrypt，且预插 admin/manager 会携带已知哈希，故已移除。
 
 INSERT INTO workstations (store_id, code, name, sort_order, remark, status) VALUES
 (1, 'MANAGER', '管理岗', 1, '门店管理与现场统筹', 1),
@@ -362,7 +463,16 @@ INSERT INTO employees (store_id, employee_no, name, phone, department, hire_date
 (1, 'E019', '秦客户', '13800000019', '楼面', '2024-01-19', '客户经理岗', 48, 1),
 (1, 'E020', '尤内吧', '13800000020', '吧台', '2024-01-20', '内吧岗', 48, 1),
 (1, 'E021', '许外吧', '13800000021', '吧台', '2024-01-21', '外吧岗', 48, 1),
-(1, 'E022', '何吧台', '13800000022', '吧台', '2024-01-22', '内吧岗', 48, 1);
+(1, 'E022', '何吧台', '13800000022', '吧台', '2024-01-22', '内吧岗', 48, 1),
+(1, 'E023', '赵保洁', '13800000023', '保洁', '2024-01-23', '保洁岗', 48, 1);
+
+-- 员工登录账号（E001~E023；E001 为店长）。⚠️ 占位符哈希（合法 bcrypt 格式，对应随机未知明文，
+-- 无法登录），部署前必须替换为真实 BCrypt 哈希。
+INSERT INTO users (store_id, username, password_hash, nickname, role, status)
+SELECT 1, e.employee_no, '$2b$12$bV9nRYRvphTjN6EEDtrqEu9Ng5vh9vSQTujgBGFKYrmaxMsF2e2T.',
+       e.name, CASE WHEN e.employee_no = 'E001' THEN 'STORE_MANAGER' ELSE 'EMPLOYEE' END, 1
+FROM employees e
+WHERE e.employee_no BETWEEN 'E001' AND 'E023';
 
 INSERT INTO employee_skills (employee_id, workstation_id, skill_score, is_primary_skill, status)
 SELECT e.id, w.id,
@@ -402,6 +512,10 @@ INSERT INTO rule_configs (store_id, rule_key, rule_name, rule_value, value_type,
 (1, 'preference_weight', '员工偏好权重', '10', 'number', 'MVP 预留', 1),
 (1, 'station_continuity_weight', '工作站连续性权重', '20', 'number', '减少同日频繁换岗', 1);
 
+-- 8 月日期参数。week_day 存 MySQL DAYOFWEEK 值（Sunday=1，Saturday=7）。
+-- 业务口径（与 20260818 及算法 RestDayAllocator.IsPeakDay 一致）：
+--   WEEKEND = 周五(6) + 周六(7)（晚市高峰日）；周日(1) 为工作日 WORKDAY。
+-- 因此周末判据为 IN (6,7) 而非 IN (1,7)，is_holiday_eve=5 表示周四（法定假日前夕）。
 INSERT INTO date_parameters (store_id, work_date, week_day, day_type, is_legal_holiday, is_holiday_eve)
 SELECT 1, d, DAYOFWEEK(d), CASE WHEN DAYOFWEEK(d) IN (6,7) THEN 'WEEKEND' ELSE 'WORKDAY' END, 0, CASE WHEN DAYOFWEEK(d) = 5 THEN 1 ELSE 0 END
 FROM (
@@ -414,18 +528,40 @@ FROM (
   ) x
 ) dates;
 
+-- 2026-09 日期参数（含中秋：09-25/26 法定节假日，09-27 调休补班按平日，周五/周六为周末）
+INSERT INTO date_parameters (store_id, work_date, week_day, day_type, is_legal_holiday, is_holiday_eve)
+SELECT
+  1, d, DAYOFWEEK(d),
+  CASE
+    WHEN d IN ('2026-09-25', '2026-09-26') THEN 'HOLIDAY'
+    WHEN d = '2026-09-27' THEN 'WORKDAY'
+    WHEN DAYOFWEEK(d) IN (6, 7) THEN 'WEEKEND'
+    ELSE 'WORKDAY'
+  END,
+  CASE WHEN d IN ('2026-09-25', '2026-09-26') THEN 1 ELSE 0 END,
+  CASE WHEN d = '2026-09-24' THEN 1 ELSE 0 END
+FROM (
+  SELECT DATE('2026-09-01') + INTERVAL seq DAY AS d
+  FROM (
+    SELECT 0 seq UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4 UNION ALL SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7
+    UNION ALL SELECT 8 UNION ALL SELECT 9 UNION ALL SELECT 10 UNION ALL SELECT 11 UNION ALL SELECT 12 UNION ALL SELECT 13 UNION ALL SELECT 14 UNION ALL SELECT 15
+    UNION ALL SELECT 16 UNION ALL SELECT 17 UNION ALL SELECT 18 UNION ALL SELECT 19 UNION ALL SELECT 20 UNION ALL SELECT 21 UNION ALL SELECT 22 UNION ALL SELECT 23
+    UNION ALL SELECT 24 UNION ALL SELECT 25 UNION ALL SELECT 26 UNION ALL SELECT 27 UNION ALL SELECT 28 UNION ALL SELECT 29
+  ) x
+) dates;
+
 INSERT INTO staffing_requirements (store_id, day_type, workstation_id, time_slot, required_count)
 SELECT 1, day_type, w.id, time_slot,
   CASE
     WHEN w.code IN ('MANAGER','CLERK_WAREHOUSE','PURCHASE','ENGINEERING','NETWORK') AND time_slot >= '13:00:00' AND time_slot < '22:00:00' THEN 1
-    WHEN w.code = 'KITCHEN' AND time_slot >= '18:00:00' AND time_slot < '23:30:00' THEN CASE WHEN day_type IN ('HOLIDAY','WEEKEND') THEN 3 ELSE 2 END
+    WHEN w.code = 'KITCHEN' AND time_slot >= '18:00:00' AND time_slot <= '23:30:00' THEN CASE WHEN day_type IN ('HOLIDAY','WEEKEND') THEN 3 ELSE 2 END
     WHEN w.code = 'KITCHEN' AND (time_slot >= '00:00:00' AND time_slot < '03:00:00') THEN 1
-    WHEN w.code IN ('SERVICE','DELIVERY') AND (time_slot >= '19:00:00' AND time_slot < '23:30:00') THEN CASE WHEN day_type IN ('HOLIDAY','WEEKEND') THEN 3 ELSE 2 END
+    WHEN w.code IN ('SERVICE','DELIVERY') AND (time_slot >= '19:00:00' AND time_slot <= '23:30:00') THEN CASE WHEN day_type IN ('HOLIDAY','WEEKEND') THEN 3 ELSE 2 END
     WHEN w.code IN ('SERVICE','DELIVERY') AND (time_slot >= '00:00:00' AND time_slot < '04:00:00') THEN CASE WHEN day_type IN ('HOLIDAY','WEEKEND') THEN 2 ELSE 1 END
-    WHEN w.code IN ('RECEPTION','CUSTOMER_MANAGER') AND (time_slot >= '19:00:00' AND time_slot < '23:30:00') THEN CASE WHEN day_type IN ('HOLIDAY','WEEKEND') THEN 2 ELSE 1 END
-    WHEN w.code IN ('INNER_BAR','OUTER_BAR') AND (time_slot >= '18:30:00' AND time_slot < '23:30:00') THEN CASE WHEN day_type IN ('HOLIDAY','WEEKEND') THEN 2 ELSE 1 END
+    WHEN w.code IN ('RECEPTION','CUSTOMER_MANAGER') AND (time_slot >= '19:00:00' AND time_slot <= '23:30:00') THEN CASE WHEN day_type IN ('HOLIDAY','WEEKEND') THEN 2 ELSE 1 END
+    WHEN w.code IN ('INNER_BAR','OUTER_BAR') AND (time_slot >= '18:30:00' AND time_slot <= '23:30:00') THEN CASE WHEN day_type IN ('HOLIDAY','WEEKEND') THEN 2 ELSE 1 END
     WHEN w.code IN ('INNER_BAR','OUTER_BAR') AND (time_slot >= '00:00:00' AND time_slot < '04:00:00') THEN 1
-    WHEN w.code = 'CLEANING' AND (time_slot >= '21:00:00' AND time_slot < '23:30:00' OR time_slot >= '00:00:00' AND time_slot < '06:00:00') THEN 1
+    WHEN w.code = 'CLEANING' AND (time_slot >= '21:00:00' AND time_slot <= '23:30:00' OR time_slot >= '00:00:00' AND time_slot < '06:00:00') THEN 1
     ELSE 0
   END
 FROM workstations w
@@ -447,7 +583,7 @@ WHERE w.store_id = 1;
 UPDATE staffing_requirements SET ideal_count = required_count WHERE ideal_count = 0;
 
 INSERT INTO audit_logs (store_id, operator_user_id, operator_name, action_type, target_type, target_id, after_content, remark)
-VALUES (1, 1, '系统管理员', 'INIT_DATABASE', 'DATABASE', NULL, '初始化 shift_mvp 数据库、核心表和模拟数据', '数据库初始化脚本执行完成');
+VALUES (1, NULL, '系统管理员', 'INIT_DATABASE', 'DATABASE', NULL, '初始化 shift_mvp 数据库、核心表和模拟数据', '数据库初始化脚本执行完成');
 
 
 -- ================================================================
@@ -475,8 +611,11 @@ WHERE e.store_id = 1 AND w.store_id = 1 AND e.employee_no LIKE 'E1%' AND w.code 
 
 -- ================================================================
 -- AI 文档识别配置（DeepSeek，20260820 并入基线）
+-- 说明：api_key 明文保存（内部工具，GET 接口只返回掩码）；api_key='' 表示「未配置」
+--      （后端 AiConfigService 将空串视为未配置，故不加 CHECK(api_key<>'') 以免破坏该语义）。
+--      生产建议由 KMS/密钥管理注入或应用层加密存储，数据库层无法强制。
 -- ================================================================
-CREATE TABLE IF NOT EXISTS ai_configs (
+CREATE TABLE ai_configs (
   id BIGINT PRIMARY KEY AUTO_INCREMENT,
   store_id BIGINT NOT NULL,
   provider VARCHAR(30) NOT NULL DEFAULT 'DEEPSEEK',
@@ -489,3 +628,26 @@ CREATE TABLE IF NOT EXISTS ai_configs (
   UNIQUE KEY uk_ai_config_store_provider (store_id, provider),
   CONSTRAINT fk_ai_config_store FOREIGN KEY (store_id) REFERENCES stores(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ================================================================
+-- 已吸收迁移清单（本基线执行后无需再执行；20260823 起的新迁移仍须按序执行）：
+--   20260806_add_september_date_params.sql      → 09 月日期种子（上方，口径已按 20260818 修正）
+--   20260806_harden_user_passwords.sql          → 占位符哈希 + 部署说明（安全考虑不再内置真实哈希）
+--   20260807_add_employee_accounts.sql          → E001~E023 登录账号种子（占位符哈希）
+--   20260807_add_leave_requests.sql             → leave_requests 表（含 CHECK/索引）
+--   20260807_add_shift_swaps.sql                → shift_swaps 表（含 pending_flag/CHECK/索引）
+--   20260811_add_password_version.sql           → users.password_version 列
+--   20260811_add_rule_version.sql               → rule_configs.version 列
+--   20260811_concurrency_constraints.sql        → 唯一约束与 CHECK 约束（并入各建表语句）
+--   20260811_fix_p2_data_model.sql              → assignment_key 生成列/唯一索引、9 月日期（修正口径）
+--   20260812_add_low_skill_workstation.sql      → workstations.is_low_skill 列与标记
+--   20260813_add_parttime_employees.sql         → employees.is_parttime 列 + E101~E110 兼职
+--   20260814_fix_admin_staffing_2200.sql        → 行政岗 22:00 边界（已体现在人数需求种子）
+--   20260814_fix_e023_skills.sql                → E023 技能（由上方技能种子按部门自动覆盖）
+--   20260817_add_break_and_peak_hours.sql       → break_* 列 + peak_restricted_hours 表 + 默认高峰时段
+--   20260818_add_weekend_staffing.sql           → 周五/周六=WEEKEND 口径（09-27 补班标记已修正为非法定节假日）
+--   20260819_add_ideal_count.sql                → ideal_count 列 + 回填
+--   20260820_add_ai_config.sql                  → ai_configs 表
+--   20260821_add_staffing_remark.sql            → staffing_requirements.remark 列
+--   20260822_add_employee_generalist.sql        → employees.is_generalist 列
+-- ================================================================

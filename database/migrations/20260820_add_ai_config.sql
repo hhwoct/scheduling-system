@@ -3,6 +3,9 @@
 -- 内容：ai_configs 表，按门店保存 DeepSeek API Key / 接口地址 / 模型，
 --       用于「人数需求 → AI 识别导入」把 Excel/图片解析成结构化需求。
 -- 说明：api_key 明文保存（内部工具），GET 接口只返回掩码，不回传完整 Key。
+--      api_key='' 为「未配置」哨兵（后端 AiConfigService 将空串视为未配置），故保留 DEFAULT ''
+--      且不加 CHECK(api_key<>'')，以免破坏「空=未配置」语义；如需强制非空，需后端改为「无行=未配置」。
+--      生产建议由 KMS/密钥管理注入或应用层加密存储，数据库层无法强制。
 -- 执行方式：mysql -u root -p shift_mvp < database/migrations/20260820_add_ai_config.sql
 -- ============================================================
 USE shift_mvp;

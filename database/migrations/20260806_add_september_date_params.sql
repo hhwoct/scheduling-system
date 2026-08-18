@@ -16,9 +16,10 @@ FROM (
     UNION ALL SELECT 28 UNION ALL SELECT 29
   ) x
 ) dates
-AS new
+-- 用 VALUES(col) 引用本次插入值（原 AS new + new.col 中 new 是派生表 dates 的别名，
+-- 其不含 week_day 等列，属语法错误；VALUES() 为 MySQL 8.0 可移植写法）。
 ON DUPLICATE KEY UPDATE
-  week_day = new.week_day,
-  day_type = new.day_type,
-  is_legal_holiday = new.is_legal_holiday,
-  is_holiday_eve = new.is_holiday_eve;
+  week_day = VALUES(week_day),
+  day_type = VALUES(day_type),
+  is_legal_holiday = VALUES(is_legal_holiday),
+  is_holiday_eve = VALUES(is_holiday_eve);

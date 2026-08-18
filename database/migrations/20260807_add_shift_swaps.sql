@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS shift_swaps (
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   INDEX idx_shift_swaps_requester (requester_employee_id, status),
+  INDEX idx_shift_swaps_target (target_employee_id),
   INDEX idx_shift_swaps_store_status (store_id, status),
   INDEX idx_shift_swaps_plan_date (plan_id, swap_date),
   CONSTRAINT fk_shift_swaps_store FOREIGN KEY (store_id) REFERENCES stores(id),

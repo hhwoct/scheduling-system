@@ -50,14 +50,14 @@ CREATE INDEX idx_leave_requests_employee_dates
   ON leave_requests(employee_id, start_date, end_date);
 
 -- ===== P2-27: schedule_results 唯一约束 =====
--- 清理重复分配记录（保留最新）
+-- 清理重复分配记录（保留最新：删除较小 id 的旧记录，保留较大 id 的新记录）
 DELETE r1 FROM schedule_results r1
 INNER JOIN schedule_results r2
   ON r1.plan_id = r2.plan_id
   AND r1.employee_id = r2.employee_id
   AND r1.work_date = r2.work_date
   AND r1.time_slot = r2.time_slot
-  AND r1.id > r2.id;
+  AND r1.id < r2.id;
 
 -- 添加生成列 + 唯一索引
 ALTER TABLE schedule_results
@@ -74,12 +74,12 @@ SELECT
   d,
   DAYOFWEEK(d),
   CASE
-    WHEN DAYOFWEEK(d) IN (1,7) THEN 'HOLIDAY'              -- 周末
-    WHEN d = '2026-09-25' THEN 'HOLIDAY'                   -- 中秋节（周五）
+    WHEN d IN ('2026-09-25','2026-09-26') THEN 'HOLIDAY'   -- 中秋法定节假日（周五/周六）
     WHEN d = '2026-09-27' THEN 'WORKDAY'                   -- 调休补班（周日补周五）
+    WHEN DAYOFWEEK(d) IN (1,7) THEN 'HOLIDAY'              -- 周末（旧口径，20260818 起改 WEEKEND）
     ELSE 'WORKDAY'
   END,
-  CASE WHEN d IN ('2026-09-25','2026-09-26','2026-09-27') THEN 1 ELSE 0 END,  -- 法定节假日
+  CASE WHEN d IN ('2026-09-25','2026-09-26') THEN 1 ELSE 0 END,  -- 法定节假日（09-27 调休补班，非法定节假日）
   CASE WHEN d = '2026-09-24' THEN 1 ELSE 0 END             -- 假日前夕（周四）
 FROM stores s
 CROSS JOIN (
@@ -95,12 +95,13 @@ CROSS JOIN (
     UNION ALL SELECT 28 UNION ALL SELECT 29
   ) x
 ) dates
-AS new
+-- 仅插入缺失行，不覆盖已有值（no-op 形式：自赋值）。避免重跑覆盖后续人工/业务修改；
+-- 9 月日期口径的最终修正由 20260818_add_weekend_staffing.sql 统一完成。
 ON DUPLICATE KEY UPDATE
-  week_day = new.week_day,
-  day_type = new.day_type,
-  is_legal_holiday = new.is_legal_holiday,
-  is_holiday_eve = new.is_holiday_eve;
+  week_day = date_parameters.week_day,
+  day_type = date_parameters.day_type,
+  is_legal_holiday = date_parameters.is_legal_holiday,
+  is_holiday_eve = date_parameters.is_holiday_eve;
 
 -- ===== P2-15: 密码修复脚本幂等（只更新占位符）=====
 UPDATE users
