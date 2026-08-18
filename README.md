@@ -39,23 +39,40 @@
 - **员工自助**：员工端查看班表、提交请假、申请换班、**提前返岗**（缩短已批准请假）
 
 ### 安全加固（代码审查 P0/P1）
-- 密码重置 OTP 验证码 + IP 限流 + 失败锁定
-- JWT 短期有效期（30分钟）
+- 密码重置 OTP 验证码 + 按 IP 限流 + 失败锁定
+- JWT 有效期默认 1440 分钟（24 小时，可在 Jwt:ExpireMinutes 配置 5~1440），前端另有 15 分钟无操作自动登出
 - 审计日志事务原子化
 - 多租户 StoreId 隔离 + 并发唯一索引
 
 ## 快速启动
 
-### 0. 测试环境准备（clone 后直接跑）
+### 0. 测试环境准备（clone 后需配置两处）
 
-仓库已内置**开发环境配置**（appsettings.Development.json），克隆后无需再配置密钥即可运行。
+出于安全考虑，`appsettings.Development.json` **不在仓库中**（已 gitignore），克隆后需自行创建：
+
+```bash
+cd backend/ShiftScheduling.Api
+cat > appsettings.Development.json <<'EOF'
+{
+  "ConnectionStrings": { "ShiftMvp": "Server=localhost;Port=3306;Database=shift_mvp;User=root;Password=root123;Charset=utf8mb4;" },
+  "Jwt": {
+    "Issuer": "ShiftScheduling.Api",
+    "Audience": "ShiftScheduling.Admin",
+    "SigningKey": "<换成至少 32 字节的随机密钥>",
+    "ExpireMinutes": 1440
+  }
+}
+EOF
+```
+
+也可以改用 User Secrets 或环境变量注入 `ConnectionStrings:ShiftMvp` 与 `Jwt:SigningKey`。
 
 前置条件（本机需已安装）：
 - **MySQL 8.0**：默认连接 localhost:3306，账号 root / 密码 root123
 - **.NET 10.0 SDK**
 - **Node.js 18+**
 
-> 若 MySQL 密码不同，请修改 backend/ShiftScheduling.Api/appsettings.Development.json 中的 ConnectionStrings:ShiftMvp。
+> 若 MySQL 密码不同，请修改上面连接串中的 Password。
 
 ### 1. 初始化数据库
 
@@ -63,16 +80,33 @@
 mysql -u root -p < database/init_shift_mvp.sql
 ```
 
-默认管理员账号：
+默认账号（**init 脚本只创建员工账号且为不可登录的占位哈希；admin/manager 需按下方说明创建**）：
 
-| 用户名 | 密码（BCrypt 哈希，明文由开发环境配置） | 角色 |
-|---|---|---|
-| admin | 见开发环境配置 | 系统管理员（可改规则） |
-| E001 | 见开发环境配置 | 店长 / 门店经理（规则只读） |
-| E002~E022 | 见开发环境配置 | 全职员工 |
-| E101~E110 | 见开发环境配置 | 兼职员工（仅低技能岗位） |
+| 用户名 | 角色 |
+|---|---|
+| admin | 系统管理员（可改规则） |
+| manager / E001 | 店长 / 门店经理（规则只读） |
+| E002~E023 | 全职员工 |
+| E101~E110 | 兼职员工（仅排班数据，无登录账号） |
 
-> 密码哈希通过 `database/migrations/20260806_harden_user_passwords.sql` 加固，work factor 12。
+`init_shift_mvp.sql` 出于安全考虑不再内置真实密码哈希（历史哈希属已知明文，已从仓库移除），
+也不再预插 `admin` / `manager` 账号。部署时请用 BCrypt（work factor 12）生成真实哈希后执行：
+
+```sql
+-- 创建管理员账号（已存在则更新其哈希）
+INSERT INTO users (store_id, username, password_hash, nickname, role, status, created_at, updated_at)
+VALUES (1, 'admin', '<BCRYPT_HASH>', '系统管理员', 'SYSTEM_ADMIN', 1, NOW(), NOW()),
+       (1, 'manager', '<BCRYPT_HASH>', '门店经理', 'STORE_MANAGER', 1, NOW(), NOW())
+ON DUPLICATE KEY UPDATE password_hash = VALUES(password_hash), updated_at = NOW();
+
+-- 员工账号初始密码（占位哈希不可登录，替换为真实哈希）
+UPDATE users SET password_hash = '<BCRYPT_HASH>' WHERE username BETWEEN 'E001' AND 'E023';
+```
+
+> 提示：若按顺序执行全部迁移，`database/migrations/20260811_fix_password_hashes.sql`
+> 会把 admin/manager 重置为初始密码 `Admin@123456` / `Manager@123456`、员工重置为
+> 「密码 = 工号」（如 E001），并兜底创建缺失的员工账号（如 E023）。初始密码属已知明文，
+> **首次登录后请立即修改**。
 
 ### 2. 启动后端
 
