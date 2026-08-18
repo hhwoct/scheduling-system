@@ -24,6 +24,17 @@
         </el-form-item>
       </el-form>
 
+      <el-divider content-position="left">周期需求概览（营业日 12:00-次日 06:00 口径）</el-divider>
+      <el-table :data="previewRows" v-loading="previewLoading" border size="small" style="max-width: 720px">
+        <el-table-column prop="label" label="日期类型" width="110" />
+        <el-table-column prop="days" label="天数" width="70" align="center" />
+        <el-table-column prop="minHours" label="最少需求（人·时）" width="150" align="center" />
+        <el-table-column prop="idealHours" label="最好需求（人·时）" width="150" align="center" />
+        <el-table-column label="峰值并发（最少/最好）" width="180" align="center">
+          <template #default="{ row }">{{ row.peakMin }} / {{ row.peakIdeal }} 人</template>
+        </el-table-column>
+      </el-table>
+
       <el-alert
         v-if="result"
         type="success"
@@ -36,6 +47,12 @@
           <el-tag type="info" style="margin-right: 8px">班次分配 {{ result.shiftAssignmentCount }} 条</el-tag>
           <el-tag type="info" style="margin-right: 8px">工作站 {{ result.workstationAssignmentCount }} 条</el-tag>
           <el-tag type="warning" style="margin-right: 8px">问题 {{ result.issueCount }} 条</el-tag>
+          <el-tag v-if="result.demandShiftCount > 0" type="primary" style="margin-right: 8px">按需补班 {{ result.demandShiftCount }} 个</el-tag>
+        </div>
+        <div style="margin-top: 12px; font-size: 13px; color: #606266">
+          需求覆盖：最少 {{ result.demandMinHours }} 人·时 / 最好 {{ result.demandIdealHours }} 人·时 ｜
+          已覆盖 {{ result.coveredHours }} 人·时 ｜ 缺口 {{ result.gapHours }} 人·时 ｜
+          覆盖率 {{ result.coveragePct }}%
         </div>
         <div style="margin-top: 12px">
           <el-button type="primary" size="small" @click="goToPlan(result.planId)">查看排班计划</el-button>
@@ -83,6 +100,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { generateSchedule, getSchedules, publishSchedule, deleteSchedule, getScheduleIssues } from '../api/schedules'
+import { getStaffingRequirementPreview } from '../api/staffingRequirements'
 
 function getToday() {
   const d = new Date()
@@ -101,6 +119,43 @@ const plansTotal = ref(0)
 const plansLoading = ref(false)
 const page = ref(1)
 const pageSize = 10
+
+// 周期需求概览
+const previewRows = ref([])
+const previewLoading = ref(false)
+const DAY_TYPE_LABELS = { WORKDAY: '平日', WEEKEND: '周末', HOLIDAY: '节假日' }
+
+async function loadPreview() {
+  if (!startDate.value || !endDate.value) {
+    previewRows.value = []
+    return
+  }
+  previewLoading.value = true
+  try {
+    const data = await getStaffingRequirementPreview({ startDate: startDate.value, endDate: endDate.value })
+    const rows = Object.entries(data.byType || {}).map(([type, v]) => ({
+      label: DAY_TYPE_LABELS[type] || type,
+      days: v.days,
+      minHours: v.minHours,
+      idealHours: v.idealHours,
+      peakMin: v.peakMin,
+      peakIdeal: v.peakIdeal
+    }))
+    rows.push({
+      label: '合计',
+      days: '-',
+      minHours: data.totalMinHours,
+      idealHours: data.totalIdealHours,
+      peakMin: '-',
+      peakIdeal: '-'
+    })
+    previewRows.value = rows
+  } catch {
+    previewRows.value = []
+  } finally {
+    previewLoading.value = false
+  }
+}
 
 // 根据排班方式 + 参考日期计算起止
 function computeRange() {
@@ -150,6 +205,7 @@ function refreshRange() {
 }
 
 watch([scheduleMode, refDate], refreshRange, { immediate: true })
+watch([startDate, endDate], loadPreview)
 
 async function handleGenerate() {
   if (!startDate.value || !endDate.value) {

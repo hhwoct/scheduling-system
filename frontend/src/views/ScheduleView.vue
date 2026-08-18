@@ -119,7 +119,7 @@
           <el-divider content-position="left">{{ selectedDate }}</el-divider>
           <div v-loading="dailyLoading" class="matrix-wrap"><div class="matrix">
             <div class="m-row m-header"><div class="m-ws-col">工作站</div><div v-for="slot in slots" :key="slot.key" class="m-slot-col" :title="slot.display"><span v-if="isHour(slot)">{{ slot.display }}</span></div></div>
-            <div v-for="ws in dailyWorkstations" :key="ws" class="m-row"><div class="m-ws-col">{{ ws }}<el-tag v-if="wsLowSkill(ws)" type="success" size="small" style="margin-left:4px">兼</el-tag></div><div v-for="slot in slots" :key="slot.key" class="m-slot-col" :class="cellClass(ws, slot)"><div v-if="dailySlotIssues(ws, slot).length" class="gap-flag" :class="{ 'gap-flag-low': lowSkillGapIssues(ws, slot).length > 0 }" :title="gapTooltip(ws, slot)">{{ lowSkillGapIssues(ws, slot).length > 0 ? '兼' : '缺' }}</div><div v-for="emp in dailyCellUsers(ws, slot)" :key="emp.employeeId" class="emp-chip" :class="{ 'is-parttime': emp.isParttime === 1, 'pt-first': isFirstPartTimeChip(emp, ws, slot), 'is-break': inBreak(emp, slot) }" :title="'点击切换该半小时 休息/上班'" @click.stop="openSlotStatusDialog(emp, slot)"><div class="emp-name">{{ emp.employeeName }}<span v-if="inBreak(emp, slot)" class="break-flag" :title="breakTip(emp)">休</span></div><div v-if="!inBreak(emp, slot)" class="emp-shift">{{ emp.shiftCode || '--' }}</div><div v-else class="emp-shift break-info" :title="breakTip(emp)">休息</div></div></div></div>
+            <div v-for="ws in dailyWorkstations" :key="ws" class="m-row"><div class="m-ws-col">{{ ws }}<el-tag v-if="wsLowSkill(ws)" type="success" size="small" style="margin-left:4px">兼</el-tag></div><div v-for="(slot, si) in slots" :key="slot.key" class="m-slot-col" :class="[cellClass(ws, slot), snapTarget.ws === ws && snapTarget.slotIdx === si ? 'snap-target' : '']"><div v-if="dailySlotIssues(ws, slot).length" class="gap-flag" :class="{ 'gap-flag-low': lowSkillGapIssues(ws, slot).length > 0 }" :title="gapTooltip(ws, slot)">{{ lowSkillGapIssues(ws, slot).length > 0 ? '兼' : '缺' }}</div><div v-for="emp in dailyCellUsers(ws, slot)" :key="emp.employeeId" class="emp-chip" :class="{ 'is-parttime': emp.isParttime === 1, 'pt-first': isFirstPartTimeChip(emp, ws, slot), 'is-break': inBreak(emp, slot) }" :title="'[v3] 点击切换休息/上班，按住拖动可移动半小时'" @mousedown.prevent.stop="onChipMouseDown($event, emp, ws, slot)" @click.stop="onChipClick(emp, slot)"><div class="emp-name">{{ emp.employeeName }}<span v-if="inBreak(emp, slot)" class="break-flag" :title="breakTip(emp)">休</span></div><div v-if="!inBreak(emp, slot)" class="emp-shift">{{ emp.shiftCode || '--' }}</div><div v-else class="emp-shift break-info" :title="breakTip(emp)">休息</div></div></div></div>
           </div></div>
         </div>
       </div>
@@ -128,7 +128,7 @@
         <el-date-picker v-model="dayDate" type="date" value-format="YYYY-MM-DD" style="width: 150px; margin-bottom: 12px" placeholder="选择日期" :disabled-date="disabledDate" @change="loadDay" />
         <div v-if="dayDate" class="matrix-wrap"><div class="matrix">
           <div class="m-row m-header"><div class="m-ws-col">工作站</div><div v-for="slot in slots" :key="slot.key" class="m-slot-col" :title="slot.display"><span v-if="isHour(slot)">{{ slot.display }}</span></div></div>
-          <div v-for="ws in dailyWorkstations" :key="ws" class="m-row"><div class="m-ws-col">{{ ws }}<el-tag v-if="wsLowSkill(ws)" type="success" size="small" style="margin-left:4px">兼</el-tag></div><div v-for="slot in slots" :key="slot.key" class="m-slot-col" :class="cellClass(ws, slot)"><div v-if="dailySlotIssues(ws, slot).length" class="gap-flag" :class="{ 'gap-flag-low': lowSkillGapIssues(ws, slot).length > 0 }" :title="gapTooltip(ws, slot)">{{ lowSkillGapIssues(ws, slot).length > 0 ? '兼' : '缺' }}</div><div v-for="emp in dailyCellUsers(ws, slot)" :key="emp.employeeId" class="emp-chip" :class="{ 'is-parttime': emp.isParttime === 1, 'pt-first': isFirstPartTimeChip(emp, ws, slot), 'is-break': inBreak(emp, slot) }" :title="'点击切换该半小时 休息/上班'" @click.stop="openSlotStatusDialog(emp, slot)"><div class="emp-name">{{ emp.employeeName }}<span v-if="inBreak(emp, slot)" class="break-flag" :title="breakTip(emp)">休</span></div><div v-if="!inBreak(emp, slot)" class="emp-shift">{{ emp.shiftCode || '--' }}</div><div v-else class="emp-shift break-info" :title="breakTip(emp)">休息</div></div></div></div>
+          <div v-for="ws in dailyWorkstations" :key="ws" class="m-row"><div class="m-ws-col">{{ ws }}<el-tag v-if="wsLowSkill(ws)" type="success" size="small" style="margin-left:4px">兼</el-tag></div><div v-for="(slot, si) in slots" :key="slot.key" class="m-slot-col" :class="[cellClass(ws, slot), snapTarget.ws === ws && snapTarget.slotIdx === si ? 'snap-target' : '']"><div v-if="dailySlotIssues(ws, slot).length" class="gap-flag" :class="{ 'gap-flag-low': lowSkillGapIssues(ws, slot).length > 0 }" :title="gapTooltip(ws, slot)">{{ lowSkillGapIssues(ws, slot).length > 0 ? '兼' : '缺' }}</div><div v-for="emp in dailyCellUsers(ws, slot)" :key="emp.employeeId" class="emp-chip" :class="{ 'is-parttime': emp.isParttime === 1, 'pt-first': isFirstPartTimeChip(emp, ws, slot), 'is-break': inBreak(emp, slot) }" :title="'[v3] 点击切换休息/上班，按住拖动可移动半小时'" @mousedown.prevent.stop="onChipMouseDown($event, emp, ws, slot)" @click.stop="onChipClick(emp, slot)"><div class="emp-name">{{ emp.employeeName }}<span v-if="inBreak(emp, slot)" class="break-flag" :title="breakTip(emp)">休</span></div><div v-if="!inBreak(emp, slot)" class="emp-shift">{{ emp.shiftCode || '--' }}</div><div v-else class="emp-shift break-info" :title="breakTip(emp)">休息</div></div></div></div>
         </div></div>
       </div>
 
@@ -184,6 +184,13 @@
       </div>
     </el-card>
 
+    <!-- 拖动工作段时的吸附幽灵块 -->
+    <div
+      v-if="dragGhost.visible"
+      class="drag-ghost"
+      :style="{ left: dragGhost.x + 'px', top: dragGhost.y + 'px', width: dragGhost.width + 'px', height: dragGhost.height + 'px' }"
+    >{{ dragGhost.text }}</div>
+
     <!-- 点击色块：切换该半小时 休息/上班 -->
     <el-dialog v-model="slotStatusDialog.visible" title="切换时段状态" width="420px">
       <div class="ds-info">
@@ -206,11 +213,11 @@
 </template>
 
 <script setup>
-import { onMounted, ref, reactive, computed, nextTick, watch } from 'vue'
+import { onMounted, onBeforeUnmount, ref, reactive, computed, nextTick, watch } from 'vue'
 import * as echarts from 'echarts'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { getMonthView, getWeekView, getDailyView, getScheduleIssues, getScheduleRationality, getSchedules, setSlotStatus } from '../api/schedules'
+import { getMonthView, getWeekView, getDailyView, getScheduleIssues, getScheduleRationality, getSchedules, setSlotStatus, moveScheduleSegment } from '../api/schedules'
 
 const route = useRoute()
 const planId = ref(route.query.planId || '')
@@ -316,6 +323,152 @@ function breakTimeText(row) {
 // 休息提示（仅显示休息时段）
 function breakTip(row) {
   return `休息 ${breakTimeText(row)}`
+}
+
+// ============ 拖动移动工作段（时间平移 + 换工作站，吸附格子） ============
+const dragMove = {
+  active: false,
+  moved: false,
+  matrixEl: null,
+  empId: 0,
+  empName: '',
+  shiftCode: '',
+  fromWorkstationId: 0,
+  segStartIdx: -1,
+  segEndIdx: -1,
+  targetSlotIdx: -1,
+  targetWs: '',
+  targetWorkstationId: 0,
+  startX: 0,
+  startY: 0,
+  justDragged: false
+}
+const dragGhost = reactive({ visible: false, x: 0, y: 0, width: 0, height: 0, text: '' })
+const snapTarget = reactive({ ws: '', slotIdx: -1 })
+
+// 工作站名 → id（用于落点定位）
+const wsIdByName = computed(() => {
+  const m = {}
+  dailyRows.value.forEach(r => {
+    if (r.workstationName && r.workstationId != null) m[r.workstationName] = r.workstationId
+  })
+  return m
+})
+
+// 默认只移动被拖的那半个小时
+function onChipMouseDown(e, emp, ws, slot) {
+  if (e.button !== 0) return
+  const slotIdx = slots.value.findIndex(s => s.key === slot.key)
+  dragMove.active = true
+  dragMove.moved = false
+  dragMove.matrixEl = e.target.closest('.matrix')
+  dragMove.empId = emp.employeeId
+  dragMove.empName = emp.employeeName || ''
+  dragMove.shiftCode = emp.shiftCode || '班'
+  dragMove.fromWorkstationId = emp.workstationId
+  dragMove.segStartIdx = slotIdx
+  dragMove.segEndIdx = slotIdx
+  dragMove.targetSlotIdx = seg.start
+  dragMove.targetWs = ws
+  dragMove.targetWorkstationId = emp.workstationId
+  dragMove.startX = e.clientX
+  dragMove.startY = e.clientY
+  dragMove.justDragged = false
+  dragGhost.visible = true
+  updateDragGhost(e.clientX, e.clientY)
+}
+
+// 点击（未拖动）→ 休息/上班切换
+function onChipClick(emp, slot) {
+  if (dragMove.justDragged) {
+    dragMove.justDragged = false
+    return
+  }
+  openSlotStatusDialog(emp, slot)
+}
+
+function updateDragGhost(clientX, clientY) {
+  const matrixEl = dragMove.matrixEl
+  if (!matrixEl) return
+  const rows = matrixEl.querySelectorAll('.m-row:not(.m-header)')
+  let rowIdx = -1
+  rows.forEach((row, i) => {
+    const rect = row.getBoundingClientRect()
+    if (clientY >= rect.top && clientY <= rect.bottom) rowIdx = i
+  })
+  if (rowIdx < 0 || rowIdx >= dailyWorkstations.value.length) {
+    snapTarget.ws = ''
+    snapTarget.slotIdx = -1
+    return
+  }
+  const rowRect = rows[rowIdx].getBoundingClientRect()
+  const cellsLeft = rowRect.left + 130 // 左侧工作站列宽
+  const slotIdx = Math.max(0, Math.min(slots.value.length - 1, Math.floor((clientX - cellsLeft) / 72)))
+  const targetWs = dailyWorkstations.value[rowIdx]
+
+  dragMove.targetSlotIdx = slotIdx
+  dragMove.targetWs = targetWs
+  dragMove.targetWorkstationId = wsIdByName.value[targetWs] || 0
+  snapTarget.ws = targetWs
+  snapTarget.slotIdx = slotIdx
+
+  dragGhost.x = cellsLeft + slotIdx * 72 + 1
+  dragGhost.y = rowRect.top + 2
+  dragGhost.width = 70 // 单格（半小时）
+  dragGhost.height = Math.max(24, rowRect.height - 4)
+  dragGhost.text = dragMove.empName + ' · ' + dragMove.shiftCode
+}
+
+function onDragMove(e) {
+  if (!dragMove.active) return
+  if (Math.abs(e.clientX - dragMove.startX) > 6 || Math.abs(e.clientY - dragMove.startY) > 6) dragMove.moved = true
+  updateDragGhost(e.clientX, e.clientY)
+}
+
+async function onDragEnd() {
+  if (!dragMove.active) return
+  const wasMoved = dragMove.moved
+  dragMove.active = false
+  dragGhost.visible = false
+  snapTarget.ws = ''
+  snapTarget.slotIdx = -1
+
+  if (!wasMoved) {
+    return // 未拖动：交给 click 事件打开休息/上班对话框
+  }
+
+  if (!planId.value) {
+    ElMessage.warning('请先在上方选择排班计划，再拖动调整')
+    dragMove.justDragged = true
+    return
+  }
+
+  const slotList = slots.value
+  const fromSlotKey = slotList[dragMove.segStartIdx].key
+  const toSlotKey = slotList[dragMove.targetSlotIdx].key
+  const targetUnchanged =
+    toSlotKey === fromSlotKey && dragMove.targetWorkstationId === dragMove.fromWorkstationId
+
+  if (targetUnchanged || !dragMove.targetWorkstationId || !dragMove.targetWs) {
+    dragMove.justDragged = true // 拖回原位/无效落点：视为取消
+    return
+  }
+
+  try {
+    await moveScheduleSegment({
+      planId: planId.value,
+      employeeId: dragMove.empId,
+      workDate: selectedDate.value || dayDate.value,
+      fromWorkstationId: dragMove.fromWorkstationId,
+      fromTimeSlot: fromSlotKey,
+      toTimeSlot: toSlotKey,
+      toWorkstationId: dragMove.targetWorkstationId
+    })
+    ElMessage.success('已移动 ' + dragMove.empName + ' 的半小时 → ' + dragMove.targetWs + ' ' + toSlotKey)
+    await loadDay()
+  } catch (err) {
+    // request 拦截器已提示错误
+  }
 }
 
 // ===== 点击色块：切换该半小时 休息/上班 =====  //
@@ -746,17 +899,29 @@ watch(rationalityData, () => {
   nextTick(() => renderRationalityChart())
 })
 
-onMounted(() => { loadPlans(); if (planId.value) loadAll(); nextTick(() => renderRationalityChart()) })
+onMounted(() => {
+  loadPlans()
+  if (planId.value) loadAll()
+  nextTick(() => renderRationalityChart())
+  window.addEventListener('mousemove', onDragMove)
+  window.addEventListener('mouseup', onDragEnd)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('mousemove', onDragMove)
+  window.removeEventListener('mouseup', onDragEnd)
+})
 </script>
 
 <style scoped>
-.gantt { border: 1px solid #ebeef5; border-radius: 4px; }
-.gantt-row { display: flex; border-bottom: 1px solid #ebeef5; }
+.gantt { border: 1px solid #ebeef5; border-radius: 4px; overflow-x: auto; }
+.gantt-row { display: flex; border-bottom: 1px solid #ebeef5; min-width: max-content; }
 .gantt-row-parttime .gantt-emp-col { background: #f7fdf5; }
 .gantt-divider { background: #f0f9eb; color: #67c23a; font-weight: 600; font-size: 12px; padding: 5px 10px; border-bottom: 1px solid #c2e7b0; display: flex; align-items: center; gap: 6px; }
 .gantt-divider-badge { display: inline-block; background: #67c23a; color: #fff; border-radius: 3px; font-size: 11px; padding: 0 5px; line-height: 16px; }
 .gantt-header { background: #f5f7fa; font-weight: 600; }
-.gantt-emp-col { width: 140px; flex-shrink: 0; padding: 6px 8px; border-right: 1px solid #ebeef5; }
+.gantt-emp-col { width: 140px; flex-shrink: 0; padding: 6px 8px; border-right: 1px solid #ebeef5; position: sticky; left: 0; background: #fff; z-index: 3; }
+.gantt-header .gantt-emp-col { background: #f5f7fa; z-index: 4; }
 .gantt-day-col { flex: 1; min-width: 100px; padding: 4px; border-right: 1px solid #ebeef5; }
 .day-label { font-size: 12px; color: #606266; }
 .day-sub { font-size: 11px; color: #909399; }
@@ -783,12 +948,13 @@ onMounted(() => { loadPlans(); if (planId.value) loadAll(); nextTick(() => rende
 .cal-parttime { font-size: 12px; color: #67c23a; }
 .cal-rest { font-size: 12px; color: #f56c6c; }
 .cal-shift { font-size: 11px; color: #909399; margin-top: 4px; }
-.matrix-wrap { overflow-x: auto; }
+.matrix-wrap { overflow: auto; max-height: 560px; }
 .matrix { border: 1px solid #ebeef5; border-radius: 4px; }
 .m-row { display: flex; border-bottom: 1px solid #ebeef5; }
 .m-row:last-child { border-bottom: none; }
-.m-header { background: #f5f7fa; font-weight: 600; }
-.m-ws-col { width: 130px; flex-shrink: 0; padding: 6px 8px; border-right: 1px solid #ebeef5; display: flex; align-items: center; }
+.m-header { background: #f5f7fa; font-weight: 600; position: sticky; top: 0; z-index: 4; }
+.m-ws-col { width: 130px; flex-shrink: 0; padding: 6px 8px; border-right: 1px solid #ebeef5; display: flex; align-items: center; position: sticky; left: 0; background: #fff; z-index: 3; }
+.m-header .m-ws-col { background: #f5f7fa; z-index: 5; }
 .m-slot-col { width: 72px; min-height: 48px; flex-shrink: 0; padding: 2px 3px; border-right: 1px solid #f5f7fa; font-size: 11px; text-align: center; position: relative; }
 .m-slot-col:last-child { border-right: none; }
 .has-employee { background: #ecf5ff; }
@@ -811,8 +977,32 @@ onMounted(() => { loadPlans(); if (planId.value) loadAll(); nextTick(() => rende
 .next-day .emp-chip.is-parttime { background: #67c23a; }
 .next-day .emp-chip.is-break { background: #909399; }
 /* 色块可点击：切换该半小时 休息/上班 */
-.emp-chip { cursor: pointer; }
+.emp-chip { cursor: grab; }
 .emp-chip:hover { opacity: 0.85; }
+
+/* ============ 拖动移动工作段 ============ */
+.drag-ghost {
+  position: fixed;
+  z-index: 3000;
+  pointer-events: none;
+  background: rgba(64, 158, 255, 0.78);
+  color: #fff;
+  border: 1px dashed #fff;
+  border-radius: 3px;
+  font-size: 11px;
+  padding: 3px 8px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.m-slot-col.snap-target {
+  outline: 2px dashed #409eff;
+  outline-offset: -2px;
+  background: rgba(64, 158, 255, 0.14) !important;
+}
+
 .ds-info { font-size: 13px; color: #303133; }
 .ds-label { color: #909399; }
 .stat-num { font-size: 28px; font-weight: 700; color: #303133; }

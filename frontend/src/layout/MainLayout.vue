@@ -20,6 +20,8 @@
           <el-menu-item index="/shift-templates">班次管理</el-menu-item>
           <el-menu-item index="/rules">规则配置</el-menu-item>
           <el-menu-item index="/peak-hours">高峰时段</el-menu-item>
+          <el-menu-item index="/staffing-requirements">人数需求</el-menu-item>
+          <el-menu-item index="/skill-matrix">技能等级</el-menu-item>
         </el-sub-menu>
         <el-sub-menu index="schedule">
           <template #title><span>排班管理</span></template>

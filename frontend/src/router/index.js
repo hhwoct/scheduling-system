@@ -81,6 +81,18 @@ const routes = [
         meta: { title: '高峰时段' }
       },
       {
+        path: 'staffing-requirements',
+        name: 'StaffingRequirements',
+        component: () => import('../views/StaffingRequirementsView.vue'),
+        meta: { title: '人数需求' }
+      },
+      {
+        path: 'skill-matrix',
+        name: 'SkillMatrix',
+        component: () => import('../views/SkillMatrixView.vue'),
+        meta: { title: '技能等级' }
+      },
+      {
         path: 'schedules/generate',
         name: 'ScheduleGenerate',
         component: () => import('../views/ScheduleGenerateView.vue'),

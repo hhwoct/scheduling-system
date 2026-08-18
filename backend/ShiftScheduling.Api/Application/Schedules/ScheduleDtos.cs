@@ -25,7 +25,13 @@ public sealed record GenerateScheduleResult(
     int WorkstationAssignmentCount,
     int SummaryCount,
     int IssueCount,
-    IReadOnlyList<string> IssueTypes);
+    IReadOnlyList<string> IssueTypes,
+    decimal DemandMinHours,
+    decimal DemandIdealHours,
+    decimal CoveredHours,
+    decimal GapHours,
+    int CoveragePct,
+    int DemandShiftCount);
 
 public sealed record MonthViewItem(
     long EmployeeId,
@@ -98,6 +104,24 @@ public sealed record AdjustScheduleItem(
     TimeSpan? TimeSlot);
 
 public sealed record AdjustScheduleRequest(IReadOnlyList<AdjustScheduleItem> Items);
+
+/// <summary>
+/// 拖动移动员工某天在某个工作站的连续工作段（时间平移 + 换工作站）。
+/// FromTimeSlot/ToTimeSlot 为段起始时段的 HH:mm（30 分钟对齐）。
+/// </summary>
+public sealed record MoveScheduleSegmentRequest(
+    long EmployeeId,
+    DateOnly WorkDate,
+    long FromWorkstationId,
+    string FromTimeSlot,
+    string ToTimeSlot,
+    long ToWorkstationId);
+
+public sealed record MoveScheduleSegmentResult(
+    int MovedSlots,
+    string FromTimeSlot,
+    string ToTimeSlot,
+    long ToWorkstationId);
 
 /// <summary>
 /// 设置员工某天的休息/上班状态（日明细点色块调整）。

@@ -182,13 +182,13 @@ onMounted(loadData)
 </script>
 
 <style scoped>
-.matrix-wrap { overflow-x: auto; position: relative; }
+.matrix-wrap { overflow: auto; max-height: 560px; position: relative; }
 .matrix { min-width: 100%; border: 1px solid #ebeef5; border-radius: 4px; }
 .m-row { display: flex; border-bottom: 1px solid #ebeef5; }
 .m-row:last-child { border-bottom: none; }
-.m-header { background: #f5f7fa; font-weight: 600; }
-.m-ws-col { width: 130px; flex-shrink: 0; padding: 6px 8px; border-right: 1px solid #ebeef5; position: sticky; left: 0; background: #fff; z-index: 1; display: flex; align-items: center; }
-.m-header .m-ws-col { background: #f5f7fa; }
+.m-header { background: #f5f7fa; font-weight: 600; position: sticky; top: 0; z-index: 4; }
+.m-ws-col { width: 130px; flex-shrink: 0; padding: 6px 8px; border-right: 1px solid #ebeef5; position: sticky; left: 0; background: #fff; z-index: 3; display: flex; align-items: center; }
+.m-header .m-ws-col { background: #f5f7fa; z-index: 5; }
 .m-slot-col { width: 72px; min-height: 56px; flex-shrink: 0; padding: 2px 3px; border-right: 1px solid #f5f7fa; font-size: 11px; text-align: center; transition: background 0.2s; position: relative; }
 .m-slot-col:last-child { border-right: none; }
 .has-employee { background: #ecf5ff; }

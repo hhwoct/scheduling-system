@@ -39,6 +39,9 @@ public sealed class WorkstationAllocator
             .OrderBy(x => x.WorkDate)
             .ToList();
 
+        // 营业日口径：凌晨时段（< 06:00）按前一天的日期类型取需求
+        var dayTypeByDate = input.DateParameters.ToDictionary(d => d.WorkDate, d => d.DayType);
+
         foreach (var date in dates)
         {
             if (!shiftsByDate.TryGetValue(date.WorkDate, out var dayShifts))
@@ -46,7 +49,8 @@ public sealed class WorkstationAllocator
                 continue;
             }
 
-            var dayResult = AllocateForDate(input, date, dayShifts, skillsByEmployee, shiftById, shiftSlotsCache);
+            var prevType = dayTypeByDate.GetValueOrDefault(date.WorkDate.AddDays(-1)) ?? date.DayType;
+            var dayResult = AllocateForDate(input, date, prevType, dayShifts, skillsByEmployee, shiftById, shiftSlotsCache);
             assignments.AddRange(dayResult.Assignments);
             issueCollector?.AddRange(dayResult.Issues);
         }
@@ -57,14 +61,16 @@ public sealed class WorkstationAllocator
     private static (IReadOnlyList<WorkstationAssignment> Assignments, IReadOnlyList<ScheduleIssueOutput> Issues) AllocateForDate(
         SchedulingInput input,
         DateParameterInput date,
+        string prevType,
         IReadOnlyList<ShiftAssignment> dayShifts,
         IReadOnlyDictionary<long, Dictionary<long, int>> skillsByEmployee,
         IReadOnlyDictionary<long, ShiftTemplateInput> shiftById,
         IReadOnlyDictionary<long, IReadOnlyList<TimeSpan>> shiftSlotsCache)
     {
         var dayType = date.DayType;
+        // 营业日口径：凌晨时段（< 06:00）按前一天的日期类型取需求
         var requirements = input.StaffingRequirements
-            .Where(r => r.DayType == dayType)
+            .Where(r => r.DayType == (r.TimeSlot < TimeSpan.FromHours(6) ? prevType : dayType))
             .GroupBy(r => r.TimeSlot)
             .ToDictionary(
                 g => g.Key,
@@ -105,6 +111,65 @@ public sealed class WorkstationAllocator
                     {
                         reference[candidate.EmployeeId] = new Dictionary<TimeSpan, long>();
                     }
+                    reference[candidate.EmployeeId][slot] = workstation.Key;
+                    assignedEmployeesThisSlot.Add(candidate.EmployeeId);
+                }
+            }
+        }
+
+        // ========== 2A+：软性需求（最好人数）补充参考分配 ==========
+        // 硬性（最少人数）分配完成后，用同班次内尚未在该时段被分配参考岗位的员工，
+        // 尽量补足各工作站的「最好人数」；只影响参考分配，不破坏最少人数覆盖。
+        var idealBySlot = input.StaffingRequirements
+            .Where(r => r.DayType == (r.TimeSlot < TimeSpan.FromHours(6) ? prevType : dayType))
+            .GroupBy(r => r.TimeSlot)
+            .ToDictionary(
+                g => g.Key,
+                g => g.ToDictionary(r => r.WorkstationId, r => r.IdealCount > 0 ? r.IdealCount : r.RequiredCount));
+
+        foreach (var slot in idealBySlot.Keys.OrderBy(x => x))
+        {
+            var slotIdeals = idealBySlot[slot];
+            var activeShifts = dayShifts
+                .Where(s => IsActiveInSlot(s, slot, shiftById, shiftSlotsCache))
+                .ToList();
+
+            var assignedEmployeesThisSlot = activeShifts
+                .Where(s => reference.TryGetValue(s.EmployeeId, out var refs) && refs.ContainsKey(slot))
+                .Select(s => s.EmployeeId)
+                .ToHashSet();
+
+            foreach (var workstation in slotIdeals.OrderByDescending(x => x.Value).ThenBy(x => x.Key))
+            {
+                var ideal = workstation.Value;
+                if (ideal <= 0)
+                {
+                    continue;
+                }
+
+                var current = activeShifts.Count(s =>
+                    reference.TryGetValue(s.EmployeeId, out var refs) &&
+                    refs.TryGetValue(slot, out var ws) && ws == workstation.Key);
+                var extra = ideal - current;
+                if (extra <= 0)
+                {
+                    continue;
+                }
+
+                var candidates = activeShifts
+                    .Where(s => !assignedEmployeesThisSlot.Contains(s.EmployeeId))
+                    .Where(s => HasSkill(s.EmployeeId, workstation.Key, skillsByEmployee))
+                    .OrderByDescending(s => SkillScore(s.EmployeeId, workstation.Key, skillsByEmployee))
+                    .ThenByDescending(s => s.ShiftCode)
+                    .ToList();
+
+                foreach (var candidate in candidates.Take(extra))
+                {
+                    if (!reference.ContainsKey(candidate.EmployeeId))
+                    {
+                        reference[candidate.EmployeeId] = new Dictionary<TimeSpan, long>();
+                    }
+
                     reference[candidate.EmployeeId][slot] = workstation.Key;
                     assignedEmployeesThisSlot.Add(candidate.EmployeeId);
                 }

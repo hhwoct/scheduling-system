@@ -65,6 +65,32 @@ public sealed class BreakAllocator
                 g => g.GroupBy(r => (r.TimeSlot, r.WorkstationId))
                       .ToDictionary(x => x.Key, x => x.Max(r => r.RequiredCount)));
 
+        // 营业日口径：某天的需求 = 当天类型（06:00 起）+ 前一天类型（00:00-05:30）
+        static Dictionary<(TimeSpan Slot, long Ws), int> MergeDayRequirements(
+            string dayType,
+            string prevType,
+            IReadOnlyDictionary<string, Dictionary<(TimeSpan Slot, long Ws), int>> requirementsByDayType)
+        {
+            var merged = new Dictionary<(TimeSpan Slot, long Ws), int>();
+            if (requirementsByDayType.TryGetValue(dayType, out var dayReqs))
+            {
+                foreach (var kv in dayReqs.Where(x => x.Key.Slot >= TimeSpan.FromHours(6)))
+                {
+                    merged[kv.Key] = kv.Value;
+                }
+            }
+
+            if (requirementsByDayType.TryGetValue(prevType, out var prevReqs))
+            {
+                foreach (var kv in prevReqs.Where(x => x.Key.Slot < TimeSpan.FromHours(6)))
+                {
+                    merged[kv.Key] = kv.Value;
+                }
+            }
+
+            return merged;
+        }
+
         var dayTypeByDate = input.DateParameters.ToDictionary(d => d.WorkDate, d => d.DayType);
 
         // 基础在岗人数
@@ -128,9 +154,9 @@ public sealed class BreakAllocator
             }
 
             var dayType = dayTypeByDate.GetValueOrDefault(date.WorkDate) ?? "WORKDAY";
-            var dayReqs = requirementsByDayType.TryGetValue(dayType, out var reqs)
-                ? reqs
-                : new Dictionary<(TimeSpan, long), int>();
+            // 营业日口径：凌晨时段（< 06:00）按前一天的日期类型取需求
+            var prevType = dayTypeByDate.GetValueOrDefault(date.WorkDate.AddDays(-1)) ?? dayType;
+            var dayReqs = MergeDayRequirements(dayType, prevType, requirementsByDayType);
 
             // 每日重置休息分散计数与借调次数
             breakCountBySlot.Clear();

@@ -254,8 +254,8 @@ onMounted(loadData)
 .gantt { min-width: 100%; }
 .gantt-row { display: flex; border-bottom: 1px solid #ebeef5; }
 .gantt-header { background: #f5f7fa; font-weight: 600; }
-.gantt-emp-col { width: 150px; flex-shrink: 0; padding: 6px 8px; border-right: 1px solid #ebeef5; position: sticky; left: 0; background: #fff; z-index: 1; }
-.gantt-header .gantt-emp-col { background: #f5f7fa; }
+.gantt-emp-col { width: 150px; flex-shrink: 0; padding: 6px 8px; border-right: 1px solid #ebeef5; position: sticky; left: 0; background: #fff; z-index: 3; }
+.gantt-header .gantt-emp-col { background: #f5f7fa; z-index: 4; }
 .emp-name { font-size: 13px; }
 .emp-sub { font-size: 11px; color: #909399; }
 .gantt-day-col { flex: 1; min-width: 120px; padding: 6px; border-right: 1px solid #f5f7fa; }

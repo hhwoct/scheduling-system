@@ -61,6 +61,15 @@ public interface IScheduleService
         string operatorName,
         CancellationToken cancellationToken);
 
+    /// <summary>拖动移动连续工作段（时间平移 + 换工作站）。</summary>
+    Task<MoveScheduleSegmentResult> MoveSegmentAsync(
+        long planId,
+        MoveScheduleSegmentRequest request,
+        long storeId,
+        long operatorUserId,
+        string operatorName,
+        CancellationToken cancellationToken);
+
     Task PublishAsync(
         long planId,
         long storeId,

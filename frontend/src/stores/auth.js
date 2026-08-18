@@ -1,41 +1,91 @@
 import { defineStore } from 'pinia'
+import { ElMessage } from 'element-plus'
 import { login as loginApi, getCurrentUser } from '../api/auth'
+import router from '../router'
 
-// Token 短期有效期（分钟），与后端 Jwt:ExpireMinutes 保持一致
-const TOKEN_TTL_MINUTES = 30
+// 登录超时规则：15 分钟内没有任何操作（鼠标/键盘/触屏/滚动等）自动退出登录
+const IDLE_TIMEOUT_MINUTES = 15
+const IDLE_TIMEOUT_MS = IDLE_TIMEOUT_MINUTES * 60 * 1000
+// 空闲检查周期：后台页签的定时器会被浏览器节流，恢复可见时会立即补检
+const IDLE_CHECK_INTERVAL_MS = 10 * 1000
+
 const STORAGE_KEY_TOKEN = 'shift_token'
 const STORAGE_KEY_ROLE = 'shift_role'
-const STORAGE_KEY_EXPIRES = 'shift_token_expires_at'
+// 旧版本遗留的「固定 30 分钟绝对过期」键，改为无操作超时后不再使用
+const LEGACY_STORAGE_KEY_EXPIRES = 'shift_token_expires_at'
 
-/**
- * 缓存 token 到 localStorage 并记录过期时间。
- * 每次登录/刷新时调用。
- */
-function persistToken(token, role) {
-  const expiresAt = Date.now() + TOKEN_TTL_MINUTES * 60 * 1000
-  localStorage.setItem(STORAGE_KEY_TOKEN, token)
-  localStorage.setItem(STORAGE_KEY_ROLE, role || '')
-  localStorage.setItem(STORAGE_KEY_EXPIRES, String(expiresAt))
+// 最近一次操作时间（仅内存态：刷新页面本身即视为一次操作，重新计时）
+let lastActivityAt = Date.now()
+let idleCheckTimer = null
+
+const ACTIVITY_EVENTS = ['mousedown', 'mousemove', 'keydown', 'touchstart', 'pointerdown', 'scroll', 'wheel']
+
+function touchActivity() {
+  lastActivityAt = Date.now()
+}
+
+function autoLogout() {
+  const store = useAuthStore()
+  if (!store.token) return
+  ElMessage.warning(`您已超过 ${IDLE_TIMEOUT_MINUTES} 分钟未操作，已自动退出登录`)
+  store.logout()
+  if (router.currentRoute.value.path !== '/login') {
+    router.push('/login')
+  }
+}
+
+function checkIdle() {
+  // 页签隐藏时不判定（后台定时器被节流，恢复可见时统一补检）
+  if (document.visibilityState === 'hidden') return
+  const store = useAuthStore()
+  if (!store.token) return
+  if (Date.now() - lastActivityAt >= IDLE_TIMEOUT_MS) {
+    autoLogout()
+  }
+}
+
+function startIdleWatcher() {
+  if (idleCheckTimer) return
+  ACTIVITY_EVENTS.forEach((name) =>
+    window.addEventListener(name, touchActivity, { passive: true })
+  )
+  // 页签从后台恢复可见时立即校验：超时则直接退出，未超时视为回来操作、重新计时
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible') return
+    if (Date.now() - lastActivityAt >= IDLE_TIMEOUT_MS) {
+      autoLogout()
+    } else {
+      touchActivity()
+    }
+  })
+  idleCheckTimer = setInterval(checkIdle, IDLE_CHECK_INTERVAL_MS)
 }
 
 /**
- * 读取已缓存的 token；若已过期则清除并返回空。
+ * 缓存 token 到 localStorage。登录成功后调用。
+ */
+function persistToken(token, role) {
+  localStorage.setItem(STORAGE_KEY_TOKEN, token)
+  localStorage.setItem(STORAGE_KEY_ROLE, role || '')
+  localStorage.removeItem(LEGACY_STORAGE_KEY_EXPIRES)
+  touchActivity()
+}
+
+/**
+ * 读取已缓存的 token；同时清理旧版本遗留的绝对过期时间键。
  */
 function loadToken() {
   const token = localStorage.getItem(STORAGE_KEY_TOKEN)
-  if (!token) return ''
-  const expiresAt = Number(localStorage.getItem(STORAGE_KEY_EXPIRES) || 0)
-  if (expiresAt && Date.now() > expiresAt) {
-    clearStoredAuth()
-    return ''
+  if (token) {
+    localStorage.removeItem(LEGACY_STORAGE_KEY_EXPIRES)
   }
-  return token
+  return token || ''
 }
 
 function clearStoredAuth() {
   localStorage.removeItem(STORAGE_KEY_TOKEN)
   localStorage.removeItem(STORAGE_KEY_ROLE)
-  localStorage.removeItem(STORAGE_KEY_EXPIRES)
+  localStorage.removeItem(LEGACY_STORAGE_KEY_EXPIRES)
 }
 
 export const useAuthStore = defineStore('auth', {
@@ -60,6 +110,7 @@ export const useAuthStore = defineStore('auth', {
       this.user = res.user
       this.role = res.user.role
       persistToken(res.token, res.user.role || '')
+      startIdleWatcher()
       return res
     },
     async fetchCurrentUser() {
@@ -69,8 +120,6 @@ export const useAuthStore = defineStore('auth', {
           throw new Error('用户信息无效')
         }
         this.role = this.user.role
-        // 刷新 token 有效期（当前 token 仍有效，仅刷新过期时间）
-        persistToken(this.token, this.user.role || '')
         return this.user
       } catch (e) {
         // 获取当前用户失败时清除旧状态，避免残留脏数据
@@ -87,3 +136,6 @@ export const useAuthStore = defineStore('auth', {
     }
   }
 })
+
+// 模块加载即启动无操作监听：未登录时 checkIdle 直接跳过，无副作用
+startIdleWatcher()

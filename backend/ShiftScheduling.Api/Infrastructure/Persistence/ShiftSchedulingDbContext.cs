@@ -47,6 +47,8 @@ public sealed class ShiftSchedulingDbContext : DbContext
 
     public DbSet<PeakRestrictedHourEntity> PeakRestrictedHours => Set<PeakRestrictedHourEntity>();
 
+    public DbSet<AiConfigEntity> AiConfigs => Set<AiConfigEntity>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<StoreEntity>(entity =>
@@ -94,6 +96,7 @@ public sealed class ShiftSchedulingDbContext : DbContext
             entity.Property(x => x.MaxWeeklyHours).HasColumnName("max_weekly_hours").HasPrecision(5, 2);
             entity.Property(x => x.Status).HasColumnName("status");
             entity.Property(x => x.IsParttime).HasColumnName("is_parttime");
+            entity.Property(x => x.IsGeneralist).HasColumnName("is_generalist");
             entity.Property(x => x.CreatedAt).HasColumnName("created_at");
             entity.Property(x => x.UpdatedAt).HasColumnName("updated_at");
         });
@@ -196,6 +199,8 @@ public sealed class ShiftSchedulingDbContext : DbContext
             entity.Property(x => x.WorkstationId).HasColumnName("workstation_id");
             entity.Property(x => x.TimeSlot).HasColumnName("time_slot");
             entity.Property(x => x.RequiredCount).HasColumnName("required_count");
+            entity.Property(x => x.IdealCount).HasColumnName("ideal_count");
+            entity.Property(x => x.Remark).HasColumnName("remark").HasMaxLength(200);
             entity.Property(x => x.CreatedAt).HasColumnName("created_at");
             entity.Property(x => x.UpdatedAt).HasColumnName("updated_at");
         });
@@ -355,6 +360,21 @@ public sealed class ShiftSchedulingDbContext : DbContext
             entity.Property(x => x.StoreId).HasColumnName("store_id");
             entity.Property(x => x.StartTime).HasColumnName("start_time");
             entity.Property(x => x.EndTime).HasColumnName("end_time");
+            entity.Property(x => x.Status).HasColumnName("status");
+            entity.Property(x => x.CreatedAt).HasColumnName("created_at");
+            entity.Property(x => x.UpdatedAt).HasColumnName("updated_at");
+        });
+
+        modelBuilder.Entity<AiConfigEntity>(entity =>
+        {
+            entity.ToTable("ai_configs");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Id).HasColumnName("id");
+            entity.Property(x => x.StoreId).HasColumnName("store_id");
+            entity.Property(x => x.Provider).HasColumnName("provider").HasMaxLength(30);
+            entity.Property(x => x.ApiKey).HasColumnName("api_key").HasMaxLength(255);
+            entity.Property(x => x.BaseUrl).HasColumnName("base_url").HasMaxLength(255);
+            entity.Property(x => x.Model).HasColumnName("model").HasMaxLength(80);
             entity.Property(x => x.Status).HasColumnName("status");
             entity.Property(x => x.CreatedAt).HasColumnName("created_at");
             entity.Property(x => x.UpdatedAt).HasColumnName("updated_at");

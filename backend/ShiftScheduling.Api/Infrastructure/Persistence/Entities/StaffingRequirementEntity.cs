@@ -12,7 +12,14 @@ public sealed class StaffingRequirementEntity
 
     public TimeSpan TimeSlot { get; set; }
 
+    /// <summary>最少人数（硬性要求，低于即缺口）。</summary>
     public int RequiredCount { get; set; }
+
+    /// <summary>最好人数（软性目标，尽量达到但不超过硬约束）。</summary>
+    public int IdealCount { get; set; }
+
+    /// <summary>该格备注（如「周五要加人」），可空。</summary>
+    public string? Remark { get; set; }
 
     public DateTime CreatedAt { get; set; }
 

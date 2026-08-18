@@ -159,6 +159,8 @@ CREATE TABLE staffing_requirements (
   workstation_id BIGINT NOT NULL,
   time_slot TIME NOT NULL,
   required_count INT NOT NULL DEFAULT 0,
+  ideal_count INT NOT NULL DEFAULT 0,
+  remark VARCHAR(200) NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   UNIQUE KEY uk_staffing_req (store_id, day_type, workstation_id, time_slot),
@@ -401,7 +403,7 @@ INSERT INTO rule_configs (store_id, rule_key, rule_name, rule_value, value_type,
 (1, 'station_continuity_weight', '工作站连续性权重', '20', 'number', '减少同日频繁换岗', 1);
 
 INSERT INTO date_parameters (store_id, work_date, week_day, day_type, is_legal_holiday, is_holiday_eve)
-SELECT 1, d, DAYOFWEEK(d), CASE WHEN DAYOFWEEK(d) IN (1,7) THEN 'HOLIDAY' ELSE 'WORKDAY' END, 0, CASE WHEN DAYOFWEEK(d) = 6 THEN 1 ELSE 0 END
+SELECT 1, d, DAYOFWEEK(d), CASE WHEN DAYOFWEEK(d) IN (6,7) THEN 'WEEKEND' ELSE 'WORKDAY' END, 0, CASE WHEN DAYOFWEEK(d) = 5 THEN 1 ELSE 0 END
 FROM (
   SELECT DATE('2026-08-01') + INTERVAL seq DAY AS d
   FROM (
@@ -416,18 +418,18 @@ INSERT INTO staffing_requirements (store_id, day_type, workstation_id, time_slot
 SELECT 1, day_type, w.id, time_slot,
   CASE
     WHEN w.code IN ('MANAGER','CLERK_WAREHOUSE','PURCHASE','ENGINEERING','NETWORK') AND time_slot >= '13:00:00' AND time_slot < '22:00:00' THEN 1
-    WHEN w.code = 'KITCHEN' AND time_slot >= '18:00:00' AND time_slot < '23:30:00' THEN CASE WHEN day_type='HOLIDAY' THEN 3 ELSE 2 END
+    WHEN w.code = 'KITCHEN' AND time_slot >= '18:00:00' AND time_slot < '23:30:00' THEN CASE WHEN day_type IN ('HOLIDAY','WEEKEND') THEN 3 ELSE 2 END
     WHEN w.code = 'KITCHEN' AND (time_slot >= '00:00:00' AND time_slot < '03:00:00') THEN 1
-    WHEN w.code IN ('SERVICE','DELIVERY') AND (time_slot >= '19:00:00' AND time_slot < '23:30:00') THEN CASE WHEN day_type='HOLIDAY' THEN 3 ELSE 2 END
-    WHEN w.code IN ('SERVICE','DELIVERY') AND (time_slot >= '00:00:00' AND time_slot < '04:00:00') THEN CASE WHEN day_type='HOLIDAY' THEN 2 ELSE 1 END
-    WHEN w.code IN ('RECEPTION','CUSTOMER_MANAGER') AND (time_slot >= '19:00:00' AND time_slot < '23:30:00') THEN CASE WHEN day_type='HOLIDAY' THEN 2 ELSE 1 END
-    WHEN w.code IN ('INNER_BAR','OUTER_BAR') AND (time_slot >= '18:30:00' AND time_slot < '23:30:00') THEN CASE WHEN day_type='HOLIDAY' THEN 2 ELSE 1 END
+    WHEN w.code IN ('SERVICE','DELIVERY') AND (time_slot >= '19:00:00' AND time_slot < '23:30:00') THEN CASE WHEN day_type IN ('HOLIDAY','WEEKEND') THEN 3 ELSE 2 END
+    WHEN w.code IN ('SERVICE','DELIVERY') AND (time_slot >= '00:00:00' AND time_slot < '04:00:00') THEN CASE WHEN day_type IN ('HOLIDAY','WEEKEND') THEN 2 ELSE 1 END
+    WHEN w.code IN ('RECEPTION','CUSTOMER_MANAGER') AND (time_slot >= '19:00:00' AND time_slot < '23:30:00') THEN CASE WHEN day_type IN ('HOLIDAY','WEEKEND') THEN 2 ELSE 1 END
+    WHEN w.code IN ('INNER_BAR','OUTER_BAR') AND (time_slot >= '18:30:00' AND time_slot < '23:30:00') THEN CASE WHEN day_type IN ('HOLIDAY','WEEKEND') THEN 2 ELSE 1 END
     WHEN w.code IN ('INNER_BAR','OUTER_BAR') AND (time_slot >= '00:00:00' AND time_slot < '04:00:00') THEN 1
     WHEN w.code = 'CLEANING' AND (time_slot >= '21:00:00' AND time_slot < '23:30:00' OR time_slot >= '00:00:00' AND time_slot < '06:00:00') THEN 1
     ELSE 0
   END
 FROM workstations w
-CROSS JOIN (SELECT 'WORKDAY' day_type UNION ALL SELECT 'HOLIDAY') dt
+CROSS JOIN (SELECT 'WORKDAY' day_type UNION ALL SELECT 'WEEKEND' UNION ALL SELECT 'HOLIDAY') dt
 CROSS JOIN (
   SELECT ADDTIME('00:00:00', SEC_TO_TIME(n * 1800)) AS time_slot
   FROM (
@@ -441,6 +443,9 @@ CROSS JOIN (
 ) ts
 WHERE w.store_id = 1;
 
+-- 历史语义：最好人数 = 最少人数（20260819 起支持 (最少,最好) 两档）
+UPDATE staffing_requirements SET ideal_count = required_count WHERE ideal_count = 0;
+
 INSERT INTO audit_logs (store_id, operator_user_id, operator_name, action_type, target_type, target_id, after_content, remark)
 VALUES (1, 1, '系统管理员', 'INIT_DATABASE', 'DATABASE', NULL, '初始化 shift_mvp 数据库、核心表和模拟数据', '数据库初始化脚本执行完成');
 
@@ -451,6 +456,7 @@ VALUES (1, 1, '系统管理员', 'INIT_DATABASE', 'DATABASE', NULL, '初始化 s
 ALTER TABLE workstations ADD COLUMN is_low_skill TINYINT NOT NULL DEFAULT 0 COMMENT '是否低技术含量岗位' AFTER sort_order;
 UPDATE workstations SET is_low_skill = 1 WHERE code IN ('DELIVERY', 'CLEANING', 'SERVICE', 'RECEPTION');
 ALTER TABLE employees ADD COLUMN is_parttime TINYINT NOT NULL DEFAULT 0 COMMENT '是否兼职人员' AFTER max_weekly_hours;
+ALTER TABLE employees ADD COLUMN is_generalist TINYINT NOT NULL DEFAULT 0 COMMENT '是否通岗（楼面低技能岗位通用）' AFTER is_parttime;
 INSERT INTO employees (store_id, employee_no, name, phone, department, hire_date, primary_position, max_weekly_hours, is_parttime, status) VALUES
 (1, 'E101', '兼保洁A', '13900000101', '兼职', '2026-08-01', '保洁岗', 32, 1, 1),
 (1, 'E102', '兼保洁B', '13900000102', '兼职', '2026-08-01', '保洁岗', 32, 1, 1),
@@ -466,3 +472,20 @@ INSERT INTO employee_skills (employee_id, workstation_id, skill_score, is_primar
 SELECT e.id, w.id, CASE WHEN e.primary_position = w.name THEN 4 ELSE 2 END, CASE WHEN e.primary_position = w.name THEN 1 ELSE 0 END, 1
 FROM employees e CROSS JOIN workstations w
 WHERE e.store_id = 1 AND w.store_id = 1 AND e.employee_no LIKE 'E1%' AND w.code IN ('CLEANING', 'RECEPTION', 'DELIVERY', 'SERVICE');
+
+-- ================================================================
+-- AI 文档识别配置（DeepSeek，20260820 并入基线）
+-- ================================================================
+CREATE TABLE IF NOT EXISTS ai_configs (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  store_id BIGINT NOT NULL,
+  provider VARCHAR(30) NOT NULL DEFAULT 'DEEPSEEK',
+  api_key VARCHAR(255) NOT NULL DEFAULT '',
+  base_url VARCHAR(255) NOT NULL DEFAULT 'https://api.deepseek.com',
+  model VARCHAR(80) NOT NULL DEFAULT 'deepseek-chat',
+  status TINYINT NOT NULL DEFAULT 1,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_ai_config_store_provider (store_id, provider),
+  CONSTRAINT fk_ai_config_store FOREIGN KEY (store_id) REFERENCES stores(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

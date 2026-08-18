@@ -28,11 +28,16 @@ public sealed record ShiftTemplateInput(
     int Priority,
     IReadOnlyList<long> WorkstationIds);
 
+/// <summary>
+/// 人数需求输入。RequiredCount = 最少人数（硬性，低于即缺口）；
+/// IdealCount = 最好人数（软性，尽量达到）。IdealCount &lt;= 0 表示与 RequiredCount 相同。
+/// </summary>
 public sealed record StaffingRequirementInput(
     string DayType,
     long WorkstationId,
     TimeSpan TimeSlot,
-    int RequiredCount);
+    int RequiredCount,
+    int IdealCount = -1);
 
 /// <summary>
 /// 已批准请假：排班时该员工在 StartDate~EndDate 内强制视为休息日。
@@ -115,13 +120,28 @@ public sealed record ScheduleIssueOutput(
     long? WorkstationId,
     string Description);
 
+/// <summary>
+/// 需求覆盖统计（按营业日口径：某天凌晨时段按前一天类型取需求）。
+/// DemandMinHours = 最少总需求人·时；DemandIdealHours = 最好总需求人·时；
+/// CoveredHours = 工作站分配实际覆盖的需求人·时（按最少人数截断）；
+/// GapHours = 最少人数未覆盖的缺口人·时。
+/// </summary>
+public sealed record DemandCoverageStats(
+    decimal DemandMinHours,
+    decimal DemandIdealHours,
+    decimal CoveredHours,
+    decimal GapHours,
+    int CoveragePct,
+    int DemandShiftCount);
+
 public sealed record SchedulingOutput(
     IReadOnlyList<RestDayAssignment> RestDays,
     IReadOnlyList<ShiftAssignment> ShiftAssignments,
     IReadOnlyList<WorkstationAssignment> WorkstationAssignments,
     IReadOnlyList<BreakAssignment> BreakAssignments,
     IReadOnlyList<DaySummaryOutput> DaySummaries,
-    IReadOnlyList<ScheduleIssueOutput> Issues);
+    IReadOnlyList<ScheduleIssueOutput> Issues,
+    DemandCoverageStats DemandCoverage);
 
 public static class SchedulingTimeHelper
 {

@@ -24,6 +24,9 @@ public sealed class EmployeeEntity
 
     public int IsParttime { get; set; }
 
+    /// <summary>是否通岗：大部分楼面工作都能做（传送/保洁/咨客/服务等低技能岗位）。</summary>
+    public int IsGeneralist { get; set; }
+
     public DateTime CreatedAt { get; set; }
 
     public DateTime UpdatedAt { get; set; }

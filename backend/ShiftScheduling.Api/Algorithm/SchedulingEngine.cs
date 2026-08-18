@@ -35,24 +35,33 @@ public sealed class SchedulingEngine
         // 已批准请假强制视为休息日，确保请假员工在请假期间不被排班
         var effectiveRestDays = MergeApprovedLeaves(restDays, input);
 
-        // 阶段二：班次分配
-        var shiftAssignments = shiftAllocator.Allocate(input, effectiveRestDays);
+        // 阶段二：班次分配（模板班次 + 按需求缺口自动生成的临时班次 D1/D2…）
+        var generatedTemplates = new List<ShiftTemplateInput>();
+        var shiftAssignments = shiftAllocator.Allocate(input, effectiveRestDays, generatedTemplates);
+
+        // 临时班次并入模板列表，供工作站分配/休息分配/汇总解析班次时间
+        var effectiveInput = generatedTemplates.Count == 0
+            ? input
+            : input with { ShiftTemplates = input.ShiftTemplates.Concat(generatedTemplates).ToList() };
 
         // 阶段三：工作站分配（收集岗位缺口）
         var staffingGaps = new List<ScheduleIssueOutput>();
-        var workstationAssignments = workstationAllocator.Allocate(input, effectiveRestDays, shiftAssignments, staffingGaps);
+        var workstationAssignments = workstationAllocator.Allocate(effectiveInput, effectiveRestDays, shiftAssignments, staffingGaps);
 
         // 阶段四：班中休息分配（30 分钟固定休息：错峰 → 借调 → 告警）
         var breakAllocator = new BreakAllocator();
         var breakIssues = new List<ScheduleIssueOutput>();
-        var breakAssignments = breakAllocator.Allocate(input, shiftAssignments, workstationAssignments, breakIssues);
+        var breakAssignments = breakAllocator.Allocate(effectiveInput, shiftAssignments, workstationAssignments, breakIssues);
 
         // 生成日汇总
-        var daySummaries = BuildDaySummaries(input, effectiveRestDays, shiftAssignments, workstationAssignments);
+        var daySummaries = BuildDaySummaries(effectiveInput, effectiveRestDays, shiftAssignments, workstationAssignments);
 
         // 合规检查（合并岗位缺口、休息告警与合规违规）
-        var complianceIssues = BuildComplianceIssues(input, effectiveRestDays, shiftAssignments, workstationAssignments, daySummaries);
+        var complianceIssues = BuildComplianceIssues(effectiveInput, effectiveRestDays, shiftAssignments, workstationAssignments, daySummaries);
         var issues = staffingGaps.Concat(breakIssues).Concat(complianceIssues).ToList();
+
+        // 需求覆盖统计（按最少人数口径）
+        var demandCoverage = ComputeDemandCoverage(effectiveInput, workstationAssignments, generatedTemplates.Count);
 
         return new SchedulingOutput(
             restDays,
@@ -60,7 +69,61 @@ public sealed class SchedulingEngine
             workstationAssignments,
             breakAssignments,
             daySummaries,
-            issues);
+            issues,
+            demandCoverage);
+    }
+
+    /// <summary>
+    /// 需求覆盖统计：按营业日口径（某天凌晨时段按前一天类型）计算周期内
+    /// 最少/最好需求人·时，以及工作站分配实际覆盖的需求人·时与缺口人·时。
+    /// </summary>
+    private static DemandCoverageStats ComputeDemandCoverage(
+        SchedulingInput input,
+        IReadOnlyList<WorkstationAssignment> workstationAssignments,
+        int demandShiftCount)
+    {
+        var dayTypeByDate = input.DateParameters.ToDictionary(d => d.WorkDate, d => d.DayType);
+        var demandMinHours = 0m;
+        var demandIdealHours = 0m;
+        var coveredHours = 0m;
+        var gapHours = 0m;
+
+        foreach (var date in input.DateParameters
+                     .Where(x => x.WorkDate >= input.StartDate && x.WorkDate <= input.EndDate))
+        {
+            var prevType = dayTypeByDate.GetValueOrDefault(date.WorkDate.AddDays(-1)) ?? date.DayType;
+            var dailyDemand = input.StaffingRequirements
+                .Where(r => r.DayType == (r.TimeSlot < TimeSpan.FromHours(6) ? prevType : date.DayType))
+                .GroupBy(r => (r.WorkstationId, r.TimeSlot))
+                .ToDictionary(
+                    g => g.Key,
+                    g => (Min: g.Max(x => x.RequiredCount), Ideal: g.Max(x => x.IdealCount > 0 ? x.IdealCount : x.RequiredCount)));
+
+            var coverage = workstationAssignments
+                .Where(a => a.WorkDate == date.WorkDate)
+                .GroupBy(a => (a.WorkstationId, a.TimeSlot))
+                .ToDictionary(g => g.Key, g => g.Count());
+
+            foreach (var kv in dailyDemand)
+            {
+                var min = kv.Value.Min;
+                var ideal = kv.Value.Ideal;
+                demandMinHours += min * 0.5m;
+                demandIdealHours += ideal * 0.5m;
+                coverage.TryGetValue(kv.Key, out var actual);
+                coveredHours += Math.Min(actual, min) * 0.5m;
+                gapHours += Math.Max(0, min - actual) * 0.5m;
+            }
+        }
+
+        var coveragePct = demandMinHours > 0 ? (int)Math.Round(coveredHours * 100m / demandMinHours) : 100;
+        return new DemandCoverageStats(
+            Math.Round(demandMinHours, 1),
+            Math.Round(demandIdealHours, 1),
+            Math.Round(coveredHours, 1),
+            Math.Round(gapHours, 1),
+            Math.Clamp(coveragePct, 0, 100),
+            demandShiftCount);
     }
 
     private async Task<SchedulingInput> BuildInputAsync(
@@ -134,7 +197,8 @@ public sealed class SchedulingEngine
                 x.DayType,
                 x.WorkstationId,
                 x.TimeSlot,
-                x.RequiredCount))
+                x.RequiredCount,
+                x.IdealCount > 0 ? x.IdealCount : x.RequiredCount))
             .ToListAsync(cancellationToken);
 
         // 读取已批准请假：请假期间该员工强制休息，不参与排班

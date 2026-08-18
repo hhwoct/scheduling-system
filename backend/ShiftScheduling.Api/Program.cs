@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using ShiftScheduling.Api.Algorithm;
+using ShiftScheduling.Api.Application.Ai;
 using ShiftScheduling.Api.Application.Auth;
 using ShiftScheduling.Api.Application.Common;
 using ShiftScheduling.Api.Application.Employees;
@@ -15,6 +16,7 @@ using ShiftScheduling.Api.Application.PeakHours;
 using ShiftScheduling.Api.Application.RuleConfigs;
 using ShiftScheduling.Api.Application.Schedules;
 using ShiftScheduling.Api.Application.Security;
+using ShiftScheduling.Api.Application.StaffingRequirements;
 using ShiftScheduling.Api.Application.ShiftTemplates;
 using ShiftScheduling.Api.Application.Workstations;
 using ShiftScheduling.Api.Infrastructure;
@@ -41,6 +43,10 @@ builder.Services.AddScoped<IRuleConfigService, RuleConfigService>();
 builder.Services.AddScoped<SchedulingEngine>();
 builder.Services.AddScoped<IScheduleService, ScheduleService>();
 builder.Services.AddScoped<IPeakHourService, PeakHourService>();
+builder.Services.AddScoped<IStaffingRequirementService, StaffingRequirementService>();
+builder.Services.AddScoped<IAiConfigService, AiConfigService>();
+builder.Services.AddScoped<IDocumentAiService, DocumentAiService>();
+builder.Services.AddHttpClient();
 
 var connectionString = builder.Configuration.GetConnectionString("ShiftMvp");
 if (string.IsNullOrWhiteSpace(connectionString))
@@ -405,6 +411,51 @@ api.MapGet("/employees/{employeeId:long}/skills", async (
     return ApiResponse.Ok(result, "获取员工技能成功");
 }).RequireAuthorization("AdminOnly");
 
+// 门店技能等级总览（员工 × 工作站矩阵）
+api.MapGet("/skill-matrix", async (
+    ICurrentUser currentUser,
+    IEmployeeSkillService employeeSkillService,
+    CancellationToken cancellationToken) =>
+{
+    var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
+    var result = await employeeSkillService.GetStoreMatrixAsync(storeId, cancellationToken);
+    return ApiResponse.Ok(result, "获取技能等级总览成功");
+}).RequireAuthorization("AdminOnly");
+
+// 单格技能修改（技能等级总览页；管理员与店长均可操作）
+api.MapPut("/skill-matrix/cell", async (
+    SkillMatrixCellUpdateRequest request,
+    ICurrentUser currentUser,
+    IEmployeeSkillService employeeSkillService,
+    CancellationToken cancellationToken) =>
+{
+    var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
+    var result = await employeeSkillService.UpdateCellAsync(
+        request,
+        storeId,
+        currentUser.UserId ?? 0,
+        currentUser.Nickname ?? currentUser.Username ?? "匿名",
+        cancellationToken);
+    return ApiResponse.Ok(result, "修改技能成功");
+}).RequireAuthorization("AdminOnly");
+
+// 员工通岗设置（管理员/店长）
+api.MapPut("/skill-matrix/generalist", async (
+    SkillMatrixGeneralistRequest request,
+    ICurrentUser currentUser,
+    IEmployeeSkillService employeeSkillService,
+    CancellationToken cancellationToken) =>
+{
+    var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
+    var result = await employeeSkillService.SetGeneralistAsync(
+        request,
+        storeId,
+        currentUser.UserId ?? 0,
+        currentUser.Nickname ?? currentUser.Username ?? "匿名",
+        cancellationToken);
+    return ApiResponse.Ok(result, result.IsGeneralist == 1 ? "已设置通岗" : "已取消通岗");
+}).RequireAuthorization("AdminOnly");
+
 api.MapPut("/employees/{employeeId:long}/skills", async (
     long employeeId,
     EmployeeSkillSaveRequest request,
@@ -596,6 +647,178 @@ api.MapDelete("/peak-restricted-hours/{id:long}", async (
     return ApiResponse.Ok(true, "删除高峰时段成功");
 }).RequireAuthorization("AdminOnly");
 
+// ============ 人数需求配置 ============
+api.MapGet("/staffing-requirements", async (
+    string? dayType,
+    ICurrentUser currentUser,
+    IStaffingRequirementService staffingRequirementService,
+    CancellationToken cancellationToken) =>
+{
+    var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
+    var result = await staffingRequirementService.ListAsync(storeId, dayType, cancellationToken);
+    return ApiResponse.Ok(result, "获取人数需求成功");
+}).RequireAuthorization("AdminOnly");
+
+api.MapPut("/staffing-requirements", async (
+    StaffingRequirementSaveRequest request,
+    ICurrentUser currentUser,
+    IStaffingRequirementService staffingRequirementService,
+    CancellationToken cancellationToken) =>
+{
+    var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
+    var result = await staffingRequirementService.SaveAsync(
+        request,
+        storeId,
+        currentUser.UserId ?? 0,
+        currentUser.Nickname ?? currentUser.Username ?? "匿名",
+        cancellationToken);
+
+    return ApiResponse.Ok(result, "保存人数需求成功");
+}).RequireAuthorization("AdminOnly");
+
+// ============ 人数需求预览（按周期统计） ============
+api.MapGet("/staffing-requirements/preview", async (
+    DateOnly startDate,
+    DateOnly endDate,
+    ICurrentUser currentUser,
+    ShiftSchedulingDbContext dbContext,
+    CancellationToken cancellationToken) =>
+{
+    var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
+    if (startDate > endDate || endDate.DayNumber - startDate.DayNumber > 31)
+    {
+        throw new BusinessException("日期范围无效（开始不能晚于结束，且周期不超过 31 天）", "INVALID_DATE_RANGE");
+    }
+
+    // 需要前一天的日期类型做凌晨归属，从 startDate-1 开始取
+    var dateTypes = await dbContext.DateParameters.AsNoTracking()
+        .Where(x => x.StoreId == storeId && x.WorkDate >= startDate.AddDays(-1) && x.WorkDate <= endDate)
+        .ToDictionaryAsync(x => x.WorkDate, x => x.DayType, cancellationToken);
+
+    var reqs = await dbContext.StaffingRequirements.AsNoTracking()
+        .Where(x => x.StoreId == storeId)
+        .Select(x => new { x.DayType, x.WorkstationId, x.TimeSlot, x.RequiredCount, x.IdealCount })
+        .ToListAsync(cancellationToken);
+
+    var aggregates = new Dictionary<string, (int Days, decimal MinHours, decimal IdealHours, int PeakMin, int PeakIdeal)>
+    {
+        ["WORKDAY"] = (0, 0m, 0m, 0, 0),
+        ["WEEKEND"] = (0, 0m, 0m, 0, 0),
+        ["HOLIDAY"] = (0, 0m, 0m, 0, 0)
+    };
+
+    foreach (var date in Enumerable.Range(0, endDate.DayNumber - startDate.DayNumber + 1)
+                 .Select(i => startDate.AddDays(i)))
+    {
+        var dayType = dateTypes.GetValueOrDefault(date) ?? "WORKDAY";
+        var prevType = dateTypes.GetValueOrDefault(date.AddDays(-1)) ?? dayType;
+
+        // 营业日口径：<06:00 的凌晨时段归前一天类型；只有行的 day_type 与归属类型一致才计入
+        var slotAgg = new Dictionary<(string Type, TimeSpan Slot), (int Min, int Ideal)>();
+        foreach (var r in reqs)
+        {
+            var type = r.TimeSlot < TimeSpan.FromHours(6) ? prevType : dayType;
+            if (r.DayType != type)
+            {
+                continue;
+            }
+
+            var key = (type, r.TimeSlot);
+            slotAgg.TryGetValue(key, out var acc);
+            slotAgg[key] = (acc.Min + r.RequiredCount, acc.Ideal + (r.IdealCount > 0 ? r.IdealCount : r.RequiredCount));
+        }
+
+        foreach (var group in slotAgg.GroupBy(x => x.Key.Type))
+        {
+            var acc = aggregates[group.Key];
+            aggregates[group.Key] = (
+                acc.Days,
+                acc.MinHours + group.Sum(x => x.Value.Min) * 0.5m,
+                acc.IdealHours + group.Sum(x => x.Value.Ideal) * 0.5m,
+                Math.Max(acc.PeakMin, group.Max(x => x.Value.Min)),
+                Math.Max(acc.PeakIdeal, group.Max(x => x.Value.Ideal)));
+        }
+
+        // 各类型营业日天数统计
+        foreach (var t in StaffingDayTypes.All)
+        {
+            if (dayType == t)
+            {
+                var acc = aggregates[t];
+                aggregates[t] = (acc.Days + 1, acc.MinHours, acc.IdealHours, acc.PeakMin, acc.PeakIdeal);
+            }
+        }
+    }
+
+    var byType = aggregates.ToDictionary(
+        kv => kv.Key,
+        kv => new
+        {
+            Days = kv.Value.Days,
+            MinHours = Math.Round(kv.Value.MinHours, 1),
+            IdealHours = Math.Round(kv.Value.IdealHours, 1),
+            PeakMin = kv.Value.PeakMin,
+            PeakIdeal = kv.Value.PeakIdeal
+        });
+
+    return ApiResponse.Ok(new
+    {
+        ByType = byType,
+        TotalMinHours = Math.Round(aggregates.Values.Sum(x => x.MinHours), 1),
+        TotalIdealHours = Math.Round(aggregates.Values.Sum(x => x.IdealHours), 1)
+    }, "获取人数需求预览成功");
+}).RequireAuthorization("AdminOnly");
+
+// ============ AI 文档识别 ============
+api.MapGet("/ai/config", async (
+    ICurrentUser currentUser,
+    IAiConfigService aiConfigService,
+    CancellationToken cancellationToken) =>
+{
+    var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
+    var result = await aiConfigService.GetAsync(storeId, cancellationToken);
+    return ApiResponse.Ok(result, "获取 AI 配置成功");
+}).RequireAuthorization("AdminOnly");
+
+api.MapPut("/ai/config", async (
+    AiConfigSaveRequest request,
+    ICurrentUser currentUser,
+    IAiConfigService aiConfigService,
+    CancellationToken cancellationToken) =>
+{
+    var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
+    var result = await aiConfigService.SaveAsync(
+        request,
+        storeId,
+        currentUser.UserId ?? 0,
+        currentUser.Nickname ?? currentUser.Username ?? "匿名",
+        cancellationToken);
+    return ApiResponse.Ok(result, "保存 AI 配置成功");
+}).RequireAuthorization("AdminOnly");
+
+api.MapPost("/ai/test", async (
+    ICurrentUser currentUser,
+    IDocumentAiService documentAiService,
+    CancellationToken cancellationToken) =>
+{
+    var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
+    var result = await documentAiService.TestAsync(storeId, cancellationToken);
+    return result.Success
+        ? ApiResponse.Ok(result, result.Message)
+        : ApiResponse.Ok(result, "AI 连通性测试未通过");
+}).RequireAuthorization("AdminOnly");
+
+api.MapPost("/ai/parse-requirement-doc", async (
+    AiParseRequest request,
+    ICurrentUser currentUser,
+    IDocumentAiService documentAiService,
+    CancellationToken cancellationToken) =>
+{
+    var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
+    var result = await documentAiService.ParseAsync(storeId, request, cancellationToken);
+    return ApiResponse.Ok(result, "AI 识别完成");
+}).RequireAuthorization("AdminOnly");
+
 // ============ 排班业务 ============
 api.MapPost("/schedules/generate", async (
     GenerateScheduleRequest request,
@@ -719,6 +942,25 @@ api.MapPut("/schedules/{planId:long}/day-status", async (
         cancellationToken);
 
     return ApiResponse.Ok(true, "设置员工休息/上班状态成功");
+}).RequireAuthorization("AdminOnly");
+
+// 拖动移动工作段（时间平移 + 换工作站）
+api.MapPut("/schedules/{planId:long}/move-segment", async (
+    long planId,
+    MoveScheduleSegmentRequest request,
+    ICurrentUser currentUser,
+    IScheduleService scheduleService,
+    CancellationToken cancellationToken) =>
+{
+    var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
+    var result = await scheduleService.MoveSegmentAsync(
+        planId,
+        request,
+        storeId,
+        currentUser.UserId ?? 0,
+        currentUser.Nickname ?? currentUser.Username ?? "匿名",
+        cancellationToken);
+    return ApiResponse.Ok(result, "移动成功");
 }).RequireAuthorization("AdminOnly");
 
 api.MapPut("/schedules/{planId:long}/slot-status", async (
@@ -1870,8 +2112,10 @@ api.MapGet("/schedules/{planId:long}/rationality", async (
     foreach (var date in dates)
     {
         var dayType = dayTypeByDate.GetValueOrDefault(date) ?? "WORKDAY";
+        // 营业日口径：凌晨时段（< 06:00）按前一天的日期类型取需求
+        var prevType = dayTypeByDate.GetValueOrDefault(date.AddDays(-1)) ?? dayType;
         var dailyReqs = requirements
-            .Where(r => r.DayType == dayType)
+            .Where(r => r.DayType == (r.TimeSlot < TimeSpan.FromHours(6) ? prevType : dayType))
             .ToDictionary(r => (r.WorkstationId, r.TimeSlot), r => r.Count);
         var totalDemand = dailyReqs.Values.Sum();
         var covered = 0;

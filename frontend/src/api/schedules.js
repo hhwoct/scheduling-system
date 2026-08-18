@@ -25,6 +25,14 @@ export function getScheduleSummary(planId) {
   return request.get(API_ROUTES.SCHEDULES.SUMMARY(planId)).then(res => res.data)
 }
 
+// 拖动移动工作段（时间平移 + 换工作站）；data 需含 planId
+export function moveScheduleSegment(data) {
+  if (!data || !data.planId) {
+    return Promise.reject(new Error('缺少排班计划 ID，请先在列表中选择计划'))
+  }
+  return request.put(`/schedules/${data.planId}/move-segment`, data).then(res => res.data)
+}
+
 export function adjustSchedule(planId, data) {
   return request.put(API_ROUTES.SCHEDULES.ADJUST(planId), data).then(res => res.data)
 }

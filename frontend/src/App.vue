@@ -13,4 +13,11 @@ html, body, #app {
   padding: 0;
   background-color: #f5f7fa;
 }
+
+/* ============ 全局表格吸附 ============ */
+/* 所有 el-table：表体内部滚动，表头始终可见（显式设置 height/max-height 的表格仍以自身为准） */
+.el-table__body-wrapper {
+  max-height: calc(100vh - 240px);
+  overflow-y: auto;
+}
 </style>
