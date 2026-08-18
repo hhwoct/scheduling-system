@@ -27,10 +27,10 @@ public sealed class CrossDayBreakTests
         {
             if (slot < TimeSpan.FromHours(6))
             {
-                // 次日凌晨：营业日口径应取 HOLIDAY(当日类型)=1（两名在岗冗余 1，可休息）；
-                // 若错误地取 WORKDAY=5，则会判定无人顶岗（旧缺陷）。
-                staffing.Add(new StaffingRequirementInput("HOLIDAY", 8, slot, 1));
-                staffing.Add(new StaffingRequirementInput("WORKDAY", 8, slot, 5));
+                // 次日凌晨：营业日口径应取 HOLIDAY(当日类型) 最少1/最好2（两名在岗满足上限且冗余 1，可休息）；
+                // 若错误地取 WORKDAY 最少5/最好5，则会判定无人顶岗（旧缺陷）。
+                staffing.Add(new StaffingRequirementInput("HOLIDAY", 8, slot, 1, 2));
+                staffing.Add(new StaffingRequirementInput("WORKDAY", 8, slot, 5, 5));
             }
             else
             {

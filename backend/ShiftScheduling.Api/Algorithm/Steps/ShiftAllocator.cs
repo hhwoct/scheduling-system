@@ -111,6 +111,13 @@ public sealed class ShiftAllocator
                         continue;  // 无技能匹配且有需求的工作站时不占用人员
                     }
 
+                    // 单时段人数上限：分配后该工作站在班次窗口内任一【已配置正需求】的时段
+                    // 不得超过「最好人数」，防止整段班次/重叠班次造成单时段人数超过配置。
+                    if (ExceedsCeiling(shift, targetWs.Value, date.WorkDate, coverage, idealRequirements))
+                    {
+                        continue;
+                    }
+
                     assignments.Add(new ShiftAssignment(employee.Id, date.WorkDate, shift.Id, shift.Code, targetWs));
                     assignedToday.Add(employee.Id);
                     MarkBusy(busySlotsByEmployee, employee.Id, shift, date.WorkDate);
@@ -181,6 +188,12 @@ public sealed class ShiftAllocator
                     break;
                 }
 
+                // 单时段人数上限：任一时段超过「最好人数」则跳过（缺口交 D 班次按块回填或上报）
+                if (ExceedsCeiling(bestShift, targetWs.Value, date.WorkDate, coverage, idealRequirements))
+                {
+                    continue;
+                }
+
                 assignments.Add(new ShiftAssignment(employee.Id, date.WorkDate, bestShift.Id, bestShift.Code, targetWs));
                 assignedToday.Add(employee.Id);
                 MarkBusy(busySlotsByEmployee, employee.Id, bestShift, date.WorkDate);
@@ -232,7 +245,8 @@ public sealed class ShiftAllocator
                     periodHours,
                     assignments,
                     generatedTemplates,
-                    busySlotsByEmployee);
+                    busySlotsByEmployee,
+                    idealRequirements);
             }
         }
 
@@ -316,6 +330,31 @@ public sealed class ShiftAllocator
         => busySlotsByEmployee.TryGetValue(employeeId, out var set)
            && ShiftSlots(shift, workDate).Any(p => set.Contains((p.Date, p.Slot)));
 
+    /// <summary>
+    /// 单时段人数上限校验：给员工分配某班次后，目标工作站在班次窗口内的任一
+    /// 已配置正需求的（日历日, 时段）覆盖人数不得超过其「最好人数」上限。
+    /// 未配置/0 需求的时段不约束（允许班次穿行）。
+    /// 目的：防止整段班次按峰值配人与重叠班次叠加，导致单时段人数超过需求配置。
+    /// </summary>
+    private static bool ExceedsCeiling(
+        ShiftTemplateInput shift,
+        long workstationId,
+        DateOnly workDate,
+        IReadOnlyDictionary<DemandKey, int> coverage,
+        IReadOnlyDictionary<DemandKey, int> ceiling)
+    {
+        foreach (var (date, slot) in ShiftSlots(shift, workDate))
+        {
+            var key = new DemandKey(workstationId, date, slot);
+            if (ceiling.TryGetValue(key, out var limit) && coverage.GetValueOrDefault(key) + 1 > limit)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     /// <summary>迭代日 d 的排班窗口：当日全部时段 + 次日凌晨（<06:00，跨天班次可覆盖）。</summary>
     private static bool InWindow(DateOnly keyDate, TimeSpan slot, DateOnly date)
         => keyDate == date || (keyDate == date.AddDays(1) && slot < TimeSpan.FromHours(6));
@@ -347,7 +386,8 @@ public sealed class ShiftAllocator
         Dictionary<long, decimal> periodHours,
         List<ShiftAssignment> assignments,
         List<ShiftTemplateInput> generatedTemplates,
-        Dictionary<long, HashSet<(DateOnly Date, TimeSpan Slot)>> busySlotsByEmployee)
+        Dictionary<long, HashSet<(DateOnly Date, TimeSpan Slot)>> busySlotsByEmployee,
+        IReadOnlyDictionary<DemandKey, int> idealRequirements)
     {
         // 只取【当天日历日】的缺口时段
         var gapSlots = remaining
@@ -417,7 +457,7 @@ public sealed class ShiftAllocator
             var usedThisBlock = 0;
             while (BlockHasDemand(block.Start, block.EndExclusive, remaining, workDate) && usedThisBlock < MaxDemandShiftHeadcount)
             {
-                var candidate = workingEmployees
+                var orderedCandidates = workingEmployees
                     .Where(e => !assignedToday.Contains(e.Id))
                     .Where(e => !HasOverlap(busySlotsByEmployee, e.Id, template, workDate))
                     .Where(e => weeklyHours.GetValueOrDefault(e.Id) < input.MaxWeeklyHours)
@@ -426,15 +466,30 @@ public sealed class ShiftAllocator
                     .ThenByDescending(e => e.IsParttime == 1 ? periodHours.GetValueOrDefault(e.Id) : 0m)
                     .ThenByDescending(e => SkillCoverage(e.Id, template, skillsByEmployee) * 100 + MaxSkillScore(e.Id, template, skillsByEmployee))
                     .ThenBy(e => e.IsParttime == 1 ? 0m : weeklyHours.GetValueOrDefault(e.Id))
-                    .FirstOrDefault();
+                    .ToList();
 
-                if (candidate is null)
+                // 选第一个「选得到工作站且不超过该时段最好人数上限」的候选人，避免整块因上限被放弃
+                EmployeeInput? candidate = null;
+                long? targetWs = null;
+                foreach (var e in orderedCandidates)
                 {
+                    var ws = SelectWorkstation(e.Id, template, workDate, remaining, skillsByEmployee, input.LowSkillWorkstationIds);
+                    if (ws is null)
+                    {
+                        continue;
+                    }
+
+                    if (ExceedsCeiling(template, ws.Value, workDate, coverage, idealRequirements))
+                    {
+                        continue;
+                    }
+
+                    candidate = e;
+                    targetWs = ws;
                     break;
                 }
 
-                var targetWs = SelectWorkstation(candidate.Id, template, workDate, remaining, skillsByEmployee, input.LowSkillWorkstationIds);
-                if (targetWs is null)
+                if (candidate is null || targetWs is null)
                 {
                     break;
                 }
