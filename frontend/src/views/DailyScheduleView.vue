@@ -30,7 +30,7 @@
 
       <div v-loading="loading" class="matrix-wrap">
         <div class="matrix">
-          <!-- 表头：时间轴（13:00 为原点，跨天到次日 06:00） -->
+          <!-- 表头：时间轴（13:00 为原点，跨天到次日 05:30） -->
           <div class="m-row m-header">
             <div class="m-ws-col">工作站</div>
             <div v-for="slot in slots" :key="slot.key" class="m-slot-col" :title="slot.display">
@@ -58,7 +58,7 @@
       </div>
 
       <div style="margin-top: 12px; display: flex; gap: 16px; align-items: center; flex-wrap: wrap">
-        <span style="font-size: 12px; color: #909399">色块从上到下：名字 / 班次 / 职位；时间轴从当日 13:00 到次日 06:00（+1 表示次日）</span>
+        <span style="font-size: 12px; color: #909399">色块从上到下：名字 / 班次 / 职位；时间轴从当日 13:00 到次日 05:30（+1 表示次日，覆盖 06:00 下班的班次）</span>
         <el-tag size="small" type="warning">次日</el-tag>
         <el-tag size="small" type="danger">缺</el-tag>
         <span style="font-size: 12px; color: #909399">该工作站该时段存在岗位缺口</span>
@@ -84,8 +84,8 @@ const rows = ref([])
 const issues = ref([])
 const errorMsg = ref('')
 
-// 时间轴：13:00 为原点，每 30 分钟一段，共 35 段（到次日 06:00，覆盖凌晨下班的班次）
-const SLOT_COUNT = 35
+// 时间轴：13:00 为原点，每 30 分钟一段，共 34 段（13:00~次日 05:30，覆盖 06:00 下班的班次；后端时段为左闭右开区间）
+const SLOT_COUNT = 34
 const slots = computed(() => {
   const list = []
   const startMin = 13 * 60
@@ -100,8 +100,52 @@ const slots = computed(() => {
   return list
 })
 
+// 日期 + N 天
+function addDays(dateStr, days) {
+  if (!dateStr) return ''
+  const d = new Date(dateStr + 'T00:00:00')
+  d.setDate(d.getDate() + days)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+// 预计算：员工行按 工作站|时段 建立索引，避免模板内反复 O(n) 扫描
+const cellUserMap = computed(() => {
+  const map = new Map()
+  for (const r of rows.value) {
+    if (!r.workstationName) continue
+    const hm = String(r.timeSlot).substring(0, 5)
+    const key = r.workstationName + '|' + hm
+    if (!map.has(key)) map.set(key, [])
+    map.get(key).push(r)
+  }
+  return map
+})
+
+// 预计算：岗位缺口按 工作站|日期|时段 建立索引
+const gapIssueMap = computed(() => {
+  const map = new Map()
+  for (const i of issues.value) {
+    if (i.issueType !== 'STAFFING_GAP') continue
+    const date = String(i.workDate || '').substring(0, 10)
+    const hm = i.timeSlot ? String(i.timeSlot).substring(0, 5) : ''
+    const key = i.workstationName + '|' + date + '|' + hm
+    if (!map.has(key)) map.set(key, [])
+    map.get(key).push(i)
+  }
+  return map
+})
+
+// 工作站列表：来自员工行，并补充当日/次日存在岗位缺口的站点（完全无人排班的站点也能显示）
 const workstations = computed(() => {
   const set = new Set(rows.value.map(r => r.workstationName).filter(Boolean))
+  if (workDate.value) {
+    const nextDay = addDays(workDate.value, 1)
+    for (const i of issues.value) {
+      if (i.issueType !== 'STAFFING_GAP' || !i.workstationName) continue
+      const d = String(i.workDate || '').substring(0, 10)
+      if (d === workDate.value || d === nextDay) set.add(i.workstationName)
+    }
+  }
   return Array.from(set)
 })
 
@@ -111,11 +155,7 @@ const summaryIssues = computed(() => issues.value.filter(i => i.workDate == null
 function isHour(slot) { return slot.key.endsWith(':00') }
 
 function cellUsers(ws, slot) {
-  return rows.value.filter(r => {
-    if (r.workstationName !== ws) return false
-    const hm = String(r.timeSlot).substring(0, 5)
-    return hm === slot.key
-  })
+  return cellUserMap.value.get(ws + '|' + slot.key) || []
 }
 
 // 该员工在该时段是否处于班中休息（含跨午夜回绕）
@@ -138,14 +178,10 @@ function breakTip(row) {
     : `休息 ${s}-${e}`
 }
 
-// 该格子对应的岗位缺口（按 日期+工作站+时段 匹配）
+// 该格子对应的岗位缺口（按 日期+工作站+时段 匹配；次日格日期 +1）
 function slotIssues(ws, slot) {
-  return issues.value.filter(i =>
-    i.issueType === 'STAFFING_GAP' &&
-    i.workDate === workDate.value &&
-    i.workstationName === ws &&
-    i.timeSlot && String(i.timeSlot).substring(0, 5) === slot.key
-  )
+  const date = slot.isNextDay ? addDays(workDate.value, 1) : workDate.value
+  return gapIssueMap.value.get(ws + '|' + date + '|' + slot.key) || []
 }
 
 function cellClass(ws, slot) {
@@ -169,9 +205,15 @@ async function loadData() {
   loading.value = true
   errorMsg.value = ''
   try {
-    rows.value = await getDailyView(planId.value, workDate.value)
-    issues.value = await getScheduleIssues(planId.value)
+    const [r, iss] = await Promise.all([
+      getDailyView(planId.value, workDate.value),
+      getScheduleIssues(planId.value)
+    ])
+    rows.value = r || []
+    issues.value = iss || []
   } catch (e) {
+    rows.value = []
+    issues.value = []
     errorMsg.value = '查询失败：' + (e.message || '网络错误')
   } finally {
     loading.value = false

@@ -49,7 +49,7 @@
         </el-table-column>
         <el-table-column label="跨天" width="80">
           <template #default="{ row }">
-            <el-tag :type="row.isCrossDay === 1 ? 'warning' : 'info'">{{ row.isCrossDay === 1 ? '是' : '否' }}</el-tag>
+            <el-tag :type="isCrossDayShift(row.startTime, row.endTime) ? 'warning' : 'info'">{{ isCrossDayShift(row.startTime, row.endTime) ? '是' : '否' }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column prop="priority" label="优先级" width="80" />
@@ -187,13 +187,18 @@ function toMinutes(t) {
   return parseInt(parts[0]) * 60 + parseInt(parts[1])
 }
 
-// P3-31: 自动检测跨天，不依赖 isCrossDay 标志
+// 统一跨天判定：结束时间严格早于开始时间；start==end 视为 0 时长而非跨天
+function isCrossDayShift(startTime, endTime) {
+  if (!startTime || !endTime) return false
+  return toMinutes(endTime) < toMinutes(startTime)
+}
+
+// 甘特图横条：统一用 isCrossDayShift 判定跨天，不依赖 isCrossDay 标志
 function barStyle(shift) {
   let startMin = toMinutes(shift.startTime)
   let endMin = toMinutes(shift.endTime)
 
-  // 自动检测跨天（结束时间 <= 开始时间视为跨天）
-  if (endMin <= startMin) {
+  if (isCrossDayShift(shift.startTime, shift.endTime)) {
     endMin += 24 * 60
   }
 

@@ -5,7 +5,7 @@
         <el-card shadow="hover">
           <div class="stat-value">{{ stats.employeeCount ?? '--' }}</div>
           <div class="stat-label">员工数量</div>
-          <div class="stat-sub-label">{{ stats.fullTimeCount != null ? `${stats.fullTimeCount}全职 + ${stats.partTimeCount}兼职` : '' }}</div>
+          <div class="stat-sub-label">{{ stats.fullTimeCount != null && stats.partTimeCount != null ? `${stats.fullTimeCount}全职 + ${stats.partTimeCount}兼职` : '' }}</div>
         </el-card>
       </el-col>
       <el-col :span="8">

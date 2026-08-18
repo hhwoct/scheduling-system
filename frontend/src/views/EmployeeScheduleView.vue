@@ -59,20 +59,21 @@
             </template>
           </el-table-column>
         </el-table>
-        <el-alert v-if="false" :closable="false" style="display: none" />
-        <div v-if="plan.covers && plan.covers.length" class="cover-list">
-          <div class="cover-title">我顶岗的记录</div>
-          <el-table :data="plan.covers" border stripe size="small" max-height="200" style="margin-top: 6px">
-            <el-table-column prop="workDate" label="日期" width="120" />
-            <el-table-column label="时段" width="130">
-              <template #default="{ row }">{{ fmtTime(row.breakStartTime) }}-{{ fmtTime(row.breakEndTime) }}</template>
-            </el-table-column>
-            <el-table-column prop="workstationName" label="顶岗岗位" width="120">
-              <template #default="{ row }">{{ row.workstationName || '--' }}</template>
-            </el-table-column>
-            <el-table-column prop="forEmployeeName" label="替谁顶岗" />
-          </el-table>
-        </div>
+      </div>
+
+      <!-- 顶岗记录：独立于具体计划，全局展示 -->
+      <div v-if="covers.length" class="cover-list">
+        <div class="cover-title">我顶岗的记录</div>
+        <el-table :data="covers" border stripe size="small" max-height="200" style="margin-top: 6px">
+          <el-table-column prop="workDate" label="日期" width="120" />
+          <el-table-column label="时段" width="130">
+            <template #default="{ row }">{{ fmtTime(row.breakStartTime) }}-{{ fmtTime(row.breakEndTime) }}</template>
+          </el-table-column>
+          <el-table-column prop="workstationName" label="顶岗岗位" width="120">
+            <template #default="{ row }">{{ row.workstationName || '--' }}</template>
+          </el-table-column>
+          <el-table-column prop="forEmployeeName" label="替谁顶岗" />
+        </el-table>
       </div>
     </el-card>
   </div>
@@ -93,6 +94,7 @@ const employeeNo = ref(route.query.employeeNo || localStorage.getItem('shift_pre
 const loading = ref(false)
 const employee = ref(null)
 const plans = ref([])
+const covers = ref([])
 const errorMsg = ref('')
 const now = new Date()
 const month = ref(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`)
@@ -118,13 +120,12 @@ async function loadData() {
   try {
     const data = await getMySchedule(month.value, employeeNo.value || undefined)
     employee.value = data.employee
-    // 顶岗记录挂在第一个计划下展示（covers 为全局记录）
-    const planList = data.plans || []
-    if (planList.length && data.covers && data.covers.length) {
-      planList[0] = { ...planList[0], covers: data.covers }
-    }
-    plans.value = planList
+    plans.value = data.plans || []
+    covers.value = data.covers || []
   } catch (e) {
+    employee.value = null
+    plans.value = []
+    covers.value = []
     errorMsg.value = '查询失败：' + (e.message || '网络错误')
   } finally {
     loading.value = false

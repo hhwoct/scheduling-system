@@ -65,18 +65,21 @@ import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { getMySwaps, submitSwap, getSwapCandidates } from '../api/swap'
 import { getSwapPlans } from '../api/schedules'
+import { useAuthStore } from '../stores/auth'
 
 const route = useRoute()
-const employeeNo = computed(() => route.query.employeeNo || localStorage.getItem('shift_preview_employee_no') || '')
+const authStore = useAuthStore()
+// 普通员工身份一律取当前登录身份；管理员预览仅非员工角色可通过 query/localStorage 指定目标
+const employeeNo = computed(() => {
+  if (authStore.role === 'EMPLOYEE') return authStore.user?.employeeNo || ''
+  return route.query.employeeNo || localStorage.getItem('shift_preview_employee_no') || ''
+})
 const form = reactive({ planId: null, swapDate: '', targetEmployeeId: null, reason: '' })
 const mine = ref([])
 const plans = ref([])
 const candidates = ref([])
 const loading = ref(false)
 const submitting = ref(false)
-
-const TODAY0 = new Date()
-TODAY0.setHours(0, 0, 0, 0)
 
 function statusName(s) {
   return { PENDING: '待审批', APPROVED: '已批准', REJECTED: '已驳回' }[s] || s
@@ -86,7 +89,10 @@ function statusType(s) {
 }
 
 function disabledDate(d) {
-  if (d < TODAY0) return true
+  // 每次计算当天零点，避免跨午夜后日期选择器用旧值
+  const today0 = new Date()
+  today0.setHours(0, 0, 0, 0)
+  if (d < today0) return true
 
   const plan = plans.value.find(p => p.id === form.planId)
   if (plan) {
@@ -108,17 +114,23 @@ async function loadPlans() {
   }
 }
 
+// 请求序号：仅应用最新一次响应，避免并发乱序覆盖
+let candidatesSeq = 0
+
 async function loadCandidates() {
   if (!form.planId || !form.swapDate) {
     candidates.value = []
     form.targetEmployeeId = null
     return
   }
+  const seq = ++candidatesSeq
   try {
     const data = await getSwapCandidates(form.planId, form.swapDate)
+    if (seq !== candidatesSeq) return
     candidates.value = data || []
     form.targetEmployeeId = null
   } catch (e) {
+    if (seq !== candidatesSeq) return
     console.error('加载换班同事失败', e)
     ElMessage.error('加载换班同事失败：' + (e?.message || e?.toString?.() || '未知错误'))
     candidates.value = []

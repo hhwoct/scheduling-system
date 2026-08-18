@@ -6,22 +6,7 @@
           <span>审计日志</span>
           <div style="display: flex; gap: 8px; align-items: center">
             <el-select v-model="actionType" placeholder="操作类型" clearable style="width: 180px">
-              <el-option label="登录" value="LOGIN" />
-              <el-option label="新增员工" value="CREATE_EMPLOYEE" />
-              <el-option label="编辑员工" value="UPDATE_EMPLOYEE" />
-              <el-option label="停用员工" value="DEACTIVATE_EMPLOYEE" />
-              <el-option label="保存技能" value="SAVE_EMPLOYEE_SKILLS" />
-              <el-option label="编辑工作站" value="UPDATE_WORKSTATION" />
-              <el-option label="编辑班次" value="UPDATE_SHIFT_TEMPLATE" />
-              <el-option label="修改规则" value="UPDATE_RULE_CONFIG" />
-              <el-option label="生成排班" value="GENERATE_SCHEDULE" />
-              <el-option label="调整排班" value="ADJUST_SCHEDULE" />
-              <el-option label="发布排班" value="PUBLISH_SCHEDULE" />
-              <el-option label="新增工作站" value="CREATE_WORKSTATION" />
-              <el-option label="提交请假" value="CREATE_LEAVE" />
-              <el-option label="审批请假" value="REVIEW_LEAVE" />
-              <el-option label="提交换班" value="CREATE_SWAP" />
-              <el-option label="审批换班" value="REVIEW_SWAP" />
+              <el-option v-for="opt in actionOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
             </el-select>
             <el-date-picker
               v-model="dateRange"
@@ -36,8 +21,6 @@
           </div>
         </div>
       </template>
-
-      <el-alert v-if="errorMsg" :title="errorMsg" type="warning" :closable="false" style="margin-bottom: 12px" />
 
       <el-table :data="list" v-loading="loading" border stripe>
         <el-table-column label="操作时间" width="200" show-overflow-tooltip>
@@ -76,7 +59,6 @@ const page = ref(1)
 const pageSize = 20
 const actionType = ref('')
 const dateRange = ref(null)
-const errorMsg = ref('')
 
 // P3-25: 请求序号防止旧响应覆盖
 let requestSeq = 0
@@ -104,11 +86,13 @@ function actionName(type) {
   return actionNames[type] || type
 }
 
+// 单一数据源派生筛选选项，供下拉框 v-for
+const actionOptions = Object.entries(actionNames).map(([value, label]) => ({ value, label }))
+
 async function loadData(current = 1) {
   const seq = ++requestSeq
   page.value = current
   loading.value = true
-  errorMsg.value = ''
   try {
     const params = { page: page.value, pageSize }
     if (actionType.value) params.actionType = actionType.value
@@ -123,9 +107,7 @@ async function loadData(current = 1) {
       total.value = res.total
     }
   } catch (e) {
-    if (seq === requestSeq) {
-      errorMsg.value = '查询失败：' + (e.message || '网络错误')
-    }
+    // 错误提示由响应拦截器统一处理
   } finally {
     if (seq === requestSeq) {
       loading.value = false

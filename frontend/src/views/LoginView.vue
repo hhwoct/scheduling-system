@@ -38,6 +38,14 @@
         <el-form-item label="手机号" prop="verifyInfo">
           <el-input v-model="forgotForm.verifyInfo" placeholder="请输入注册手机号" />
         </el-form-item>
+        <el-form-item label="验证码" prop="otpCode">
+          <div class="otp-row">
+            <el-input v-model="forgotForm.otpCode" placeholder="6 位验证码" maxlength="6" />
+            <el-button :disabled="otpCountdown > 0" :loading="otpSending" @click="sendOtp">
+              {{ otpCountdown > 0 ? otpCountdown + 's' : '获取验证码' }}
+            </el-button>
+          </div>
+        </el-form-item>
         <el-form-item label="新密码" prop="newPassword">
           <el-input v-model="forgotForm.newPassword" type="password" show-password placeholder="至少 8 位，含大小写和数字" />
         </el-form-item>
@@ -54,12 +62,12 @@
 </template>
 
 <script setup>
-import { reactive, ref } from 'vue'
+import { onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { User, Lock } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
-import { forgotPassword } from '../api/auth'
+import { forgotPassword, sendResetOtp } from '../api/auth'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -94,13 +102,65 @@ const forgotFormRef = ref()
 const forgotForm = reactive({
   username: '',
   verifyInfo: '',
+  otpCode: '',
   newPassword: '',
   confirmPassword: ''
 })
 
+// 验证码发送状态与倒计时
+const otpSending = ref(false)
+const otpCountdown = ref(0)
+let otpTimer = null
+
+function stopOtpTimer() {
+  if (otpTimer) {
+    clearInterval(otpTimer)
+    otpTimer = null
+  }
+  otpCountdown.value = 0
+}
+
+// 用户名变化后旧验证码作废（OTP 按用户名+手机号绑定）
+watch(() => forgotForm.username, () => {
+  forgotForm.otpCode = ''
+})
+
+// 关闭弹窗时停止倒计时
+watch(forgotVisible, (visible) => {
+  if (!visible) stopOtpTimer()
+})
+
+onBeforeUnmount(stopOtpTimer)
+
+async function sendOtp() {
+  if (!forgotForm.username.trim()) {
+    ElMessage.warning('请先输入用户名')
+    return
+  }
+  otpSending.value = true
+  try {
+    await sendResetOtp({ username: forgotForm.username.trim() })
+    ElMessage.success('验证码已发送，10 分钟内有效')
+    stopOtpTimer()
+    otpCountdown.value = 60
+    otpTimer = setInterval(() => {
+      otpCountdown.value -= 1
+      if (otpCountdown.value <= 0) stopOtpTimer()
+    }, 1000)
+  } catch (e) {
+    // 错误提示由响应拦截器统一处理
+  } finally {
+    otpSending.value = false
+  }
+}
+
 const forgotRules = {
   username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
   verifyInfo: [{ required: true, message: '请输入注册手机号', trigger: 'blur' }],
+  otpCode: [
+    { required: true, message: '请输入验证码', trigger: 'blur' },
+    { pattern: /^\d{6}$/, message: '验证码为 6 位数字', trigger: 'blur' }
+  ],
   newPassword: [
     { required: true, message: '请输入新密码', trigger: 'blur' },
     {
@@ -124,8 +184,10 @@ const forgotRules = {
 function openForgot() {
   forgotForm.username = form.username || ''
   forgotForm.verifyInfo = ''
+  forgotForm.otpCode = ''
   forgotForm.newPassword = ''
   forgotForm.confirmPassword = ''
+  stopOtpTimer()
   forgotVisible.value = true
 }
 
@@ -140,6 +202,7 @@ async function handleForgotPassword() {
     await forgotPassword({
       username: forgotForm.username,
       verifyInfo: forgotForm.verifyInfo,
+      otpCode: forgotForm.otpCode.trim(),
       newPassword: forgotForm.newPassword,
       confirmPassword: forgotForm.confirmPassword
     })
@@ -147,6 +210,8 @@ async function handleForgotPassword() {
     forgotVisible.value = false
     form.username = forgotForm.username
     form.password = ''
+  } catch (e) {
+    // 错误提示由响应拦截器统一处理
   } finally {
     forgotLoading.value = false
   }
@@ -175,5 +240,13 @@ async function handleForgotPassword() {
 .forgot-password {
   text-align: right;
   margin-top: -8px;
+}
+.otp-row {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+}
+.otp-row .el-button {
+  flex-shrink: 0;
 }
 </style>

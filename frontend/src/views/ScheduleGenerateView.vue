@@ -20,7 +20,7 @@
           <el-input v-model="planName" placeholder="留空自动生成" />
         </el-form-item>
         <el-form-item>
-          <el-button type="primary" :loading="generating" @click="handleGenerate">生成排班</el-button>
+          <el-button type="primary" :loading="generating" :disabled="generating" @click="handleGenerate">生成排班</el-button>
         </el-form-item>
       </el-form>
 
@@ -208,6 +208,7 @@ watch([scheduleMode, refDate], refreshRange, { immediate: true })
 watch([startDate, endDate], loadPreview)
 
 async function handleGenerate() {
+  if (generating.value) return
   if (!startDate.value || !endDate.value) {
     ElMessage.warning('请先选择排班方式，系统会自动计算日期范围')
     return
@@ -221,6 +222,8 @@ async function handleGenerate() {
     })
     ElMessage.success('排班生成成功')
     loadPlans(1)
+  } catch (e) {
+    /* 拦截器已提示 */
   } finally {
     generating.value = false
   }
@@ -236,13 +239,19 @@ async function loadPlans(current = 1) {
     const res = await getSchedules({ page: page.value, pageSize })
     plans.value = res.items
     plansTotal.value = res.total
+  } catch (e) {
+    /* 拦截器已提示 */
   } finally {
     plansLoading.value = false
   }
 }
 
 async function handlePublish(row) {
-  await ElMessageBox.confirm('确定发布排班 ' + row.planName + ' 吗？', '提示', { type: 'warning' })
+  try {
+    await ElMessageBox.confirm('确定发布排班 ' + row.planName + ' 吗？', '提示', { type: 'warning' })
+  } catch {
+    return
+  }
 
   // 检查排班是否存在 ERROR 严重问题（如真实高技能岗位缺口）
   let hasError = false
@@ -251,7 +260,9 @@ async function handlePublish(row) {
     const list = Array.isArray(issues) ? issues : (issues?.items || [])
     hasError = list.some(i => i.severity === 'ERROR')
   } catch (e) {
-    // 查询失败不阻塞发布
+    // 区分"检查失败"与"无错误"：无法确认时中止发布，避免 fail-open
+    ElMessage.error('问题检查失败，已中止发布：' + (e?.message || '网络错误'))
+    return
   }
 
   if (hasError) {
@@ -267,7 +278,12 @@ async function handlePublish(row) {
       return // 用户取消强制发布
     }
   } else {
-    await publishSchedule(row.id, false)
+    try {
+      await publishSchedule(row.id, false)
+    } catch (e) {
+      /* 拦截器已提示 */
+      return
+    }
   }
 
   ElMessage.success('发布成功')
@@ -275,10 +291,18 @@ async function handlePublish(row) {
 }
 
 async function handleDelete(row) {
-  await ElMessageBox.confirm('确定删除排班计划「' + row.planName + '」吗？删除后明细、汇总、问题将一并移除，且不可恢复。', '删除确认', { type: 'warning' })
-  await deleteSchedule(row.id)
-  ElMessage.success('删除成功')
-  loadPlans(page.value)
+  try {
+    await ElMessageBox.confirm('确定删除排班计划「' + row.planName + '」吗？删除后明细、汇总、问题将一并移除，且不可恢复。', '删除确认', { type: 'warning' })
+  } catch {
+    return
+  }
+  try {
+    await deleteSchedule(row.id)
+    ElMessage.success('删除成功')
+    loadPlans(page.value)
+  } catch (e) {
+    /* 拦截器已提示 */
+  }
 }
 
 onMounted(() => loadPlans(1))

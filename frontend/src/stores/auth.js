@@ -44,25 +44,40 @@ function checkIdle() {
   }
 }
 
+function onVisibilityChange() {
+  if (document.visibilityState !== 'visible') return
+  if (Date.now() - lastActivityAt >= IDLE_TIMEOUT_MS) {
+    autoLogout()
+  } else {
+    touchActivity()
+  }
+}
+
 function startIdleWatcher() {
   if (idleCheckTimer) return
   ACTIVITY_EVENTS.forEach((name) =>
     window.addEventListener(name, touchActivity, { passive: true })
   )
   // 页签从后台恢复可见时立即校验：超时则直接退出，未超时视为回来操作、重新计时
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState !== 'visible') return
-    if (Date.now() - lastActivityAt >= IDLE_TIMEOUT_MS) {
-      autoLogout()
-    } else {
-      touchActivity()
-    }
-  })
+  document.addEventListener('visibilitychange', onVisibilityChange)
   idleCheckTimer = setInterval(checkIdle, IDLE_CHECK_INTERVAL_MS)
+}
+
+function stopIdleWatcher() {
+  if (idleCheckTimer) {
+    clearInterval(idleCheckTimer)
+    idleCheckTimer = null
+  }
+  ACTIVITY_EVENTS.forEach((name) =>
+    window.removeEventListener(name, touchActivity)
+  )
+  document.removeEventListener('visibilitychange', onVisibilityChange)
 }
 
 /**
  * 缓存 token 到 localStorage。登录成功后调用。
+ * 安全说明：localStorage 存在 XSS 窃取风险；根治方案需后端配合改用
+ * HttpOnly + SameSite Cookie 并引入 CSRF 防护，前端现有流程保持不变。
  */
 function persistToken(token, role) {
   localStorage.setItem(STORAGE_KEY_TOKEN, token)
@@ -122,8 +137,10 @@ export const useAuthStore = defineStore('auth', {
         this.role = this.user.role
         return this.user
       } catch (e) {
-        // 获取当前用户失败时清除旧状态，避免残留脏数据
-        this.logout()
+        // 仅明确会话失效（401）才登出；瞬时网络错误/5xx 保留会话
+        if (e?.status === 401) {
+          this.logout()
+        }
         throw e
       }
     },
@@ -133,9 +150,16 @@ export const useAuthStore = defineStore('auth', {
       this.store = null
       this.role = ''
       clearStoredAuth()
+      stopIdleWatcher()
     }
   }
 })
 
 // 模块加载即启动无操作监听：未登录时 checkIdle 直接跳过，无副作用
 startIdleWatcher()
+
+// 401 时清空 Pinia 内存态（request 拦截器清除 localStorage 后派发该事件）
+window.addEventListener('auth:unauthorized', () => {
+  const store = useAuthStore()
+  if (store.token) store.logout()
+})

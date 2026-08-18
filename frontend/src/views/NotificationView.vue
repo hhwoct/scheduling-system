@@ -44,7 +44,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { getNotifications, getUnreadCount, markAsRead, markAllAsRead } from '../api/notifications'
@@ -79,7 +79,9 @@ function typeName(t) {
 
 function fmtTime(t) {
   if (!t) return ''
-  return String(t).replace('T', ' ').substring(0, 19)
+  const d = new Date(t)
+  if (Number.isNaN(d.getTime())) return ''
+  return d.toLocaleString()
 }
 
 async function loadData() {
@@ -119,6 +121,12 @@ async function handleReadAll() {
 }
 
 onMounted(loadData)
+
+// query/localStorage 切换预览员工时，重置页码并重载
+watch(employeeNo, () => {
+  page.value = 1
+  loadData()
+})
 </script>
 
 <style scoped>

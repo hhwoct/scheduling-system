@@ -78,15 +78,20 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getMyLeaves, submitLeave, earlyReturnLeave } from '../api/leave'
+import { useAuthStore } from '../stores/auth'
 
 const route = useRoute()
-const employeeNo = computed(() => route.query.employeeNo || localStorage.getItem('shift_preview_employee_no') || '')
+const authStore = useAuthStore()
+// 普通员工身份一律取当前登录身份；管理员预览仅非员工角色可通过 query/localStorage 指定目标
+const employeeNo = computed(() => {
+  if (authStore.role === 'EMPLOYEE') return authStore.user?.employeeNo || ''
+  return route.query.employeeNo || localStorage.getItem('shift_preview_employee_no') || ''
+})
 const form = reactive({ leaveType: 'PERSONAL', startDate: '', endDate: '', reason: '' })
 const mine = ref([])
 const loading = ref(false)
 const submitting = ref(false)
 const errorMsg = ref('')
-const isPreview = computed(() => !!employeeNo.value)
 
 // 请假日期范围：不能早于今天，不能晚于 30 天后
 const TODAY0 = new Date()
@@ -151,16 +156,18 @@ async function handleSubmit() {
     ElMessage.warning('请假开始日期不能早于今天')
     return
   }
-  if (form.startDate > formatDate(MAX_DATE)) {
+  if (form.startDate > formatDate(MAX_DATE) || form.endDate > formatDate(MAX_DATE)) {
     ElMessage.warning('请假日期不能晚于 30 天后')
     return
   }
   submitting.value = true
   try {
-    await submitLeave({ ...form, reason: form.reason || undefined })
+    await submitLeave({ ...form, reason: form.reason ? form.reason.trim() : undefined })
     ElMessage.success('请假申请已提交')
     form.reason = ''
     loadMine()
+  } catch (e) {
+    ElMessage.error('提交申请失败：' + (e?.message || '网络错误'))
   } finally {
     submitting.value = false
   }
@@ -175,11 +182,15 @@ async function handleEarlyReturn(row) {
     )
     const newEnd = value.trim()
     if (!newEnd) { ElMessage.warning('请输入返岗日期'); return }
-    await earlyReturnLeave(row.id, newEnd)
-    ElMessage.success('已更新为提前返岗')
-    loadMine()
-  } catch (e) {
-    // 用户取消
+    try {
+      await earlyReturnLeave(row.id, newEnd)
+      ElMessage.success('已更新为提前返岗')
+      loadMine()
+    } catch (e) {
+      ElMessage.error('提前返岗失败：' + (e?.message || '网络错误'))
+    }
+  } catch {
+    // 用户取消弹窗
   }
 }
 

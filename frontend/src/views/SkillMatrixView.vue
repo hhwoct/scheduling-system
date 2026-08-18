@@ -46,7 +46,7 @@
             <template #default="{ row }">
               <el-switch
                 :model-value="row.isGeneralist === 1"
-                :loading="generalistLoading === row.id"
+                :loading="generalistLoading.has(row.id)"
                 @change="val => handleGeneralist(row, val)"
               />
             </template>
@@ -132,12 +132,32 @@ const departments = computed(() => {
   return [...set].sort()
 })
 
+// 员工→工作站→技能格 的 Map 索引，避免表格渲染时反复 find/filter
+const cellIndex = computed(() => {
+  const map = new Map()
+  for (const c of cells.value) {
+    let byWs = map.get(c.employeeId)
+    if (!byWs) {
+      byWs = new Map()
+      map.set(c.employeeId, byWs)
+    }
+    byWs.set(c.workstationId, c)
+  }
+  return map
+})
+
 function cellOf(employeeId, workstationId) {
-  return cells.value.find(c => c.employeeId === employeeId && c.workstationId === workstationId)
+  return cellIndex.value.get(employeeId)?.get(workstationId)
 }
 
 function skilledCount(row) {
-  return cells.value.filter(c => c.employeeId === row.id && c.skillScore > 0).length
+  const byWs = cellIndex.value.get(row.id)
+  if (!byWs) return 0
+  let count = 0
+  for (const c of byWs.values()) {
+    if (c.skillScore > 0) count++
+  }
+  return count
 }
 
 function skillClass(score) {
@@ -193,13 +213,15 @@ async function handleSaveCell() {
     cells.value.push(updated)
     editVisible.value = false
     ElMessage.success('技能已修改（' + editForm.employeeName + ' · ' + editForm.workstationName + ' → ' + updated.skillScore + ' 分）')
+  } catch (e) {
+    /* 拦截器已提示 */
   } finally {
     saving.value = false
   }
 }
 
-// 通岗切换
-const generalistLoading = ref(0)
+// 通岗切换（每个员工独立加载态）
+const generalistLoading = reactive(new Set())
 
 async function handleGeneralist(row, val) {
   const enable = !!val
@@ -214,7 +236,7 @@ async function handleGeneralist(row, val) {
   } catch {
     return
   }
-  generalistLoading.value = row.id
+  generalistLoading.add(row.id)
   try {
     const result = await setGeneralist({ employeeId: row.id, isGeneralist: enable ? 1 : 0 })
     row.isGeneralist = result.isGeneralist
@@ -222,8 +244,10 @@ async function handleGeneralist(row, val) {
     cells.value = cells.value.filter(c => !(c.employeeId === row.id && result.cells.some(x => x.workstationId === c.workstationId)))
     cells.value.push(...result.cells)
     ElMessage.success(enable ? '已设置通岗（楼面岗位 ≥3 分）' : '已取消通岗（楼面岗位清 0）')
+  } catch (e) {
+    /* 拦截器已提示 */
   } finally {
-    generalistLoading.value = 0
+    generalistLoading.delete(row.id)
   }
 }
 
@@ -240,6 +264,8 @@ async function loadData() {
     workstations.value = data.workstations || []
     employees.value = data.employees || []
     cells.value = data.cells || []
+  } catch (e) {
+    /* 拦截器已提示 */
   } finally {
     loading.value = false
   }

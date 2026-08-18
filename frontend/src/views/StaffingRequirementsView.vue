@@ -27,7 +27,7 @@
               <el-button type="primary" plain :loading="aiParsing">AI 识别导入</el-button>
             </el-upload>
             <el-button @click="openAiSettings">AI 设置</el-button>
-            <el-button type="primary" :disabled="!dirty" :loading="saving" @click="handleSave">保存</el-button>
+            <el-button type="primary" :disabled="!dirty || saving" :loading="saving" @click="handleSave">保存</el-button>
           </div>
         </div>
       </template>
@@ -328,14 +328,17 @@ const otherDayTypes = computed(() => DAY_TYPES.filter(d => d.value !== activeDay
 
 // ============ 需求统计 ============
 function tabStats(dayType) {
-  const rows = matrices.value[dayType]
+  const all = matrices.value[dayType]
   let minSlots = 0
   let idealSlots = 0
   let peakMin = 0
   let peakIdeal = 0
   let peakMinSlot = '--'
   let peakIdealSlot = '--'
-  for (const row of rows) {
+  // 只统计展示窗口（营业时段 12:00~次日 05:30），隐藏的闭店时段不计入
+  for (const idx of SLOT_ORDER) {
+    const row = all[idx]
+    if (!row) continue
     let sumMin = 0
     let sumIdeal = 0
     for (const ws of workstations.value) {
@@ -424,6 +427,8 @@ async function loadData() {
     matrices.value = m
     for (const d of DAY_TYPES) lastSaved.value[d.value] = JSON.stringify(m[d.value])
     dirty.value = false
+  } catch (e) {
+    /* 拦截器已提示 */
   } finally {
     loading.value = false
   }
@@ -666,6 +671,7 @@ function onKeydown(e) {
 }
 
 async function handleSave() {
+  if (saving.value) return
   const dayType = activeDayType.value
   const entries = []
   for (const row of matrices.value[dayType]) {
@@ -686,6 +692,8 @@ async function handleSave() {
     lastSaved.value[dayType] = JSON.stringify(matrices.value[dayType])
     dirty.value = DAY_TYPES.some(d => lastSaved.value[d.value] !== JSON.stringify(matrices.value[d.value]))
     ElMessage.success('「' + labelOf(dayType) + '」人数需求已保存')
+  } catch (e) {
+    /* 拦截器已提示 */
   } finally {
     saving.value = false
   }
@@ -936,7 +944,7 @@ function normalizeSlot(v) {
   if (!m) return null
   const h = Number(m[1])
   const min = Number(m[2])
-  if (h > 23 || min % 30 !== 0) return null
+  if (h > 23 || min > 59 || min % 30 !== 0) return null
   return String(h).padStart(2, '0') + ':' + String(min).padStart(2, '0')
 }
 
@@ -985,10 +993,31 @@ async function openAiSettings() {
   aiSettingsVisible.value = true
 }
 
+// 仅允许官方 DeepSeek 域名，避免任意地址劫持 API Key（后端校验需后端配合）
+function isOfficialDeepSeekUrl(url) {
+  try {
+    const host = new URL(url).hostname.toLowerCase()
+    return host === 'api.deepseek.com' || host === 'api.deepseek.com.cn'
+  } catch {
+    return false
+  }
+}
+
 async function handleAiSave() {
   if (!aiForm.baseUrl || !aiForm.model) {
     ElMessage.warning('接口地址和模型不能为空')
     return
+  }
+  if (!isOfficialDeepSeekUrl(aiForm.baseUrl)) {
+    try {
+      await ElMessageBox.confirm(
+        '接口地址不是官方 DeepSeek 域名（api.deepseek.com），使用非官方地址存在 API Key 泄露风险。确认仍要保存吗？',
+        '安全提示',
+        { confirmButtonText: '仍要保存', cancelButtonText: '取消', type: 'warning' }
+      )
+    } catch {
+      return
+    }
   }
   aiSaving.value = true
   try {
@@ -1000,16 +1029,27 @@ async function handleAiSave() {
     aiConfigHint.value = '已配置 Key：' + (cfg.maskedKey || '未设置')
     aiForm.apiKey = ''
     ElMessage.success('AI 配置已保存')
+  } catch (e) {
+    /* 拦截器已提示 */
   } finally {
     aiSaving.value = false
   }
 }
 
 async function handleAiTest() {
+  // 测试前会先持久化配置，明确告知用户并确认
+  try {
+    await ElMessageBox.confirm(
+      '测试连接会先将当前 AI 配置（含 API Key）保存到服务器，确认继续？',
+      '测试连接',
+      { confirmButtonText: '继续', cancelButtonText: '取消', type: 'warning' }
+    )
+  } catch {
+    return
+  }
   aiTesting.value = true
   aiTestResult.value = ''
   try {
-    // 先保存当前表单再测试（保证用的是最新配置）
     await saveAiConfig({ apiKey: aiForm.apiKey || undefined, baseUrl: aiForm.baseUrl, model: aiForm.model })
     aiForm.apiKey = ''
     const r = await testAi()

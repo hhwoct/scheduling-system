@@ -38,7 +38,7 @@
           <template #default="{ row }">
             <el-button :link="true" type="primary" @click="openEdit(row)">编辑</el-button>
             <el-button :link="true" type="primary" @click="openSkills(row)">技能</el-button>
-            <el-button v-if="row.status === 1" :link="true" type="danger" @click="handleDeactivate(row)">停用</el-button>
+            <el-button v-if="row.status === 1" :link="true" type="danger" :disabled="deactivating" @click="handleDeactivate(row)">停用</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -78,7 +78,7 @@
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="handleSave">保存</el-button>
+        <el-button type="primary" :loading="saving" :disabled="saving" @click="handleSave">保存</el-button>
       </template>
     </el-dialog>
 
@@ -98,7 +98,7 @@
       </el-table>
       <template #footer>
         <el-button @click="skillsVisible = false">取消</el-button>
-        <el-button type="primary" :loading="savingSkills" @click="handleSaveSkills">保存技能</el-button>
+        <el-button type="primary" :loading="savingSkills" :disabled="savingSkills" @click="handleSaveSkills">保存技能</el-button>
       </template>
     </el-dialog>
   </div>
@@ -159,6 +159,7 @@ function handlePageChange(page) {
 const dialogVisible = ref(false)
 const editing = ref(false)
 const saving = ref(false)
+const deactivating = ref(false)
 const formRef = ref()
 const form = reactive({
   employeeNo: '',
@@ -204,10 +205,14 @@ function openEdit(row) {
   form.primaryPosition = row.primaryPosition || ''
   form.maxWeeklyHours = Number(row.maxWeeklyHours)
   dialogVisible.value = true
+  nextTick(() => {
+    formRef.value?.clearValidate?.()
+  })
 }
 
 // P3-40: 弹窗取消/验证失败不执行保存
 async function handleSave() {
+  if (saving.value) return
   try {
     await formRef.value.validate()
   } catch {
@@ -233,17 +238,21 @@ async function handleSave() {
 
 // P3-40: 取消确认后不执行停用
 async function handleDeactivate(row) {
+  if (deactivating.value) return
   try {
     await ElMessageBox.confirm('确定停用员工 ' + row.name + ' 吗？', '提示', { type: 'warning' })
   } catch {
     return
   }
+  deactivating.value = true
   try {
     await deactivateEmployee(row.id)
     ElMessage.success('已停用')
     loadData()
   } catch (e) {
     ElMessage.error('停用失败：' + (e.message || '网络错误'))
+  } finally {
+    deactivating.value = false
   }
 }
 
@@ -291,6 +300,7 @@ function onPrimaryChange(row, isPrimary) {
 
 // P3-40: 技能保存失败不静默
 async function handleSaveSkills() {
+  if (savingSkills.value) return
   savingSkills.value = true
   try {
     await saveEmployeeSkills(currentEmployeeId.value, {

@@ -261,8 +261,8 @@ const sortedWeekRows = computed(() => {
 // 第一个兼职员工所在下标：在其前插入「兼职员工」分隔行
 const firstPartTimeIndex = computed(() => sortedWeekRows.value.findIndex(r => Number(r.isParttime) === 1))
 
-// 时间轴：13:00 为原点，每 30 分钟一段，共 35 段，覆盖到次日 06:00（凌晨 06:00 下班的班次不再被截断）
-const SLOT_COUNT = 35
+// 时间轴：13:00 为原点，每 30 分钟一段，共 34 段（13:00~次日 05:30；后端时段左闭右开，06:00 下班的班次止于 05:30）
+const SLOT_COUNT = 34
 const slots = computed(() => Array.from({ length: SLOT_COUNT }, (_, i) => {
   const min = 13 * 60 + i * 30
   const isNext = min >= 24 * 60
@@ -368,7 +368,7 @@ function onChipMouseDown(e, emp, ws, slot) {
   dragMove.fromWorkstationId = emp.workstationId
   dragMove.segStartIdx = slotIdx
   dragMove.segEndIdx = slotIdx
-  dragMove.targetSlotIdx = seg.start
+  dragMove.targetSlotIdx = slotIdx
   dragMove.targetWs = ws
   dragMove.targetWorkstationId = emp.workstationId
   dragMove.startX = e.clientX
@@ -610,6 +610,8 @@ async function loadIssues() {
     } catch (e) {
       rationalityList.value = computeRationalityFromIssues(issues)
     }
+  } catch (e) {
+    /* 拦截器已提示 */
   } finally { issuesLoading.value = false }
 }
 
@@ -635,10 +637,19 @@ function disabledDate(date) {
 
 async function loadWeek() {
   if (!planId.value) { errorMsg.value = '请输入计划ID'; return }
-  if (!weekStart.value) { const ps = await getSchedules({ page: 1, pageSize: 1 }); const p = ps.items?.find(x => x.id == planId.value); weekStart.value = p?.startDate || getToday() }
+  if (!weekStart.value) { weekStart.value = currentPlan.value?.startDate || getToday() }
   weekRows.value = await getWeekView(planId.value, weekStart.value)
-  const firstRow = weekRows.value[0]
-  weekDays.value = firstRow?.days?.map(d => ({ date: d.workDate, weekday: new Date(d.workDate + 'T00:00:00').getDay() === 0 ? 6 : new Date(d.workDate + 'T00:00:00').getDay() - 1 })) || []
+  // 并集所有行的日期，避免只取第一行而遗漏其他员工的班次日期
+  const dateSet = new Set()
+  weekRows.value.forEach(r => {
+    (r.days || []).forEach(d => {
+      if (d && d.workDate) dateSet.add(d.workDate)
+    })
+  })
+  weekDays.value = Array.from(dateSet).sort().map(date => {
+    const dow = new Date(date + 'T00:00:00').getDay()
+    return { date, weekday: dow === 0 ? 6 : dow - 1 }
+  })
 
   // 加载低技能岗位缺口 → 生成兼职替补需求色块
   try {
@@ -688,6 +699,8 @@ async function loadDay(date) {
     dailyRows.value = res || []
     dailyIssues.value = iss || []
     if (Array.isArray(month)) monthRows.value = month
+  } catch (e) {
+    /* 拦截器已提示 */
   } finally { dailyLoading.value = false }
 }
 
@@ -776,6 +789,8 @@ async function loadPlans() {
         nextTick(() => plansTableRef.value?.setCurrentRow(matched))
       }
     }
+  } catch (e) {
+    /* 拦截器已提示 */
   } finally { plansLoading.value = false }
 }
 
@@ -814,37 +829,15 @@ const wsPieLabels = computed(() => { const r = 63; let cum = -Math.PI / 2; retur
 
 const wsFilter = ref('')
 const typeFilter = ref('')
-const dateFilter = ref('')
-let isFilterActive = computed(() => wsFilter.value || typeFilter.value || dateFilter.value)
 
 function filterTableByWs(wsName) { wsFilter.value = wsFilter.value === wsName ? '' : wsName }
 function filterTableByType(type) { typeFilter.value = typeFilter.value === type ? '' : type }
-function filterTableByDate(date) { dateFilter.value = dateFilter.value === date ? '' : date }
 
 const filteredIssues = computed(() => {
   let list = issuesList.value
   if (wsFilter.value) list = list.filter(i => (i.workstationName || '未知') === wsFilter.value)
   if (typeFilter.value) list = list.filter(i => i.issueType === typeFilter.value)
-  if (dateFilter.value) list = list.filter(i => i.workDate === dateFilter.value)
   return list
-})
-const activeFilterCount = computed(() => {
-  let count = 0
-  if (wsFilter.value) count++
-  if (typeFilter.value) count++
-  if (dateFilter.value) count++
-  return count
-})
-
-const dailyBars = computed(() => {
-  const map = {}
-  issuesList.value.filter(i => i.issueType === 'STAFFING_GAP').forEach(i => {
-    const d = i.workDate || '未知'
-    map[d] = (map[d] || 0) + 1
-  })
-  const entries = Object.entries(map).sort((a,b) => a[0].localeCompare(b[0]))
-  const max = Math.max(...entries.map(([,c]) => c), 1)
-  return entries.map(([date, count], idx) => ({ date, count, pct: Math.round(count / max * 100), color: COLORS_ARR[idx % COLORS_ARR.length] }))
 })
 
 // 合理度 = 已满足需求 ÷ 总需求 × 100（量纲统一为“人”）
@@ -910,6 +903,10 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.removeEventListener('mousemove', onDragMove)
   window.removeEventListener('mouseup', onDragEnd)
+  if (rationalityChart) {
+    rationalityChart.dispose()
+    rationalityChart = null
+  }
 })
 </script>
 
@@ -1007,19 +1004,10 @@ onBeforeUnmount(() => {
 .ds-label { color: #909399; }
 .stat-num { font-size: 28px; font-weight: 700; color: #303133; }
 .stat-label { font-size: 13px; color: #909399; margin-top: 4px; }
-.pie-wrap { display: flex; align-items: center; gap: 16px; }
-.pie-legend { display: flex; flex-direction: column; gap: 6px; }
 .legend-row { display: flex; align-items: center; gap: 6px; font-size: 12px; }
 .legend-row.clickable { cursor: pointer; user-select: none; }
 .legend-row.clickable:hover { background: #f5f7fa; border-radius: 4px; }
 .legend-dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
-.bar-chart { display: flex; flex-direction: column; gap: 3px; max-height: 260px; overflow-y: auto; }
-.bar-row { display: flex; align-items: center; gap: 6px; }
-.bar-label { width: 42px; font-size: 10px; text-align: right; color: #606266; flex-shrink: 0; }
-.bar-track { flex: 1; height: 14px; background: #f5f7fa; border-radius: 7px; overflow: hidden; }
-.bar-fill { height: 100%; border-radius: 7px; transition: width 0.3s; }
-.bar-val { width: 24px; font-size: 11px; color: #303133; font-weight: 600; flex-shrink: 0; }
-.mini-pie { display: flex; flex-direction: column; align-items: center; }
 .mini-legend { margin-top: 4px; }
 .parttime-block { border: 1px solid #67c23a; border-radius: 6px; padding: 12px; background: #f0f9eb; }
 .parttime-title { display: flex; align-items: center; gap: 6px; font-weight: 600; color: #303133; margin-bottom: 10px; }

@@ -10,10 +10,10 @@ export function saveAiConfig(data) {
 }
 
 export function testAi() {
-  return request.post('/ai/test').then(res => res.data)
+  return request.post('/ai/test', null, { timeout: 130000 }).then(res => res.data)
 }
 
 // AI 识别人数需求文档：kind='sheet' 传 rows；kind='image' 传 imageBase64/imageMimeType
 export function aiParseRequirementDoc(data) {
-  return request.post('/ai/parse-requirement-doc', data).then(res => res.data)
+  return request.post('/ai/parse-requirement-doc', data, { timeout: 130000 }).then(res => res.data)
 }

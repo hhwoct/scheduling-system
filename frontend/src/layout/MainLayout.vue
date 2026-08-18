@@ -4,10 +4,10 @@
       <div class="logo">排班系统</div>
       <el-menu
         :default-active="$route.path"
-        router
         background-color="#001529"
         text-color="rgba(255,255,255,0.65)"
         active-text-color="#ffffff"
+        @select="handleMenuSelect"
       >
         <el-menu-item index="/dashboard">
           <el-icon><DataBoard /></el-icon>
@@ -33,7 +33,7 @@
           <el-menu-item index="/swap-review">换班审批</el-menu-item>
           <el-menu-item index="/notifications">通知消息</el-menu-item>
         </el-sub-menu>
-        <el-menu-item index="/employee/schedule" @click="goEmployeePreview">
+        <el-menu-item v-if="authStore.role !== 'EMPLOYEE'" index="/employee/schedule">
           <el-icon><Calendar /></el-icon>
           <span>员工端（我的班表）</span>
         </el-menu-item>
@@ -68,7 +68,7 @@
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ArrowDown, Bell, Calendar, DataBoard } from '@element-plus/icons-vue'
 import { ElMessageBox } from 'element-plus'
@@ -79,19 +79,38 @@ const router = useRouter()
 const authStore = useAuthStore()
 const unreadCount = ref(0)
 
+// 未读通知数：传当前用户工号，失败记录日志，focus 与路由变化时重取
+async function refreshUnreadCount() {
+  try {
+    const data = await getUnreadCount(authStore.user?.employeeNo || undefined)
+    unreadCount.value = data?.count ?? 0
+  } catch (e) {
+    console.error('获取未读通知数失败', e)
+  }
+}
+
 onMounted(async () => {
   if (authStore.isAuthenticated && !authStore.user) {
     authStore.fetchCurrentUser().catch(() => {})
   }
-  try {
-    const data = await getUnreadCount()
-    unreadCount.value = data?.count ?? 0
-  } catch {}
+  refreshUnreadCount()
+  window.addEventListener('focus', refreshUnreadCount)
 })
 
+onBeforeUnmount(() => {
+  window.removeEventListener('focus', refreshUnreadCount)
+})
+
+// 访问通知页等路由变化后刷新未读数
+watch(() => router.currentRoute.value.path, refreshUnreadCount)
+
 // 管理员进入员工端时默认选择第一个员工（E001）预览
-function goEmployeePreview() {
-  router.push({ path: '/employee/schedule', query: { employeeNo: 'E001' } })
+function handleMenuSelect(index) {
+  if (index === '/employee/schedule') {
+    router.push({ path: index, query: { employeeNo: 'E001' } })
+  } else {
+    router.push(index)
+  }
 }
 
 async function handleCommand(command) {
@@ -145,6 +164,10 @@ async function handleCommand(command) {
   gap: 4px;
 }
 .main-content {
+  overflow-y: auto;
+}
+.main-content :deep(.el-table__body-wrapper) {
+  max-height: calc(100vh - 240px);
   overflow-y: auto;
 }
 </style>

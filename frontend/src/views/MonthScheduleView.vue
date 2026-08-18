@@ -41,6 +41,8 @@
       <div v-if="selectedDate" style="margin-top: 24px">
         <el-divider content-position="left">{{ selectedDate }} 排班明细</el-divider>
 
+        <el-alert v-if="dailyError" :title="dailyError" type="warning" :closable="false" style="margin-bottom: 12px" />
+
         <div v-loading="dailyLoading" class="matrix-wrap">
           <div class="matrix">
             <!-- 表头 -->
@@ -90,9 +92,10 @@ const selectedDate = ref('')
 const dailyRows = ref([])
 const dailyIssues = ref([])
 const dailyLoading = ref(false)
+const dailyError = ref('')
 
-// 时间轴：13:00 为原点，每 30 分钟一段，共 35 段，到次日 06:00
-const SLOT_COUNT = 35
+// 时间轴：13:00 为原点，每 30 分钟一段，共 34 段（13:00~次日 05:30，覆盖 06:00 下班的班次）
+const SLOT_COUNT = 34
 const slots = computed(() => {
   const list = []
   const startMin = 13 * 60
@@ -173,6 +176,7 @@ function cellClass(ws, slot, date) {
 async function selectDate(date) {
   selectedDate.value = date
   dailyLoading.value = true
+  dailyError.value = ''
   try {
     const [res, iss] = await Promise.all([
       getDailyView(planId.value, date),
@@ -180,9 +184,10 @@ async function selectDate(date) {
     ])
     dailyRows.value = res || []
     dailyIssues.value = iss || []
-  } catch {
+  } catch (e) {
     dailyRows.value = []
     dailyIssues.value = []
+    dailyError.value = '加载日明细失败：' + (e?.message || '网络错误')
   } finally {
     dailyLoading.value = false
   }
@@ -230,7 +235,8 @@ function buildCalendar() {
   days.forEach(d => { dayStats[d] = { workCount: 0, restCount: 0, breakCount: 0, shifts: new Set() } })
 
   rows.value.forEach(row => {
-    row.days.forEach(d => {
+    (row.days || []).forEach(d => {
+      if (!d || !d.workDate) return
       if (d.isRestDay === 1) {
         // 兼职员工空闲日不算休息（排班界面直接留空）
         if (Number(row.isParttime) !== 1) dayStats[d.workDate].restCount++

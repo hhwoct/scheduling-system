@@ -108,11 +108,24 @@ async function loadEmployeeList() {
   const role = authStore.role || localStorage.getItem('shift_role') || ''
   if (role === 'EMPLOYEE') return
   try {
-    const res = await getEmployees({ page: 1, pageSize: 100, status: 1 })
-    employeeList.value = res.items || []
+    // 后端单页上限 100，逐页拉取全量员工供预览选择
+    const pageSize = 100
+    let page = 1
+    let all = []
+    let total = 0
+    do {
+      const res = await getEmployees({ page, pageSize, status: 1 })
+      all = all.concat(res.items || [])
+      total = res.total || 0
+      page++
+    } while (all.length < total)
+    employeeList.value = all
 
-    // 管理员未选择员工时，自动默认选中第一个员工，避免"员工档案不存在"
-    if (!previewEmployeeNo.value && employeeList.value.length > 0 && role !== 'EMPLOYEE') {
+    if (employeeList.value.length === 0) return
+
+    // 校验当前预览员工是否存在于列表；无效（含空）回退第一个员工并同步 localStorage/query
+    const exists = employeeList.value.some(e => e.employeeNo === previewEmployeeNo.value)
+    if (!exists) {
       const first = employeeList.value[0]
       previewEmployeeNo.value = first.employeeNo
       localStorage.setItem(PREVIEW_KEY, first.employeeNo)
@@ -178,8 +191,11 @@ onMounted(async () => {
       loadEmployeeList()
     } catch (e) {
       console.error('获取当前用户失败', e)
-      authStore.logout()
-      router.push('/login')
+      // 仅会话失效（401）才登出并跳登录；网络错误保留会话
+      if (e?.status === 401) {
+        authStore.logout()
+        router.push('/login')
+      }
     }
   }
   refreshUnreadCount()
@@ -264,6 +280,10 @@ async function handleCommand(command) {
   gap: 4px;
 }
 .emp-content {
+  overflow-y: auto;
+}
+.emp-content :deep(.el-table__body-wrapper) {
+  max-height: calc(100vh - 240px);
   overflow-y: auto;
 }
 </style>

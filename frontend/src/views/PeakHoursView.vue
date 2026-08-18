@@ -86,8 +86,7 @@ const form = ref({ startTime: '20:00', endTime: '22:00', status: 1 })
 
 function fmtTime(t) {
   if (!t) return '--'
-  const str = String(t)
-  const m = str.match(/\d{2}:\d{2}/)
+  const m = String(t).match(/^(\d{2}):(\d{2})/)
   return m ? m[0] : '--'
 }
 

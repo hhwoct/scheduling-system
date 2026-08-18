@@ -57,14 +57,21 @@ async function handleSave() {
   try {
     const results = await Promise.allSettled(
       list.value.map(rule =>
-        updateRule(rule.id, { ruleValue: rule.ruleValue, status: rule.status, version: rule.version })
+        updateRule(rule.id, { ruleValue: rule.ruleValue, status: rule.status })
       )
     )
-    const failed = results.filter(r => r.status === 'rejected')
+    const failed = []
+    results.forEach((r, i) => {
+      if (r.status === 'rejected') failed.push(list.value[i].ruleName || list.value[i].ruleKey || ('#' + list.value[i].id))
+    })
+    // 保存后重载，回写服务端最新值并对齐本地状态（后端 RuleConfigItem 无 version 字段）
+    try {
+      await loadData()
+    } catch { /* 重载失败不阻断提示 */ }
     if (failed.length === 0) {
       ElMessage.success(`保存成功（${list.value.length}条）`)
     } else {
-      ElMessage.warning(`${failed.length}条保存失败，请重试`)
+      ElMessage.warning(`${failed.length}条保存失败：${failed.join('、')}`)
     }
   } finally {
     saving.value = false

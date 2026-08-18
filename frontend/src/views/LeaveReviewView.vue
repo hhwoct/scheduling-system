@@ -91,12 +91,19 @@ async function handleReview(row, approved) {
     // 只有确认才执行
     await reviewLeave(row.id, { approved, remark: result.value || undefined })
     ElMessage.success(`${action}成功`)
-    await loadData()
   } catch (e) {
     if (e === 'cancel' || e === 'close') return
     ElMessage.error('操作失败，请重试')
+    return
   } finally {
     row._submitting = false
+  }
+
+  // 审批成功后再刷新列表；重载失败单独处理，避免误导为"操作失败"
+  try {
+    await loadData()
+  } catch (e) {
+    console.error('刷新审批列表失败', e)
   }
 }
 

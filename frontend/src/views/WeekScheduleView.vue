@@ -60,7 +60,7 @@
             <div v-for="d in weekDays" :key="d.date" class="gantt-day-col">
               <template v-if="getDay(row, d.date)">
                 <div v-if="getDay(row, d.date).isRestDay === 1 && row.isParttime !== 1" class="day-block rest-block" :class="dayIssuesClass(row, d.date)">
-                  休<div v-if="dayIssues(row, d.date).length" class="issue-badge">{{ dayIssues(row, d.date)[0].issueType === 'OVERTIME' ? '超时' : '连续' }}</div>
+                  休<div v-if="dayIssues(row, d.date).length" class="issue-badge">{{ '连续' }}</div>
                 </div>
                 <div v-else-if="getDay(row, d.date).isRestDay === 1" class="day-block empty-block"></div>
                 <div v-else class="day-block work-block" :class="dayIssuesClass(row, d.date)">
@@ -158,9 +158,9 @@ function fmt(t) { return t ? String(t).substring(0, 5) : '--' }
 // 岗位缺口(STAFFING_GAP)属于工作站级，在日排班明细的矩阵里按工作站×时段展示；周视图只标记员工个人问题。
 function dayIssues(row, date) {
   return issues.value.filter(i =>
-    i.issueType === 'CONSECUTIVE_WORK' &&
+    (i.issueType === 'CONSECUTIVE_WORK' || i.issueType === 'OVERTIME') &&
     i.workDate === date &&
-    (i.employeeId === row.employeeId || i.employeeId == null)
+    i.employeeId === row.employeeId
   )
 }
 function dayIssuesClass(row, date) {

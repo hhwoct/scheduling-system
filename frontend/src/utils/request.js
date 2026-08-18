@@ -39,6 +39,7 @@ request.interceptors.response.use(
       localStorage.removeItem('shift_token')
       localStorage.removeItem('shift_role')
       localStorage.removeItem('shift_token_expires_at')
+      window.dispatchEvent(new CustomEvent('auth:unauthorized'))
       // 避免并发请求重复跳转
       if (router.currentRoute.value.path !== '/login' && !isRedirecting) {
         isRedirecting = true
