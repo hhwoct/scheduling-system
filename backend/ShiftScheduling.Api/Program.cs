@@ -260,7 +260,7 @@ api.MapPost("/auth/send-reset-otp", async (
 
     var clientIp = httpContext.Connection.RemoteIpAddress?.ToString();
     // 验证码只保留在服务层（短信发送/开发日志），严禁进入 HTTP 响应体
-    await authService.SendPasswordResetOtpAsync(request.Username ?? string.Empty, clientIp, cancellationToken);
+    await authService.SendPasswordResetOtpAsync(request, clientIp, cancellationToken);
 
     return ApiResponse.Ok(true, "验证码已发送");
 }).RequireRateLimiting("ResetLimiter");

@@ -107,9 +107,9 @@ public sealed class AiConfigService : IAiConfigService
         entity.Model = model;
         entity.UpdatedAt = DateTime.UtcNow;
 
-        await _dbContext.SaveChangesAsync(cancellationToken);
-
-        await _auditLogService.WriteAsync(
+        // 修复：审计与业务数据在同一事务内提交
+        _auditLogService.AddAuditEntity(
+            _dbContext,
             storeId,
             operatorUserId,
             operatorName,
@@ -119,7 +119,9 @@ public sealed class AiConfigService : IAiConfigService
             null,
             $"{Provider}: {baseUrl} / {model}",
             $"保存 AI 文档识别配置（{Provider}）",
-            cancellationToken);
+            DateTime.UtcNow);
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
 
         return new AiConfigItem(!string.IsNullOrWhiteSpace(apiKey), Provider, baseUrl, model, MaskKey(apiKey));
     }

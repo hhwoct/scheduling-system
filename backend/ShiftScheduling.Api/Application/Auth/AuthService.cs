@@ -1,3 +1,4 @@
+using System.Text;
 using Microsoft.EntityFrameworkCore;
 using ShiftScheduling.Api.Application.Common;
 using ShiftScheduling.Api.Application.Security;
@@ -45,9 +46,11 @@ public sealed class AuthService : IAuthService
             throw new BusinessException("用户名和密码不能为空", "INVALID_LOGIN_REQUEST");
         }
 
-        if (username.Length > 50 || request.Password.Length > 128)
+        // bcrypt 只取前 72 字节：超过 72 字节的密码会被静默截断，
+        // 两个前 72 字节相同的长密码会互相验证通过，必须在上游拒绝
+        if (username.Length > 50 || Encoding.UTF8.GetByteCount(request.Password) > 72)
         {
-            throw new BusinessException("用户名或密码格式不正确", "INVALID_LOGIN_REQUEST");
+            throw new BusinessException("用户名或密码格式不正确（密码最长 72 字节）", "INVALID_LOGIN_REQUEST");
         }
 
         // 限流：登录失败次数过多时锁定
@@ -115,12 +118,13 @@ public sealed class AuthService : IAuthService
         return user ?? throw new UnauthorizedBusinessException("当前用户不存在或已被停用");
     }
 
-    public async Task SendPasswordResetOtpAsync(string username, string? clientIp, CancellationToken cancellationToken)
+    public async Task SendPasswordResetOtpAsync(SendResetOtpRequest request, string? clientIp, CancellationToken cancellationToken)
     {
-        username = username?.Trim() ?? string.Empty;
-        if (string.IsNullOrWhiteSpace(username))
+        var username = request.Username?.Trim() ?? string.Empty;
+        var verifyInfo = request.VerifyInfo?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(verifyInfo))
         {
-            throw new BusinessException("用户名不能为空", "INVALID_FORGOT_REQUEST");
+            throw new BusinessException("用户名和注册手机号不能为空", "INVALID_FORGOT_REQUEST");
         }
 
         // 统一错误消息，不暴露用户是否存在
@@ -139,8 +143,10 @@ public sealed class AuthService : IAuthService
         var employee = await _dbContext.Employees
             .AsNoTracking()
             .FirstOrDefaultAsync(x => x.EmployeeNo == username && x.StoreId == user.StoreId && x.Status == 1, cancellationToken);
-        if (employee is null || string.IsNullOrWhiteSpace(employee.Phone))
+        if (employee is null || string.IsNullOrWhiteSpace(employee.Phone) ||
+            !string.Equals(employee.Phone, verifyInfo, StringComparison.Ordinal))
         {
+            // 手机号与注册信息不符：与用户不存在同等处理，防枚举
             _passwordResetService.RecordFailure(username, clientIp);
             throw new InvalidCredentialsException("用户名或验证信息不正确");
         }
@@ -168,9 +174,10 @@ public sealed class AuthService : IAuthService
             throw new BusinessException("用户名、新密码和验证信息不能为空", "INVALID_FORGOT_REQUEST");
         }
 
-        if (username.Length > 50 || request.NewPassword.Length > 128)
+        // bcrypt 只取前 72 字节：超过 72 字节会被静默截断，必须在上游拒绝
+        if (username.Length > 50 || Encoding.UTF8.GetByteCount(request.NewPassword) > 72)
         {
-            throw new BusinessException("用户名或密码格式不正确", "INVALID_FORGOT_REQUEST");
+            throw new BusinessException("用户名或密码格式不正确（密码最长 72 字节）", "INVALID_FORGOT_REQUEST");
         }
 
         if (request.NewPassword.Length < 8)

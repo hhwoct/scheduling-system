@@ -668,10 +668,9 @@ public sealed class ScheduleService : IScheduleService
                     .SetProperty(x => x.UpdatedAt, DateTime.UtcNow), cancellationToken);
         }
 
-        await _dbContext.SaveChangesAsync(cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
-
-        await _auditLogService.WriteAsync(
+        // 修复：审计与业务数据在同一事务内提交
+        _auditLogService.AddAuditEntity(
+            _dbContext,
             storeId,
             operatorUserId,
             operatorName,
@@ -681,7 +680,10 @@ public sealed class ScheduleService : IScheduleService
             null,
             JsonSerializer.Serialize(request.Items),
             $"手动调整排班 {plan.PlanName}，共 {request.Items.Count} 项",
-            cancellationToken);
+            DateTime.UtcNow);
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
     }
 
     /// <summary>

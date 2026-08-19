@@ -76,17 +76,9 @@ public sealed class RuleConfigService : IRuleConfigService
         rule.Version++;
         rule.UpdatedAt = DateTime.UtcNow;
 
-        try
-        {
-            // Version 已配置为并发令牌：UPDATE 带 WHERE version=旧值，并发冲突抛 DbUpdateConcurrencyException
-            await _dbContext.SaveChangesAsync(cancellationToken);
-        }
-        catch (DbUpdateConcurrencyException)
-        {
-            throw new BusinessException("规则已被他人修改，请刷新后重试", "RULE_VERSION_CONFLICT");
-        }
-
-        await _auditLogService.WriteAsync(
+        // 修复：审计与业务数据在同一事务内提交
+        _auditLogService.AddAuditEntity(
+            _dbContext,
             storeId,
             operatorUserId,
             operatorName,
@@ -96,7 +88,17 @@ public sealed class RuleConfigService : IRuleConfigService
             beforeContent,
             System.Text.Json.JsonSerializer.Serialize(new { rule.RuleValue, rule.Status }),
             $"修改规则 {rule.RuleName}",
-            cancellationToken);
+            DateTime.UtcNow);
+
+        try
+        {
+            // Version 已配置为并发令牌：UPDATE 带 WHERE version=旧值，并发冲突抛 DbUpdateConcurrencyException
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            throw new BusinessException("规则已被他人修改，请刷新后重试", "RULE_VERSION_CONFLICT");
+        }
 
         return new RuleConfigItem(
             rule.Id,

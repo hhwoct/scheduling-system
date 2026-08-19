@@ -64,14 +64,16 @@ public sealed class PeakHourService : IPeakHourService
         };
 
         _dbContext.PeakRestrictedHours.Add(entity);
-        await _dbContext.SaveChangesAsync(cancellationToken);
 
-        await _auditLogService.WriteAsync(
-            storeId, operatorUserId, operatorName,
-            "CREATE_PEAK_HOUR", "PEAK_RESTRICTED_HOUR", entity.Id,
+        // 修复：审计与业务数据在同一事务内提交
+        _auditLogService.AddAuditEntity(
+            _dbContext, storeId, operatorUserId, operatorName,
+            "CREATE_PEAK_HOUR", "PEAK_RESTRICTED_HOUR", null,
             null, FmtRange(start, end),
             $"新增高峰禁休时段 {FmtRange(start, end)}",
-            cancellationToken);
+            DateTime.UtcNow);
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
 
         return new PeakHourItem(entity.Id, entity.StartTime, entity.EndTime, entity.Status);
     }
@@ -104,14 +106,15 @@ public sealed class PeakHourService : IPeakHourService
         entity.Status = request.Status == 0 ? 0 : 1;
         entity.UpdatedAt = DateTime.UtcNow;
 
-        await _dbContext.SaveChangesAsync(cancellationToken);
-
-        await _auditLogService.WriteAsync(
-            storeId, operatorUserId, operatorName,
+        // 修复：审计与业务数据在同一事务内提交
+        _auditLogService.AddAuditEntity(
+            _dbContext, storeId, operatorUserId, operatorName,
             "UPDATE_PEAK_HOUR", "PEAK_RESTRICTED_HOUR", entity.Id,
             before, FmtRange(start, end),
             "修改高峰禁休时段",
-            cancellationToken);
+            DateTime.UtcNow);
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
 
         return new PeakHourItem(entity.Id, entity.StartTime, entity.EndTime, entity.Status);
     }
@@ -129,14 +132,16 @@ public sealed class PeakHourService : IPeakHourService
 
         var before = FmtRange(entity.StartTime, entity.EndTime);
         _dbContext.PeakRestrictedHours.Remove(entity);
-        await _dbContext.SaveChangesAsync(cancellationToken);
 
-        await _auditLogService.WriteAsync(
-            storeId, operatorUserId, operatorName,
+        // 修复：审计与业务数据在同一事务内提交
+        _auditLogService.AddAuditEntity(
+            _dbContext, storeId, operatorUserId, operatorName,
             "DELETE_PEAK_HOUR", "PEAK_RESTRICTED_HOUR", id,
             before, null,
             "删除高峰禁休时段",
-            cancellationToken);
+            DateTime.UtcNow);
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
     }
 
     private static (TimeSpan Start, TimeSpan End) ParseAndValidate(PeakHourUpsertRequest request)

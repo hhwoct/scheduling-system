@@ -119,6 +119,22 @@ public sealed class EmployeeService : IEmployeeService
         };
 
         _dbContext.Employees.Add(employee);
+
+        // 修复：审计与业务数据在同一事务内提交（不再事后补写，避免"业务已提交、审计缺失"）。
+        // 新增时自增主键未生成，target_id 置空（备注中已含工号）。
+        _auditLogService.AddAuditEntity(
+            _dbContext,
+            storeId,
+            operatorUserId,
+            operatorName,
+            "CREATE_EMPLOYEE",
+            "EMPLOYEE",
+            null,
+            null,
+            System.Text.Json.JsonSerializer.Serialize(new { employee.EmployeeNo, employee.Name, employee.Department }),
+            "新增员工",
+            DateTime.UtcNow);
+
         try
         {
             await _dbContext.SaveChangesAsync(cancellationToken);
@@ -128,18 +144,6 @@ public sealed class EmployeeService : IEmployeeService
             // 并发兜底：查重与保存之间的竞态由数据库唯一索引拦截，转成友好错误
             throw new BusinessException($"员工工号 {normalizedEmployeeNo} 已存在", "EMPLOYEE_NO_EXISTS");
         }
-
-        await _auditLogService.WriteAsync(
-            storeId,
-            operatorUserId,
-            operatorName,
-            "CREATE_EMPLOYEE",
-            "EMPLOYEE",
-            employee.Id,
-            null,
-            System.Text.Json.JsonSerializer.Serialize(new { employee.EmployeeNo, employee.Name, employee.Department }),
-            "新增员工",
-            cancellationToken);
 
         return MapToDetail(employee);
     }
@@ -184,17 +188,9 @@ public sealed class EmployeeService : IEmployeeService
         employee.MaxWeeklyHours = request.MaxWeeklyHours;
         employee.UpdatedAt = DateTime.UtcNow;
 
-        try
-        {
-            await _dbContext.SaveChangesAsync(cancellationToken);
-        }
-        catch (DbUpdateException) when (ExistsEmployeeNo(storeId, normalizedEmployeeNo))
-        {
-            // 并发兜底：查重与保存之间的竞态由数据库唯一索引拦截，转成友好错误
-            throw new BusinessException($"员工工号 {normalizedEmployeeNo} 已被其他员工使用", "EMPLOYEE_NO_EXISTS");
-        }
-
-        await _auditLogService.WriteAsync(
+        // 修复：审计与业务数据在同一事务内提交
+        _auditLogService.AddAuditEntity(
+            _dbContext,
             storeId,
             operatorUserId,
             operatorName,
@@ -204,7 +200,17 @@ public sealed class EmployeeService : IEmployeeService
             beforeContent,
             System.Text.Json.JsonSerializer.Serialize(new { employee.EmployeeNo, employee.Name, employee.Department, employee.MaxWeeklyHours }),
             "编辑员工",
-            cancellationToken);
+            DateTime.UtcNow);
+
+        try
+        {
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException) when (ExistsEmployeeNo(storeId, normalizedEmployeeNo))
+        {
+            // 并发兜底：查重与保存之间的竞态由数据库唯一索引拦截，转成友好错误
+            throw new BusinessException($"员工工号 {normalizedEmployeeNo} 已被其他员工使用", "EMPLOYEE_NO_EXISTS");
+        }
 
         return MapToDetail(employee);
     }
@@ -234,9 +240,9 @@ public sealed class EmployeeService : IEmployeeService
         employee.Status = 0;
         employee.UpdatedAt = DateTime.UtcNow;
 
-        await _dbContext.SaveChangesAsync(cancellationToken);
-
-        await _auditLogService.WriteAsync(
+        // 修复：审计与业务数据在同一事务内提交
+        _auditLogService.AddAuditEntity(
+            _dbContext,
             storeId,
             operatorUserId,
             operatorName,
@@ -246,7 +252,9 @@ public sealed class EmployeeService : IEmployeeService
             beforeContent,
             System.Text.Json.JsonSerializer.Serialize(new { employee.Status }),
             "停用员工",
-            cancellationToken);
+            DateTime.UtcNow);
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
     }
 
     private static void Validate(EmployeeUpsertRequest request)
