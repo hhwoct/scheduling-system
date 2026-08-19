@@ -64,17 +64,32 @@ public sealed class WorkstationService : IWorkstationService
             UpdatedAt = DateTime.UtcNow
         };
         _dbContext.Workstations.Add(entity);
-        await _dbContext.SaveChangesAsync(cancellationToken);
 
-        await _auditLogService.WriteAsync(
-            storeId, operatorUserId, operatorName,
-            "CREATE_WORKSTATION", "WORKSTATION", entity.Id,
+        // 审计与业务数据同一事务提交
+        _auditLogService.AddAuditEntity(
+            _dbContext, storeId, operatorUserId, operatorName,
+            "CREATE_WORKSTATION", "WORKSTATION", null,
             null,
             System.Text.Json.JsonSerializer.Serialize(new { entity.Code, entity.Name, entity.SortOrder, entity.IsLowSkill, entity.Remark }),
-            "新增工作站", cancellationToken);
+            "新增工作站",
+            DateTime.UtcNow);
+
+        try
+        {
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException) when (ExistsCode(storeId, request.Code.Trim()))
+        {
+            // 并发兜底：查重与保存之间的竞态由数据库唯一索引拦截，转成友好错误
+            throw new BusinessException($"工作站编码 '{request.Code.Trim()}' 已存在", "DUPLICATE_WORKSTATION");
+        }
 
         return new WorkstationItem(entity.Id, entity.Code, entity.Name, entity.SortOrder, entity.IsLowSkill, entity.Remark, entity.Status);
     }
+
+    /// <summary>同步查重（用于捕获 DbUpdateException 时的并发兜底判断）。</summary>
+    private bool ExistsCode(long storeId, string code)
+        => _dbContext.Workstations.Any(x => x.StoreId == storeId && x.Code == code);
 
     public async Task<WorkstationItem> UpdateAsync(
         long id,

@@ -90,9 +90,9 @@ public sealed class ShiftTemplateService : IShiftTemplateService
         template.Status = request.Status;
         template.UpdatedAt = DateTime.UtcNow;
 
-        await _dbContext.SaveChangesAsync(cancellationToken);
-
-        await _auditLogService.WriteAsync(
+        // 修复：审计与业务数据在同一事务内提交
+        _auditLogService.AddAuditEntity(
+            _dbContext,
             storeId,
             operatorUserId,
             operatorName,
@@ -102,7 +102,9 @@ public sealed class ShiftTemplateService : IShiftTemplateService
             beforeContent,
             System.Text.Json.JsonSerializer.Serialize(new { template.Name, template.StartTime, template.EndTime, template.IsCrossDay, template.Priority, template.Status }),
             "编辑班次",
-            cancellationToken);
+            DateTime.UtcNow);
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
 
         var workstationNames = await _dbContext.ShiftWorkstations
             .AsNoTracking()
