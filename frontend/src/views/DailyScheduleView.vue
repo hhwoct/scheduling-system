@@ -196,6 +196,8 @@ function cellClass(ws, slot) {
 
 async function loadData() {
   if (!planId.value) {
+    rows.value = []
+    issues.value = []
     errorMsg.value = '请输入排班计划 ID'
     return
   }

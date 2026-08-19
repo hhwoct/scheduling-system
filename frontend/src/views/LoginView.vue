@@ -120,8 +120,8 @@ function stopOtpTimer() {
   otpCountdown.value = 0
 }
 
-// 用户名变化后旧验证码作废（OTP 按用户名+手机号绑定）
-watch(() => forgotForm.username, () => {
+// 用户名/手机号变化后旧验证码作废（OTP 按用户名+手机号绑定）
+watch([() => forgotForm.username, () => forgotForm.verifyInfo], () => {
   forgotForm.otpCode = ''
 })
 
@@ -137,9 +137,18 @@ async function sendOtp() {
     ElMessage.warning('请先输入用户名')
     return
   }
+  const phone = forgotForm.verifyInfo.trim()
+  if (!phone) {
+    ElMessage.warning('请输入注册手机号')
+    return
+  }
+  if (!/^\d{11}$/.test(phone)) {
+    ElMessage.warning('手机号格式不正确（需 11 位数字）')
+    return
+  }
   otpSending.value = true
   try {
-    await sendResetOtp({ username: forgotForm.username.trim() })
+    await sendResetOtp({ username: forgotForm.username.trim(), verifyInfo: phone })
     ElMessage.success('验证码已发送，10 分钟内有效')
     stopOtpTimer()
     otpCountdown.value = 60

@@ -807,10 +807,15 @@ function parseSheet(rows, sheetName, out) {
 
   if (hasType && hasWs && hasSlot && hasCount) {
     parseLongFormat(rows, header, headerIdx, sheetName, out)
-  } else if (hasSlot && !hasWs && !hasCount) {
-    parseMatrixFormat(rows, header, headerIdx, sheetName, out)
   } else {
-    out.errors.push('工作表「' + sheetName + '」格式无法识别（支持：模板矩阵或 日期类型/工作站/时段/需求人数 长表）')
+    // 正向判断矩阵：首列为时间/时段，且其余列至少一列能解析为工作站
+    const firstIsSlot = header.length > 0 && /时段|时间|slot/i.test(header[0])
+    const restResolvable = header.slice(1).filter(Boolean).some(h => resolveColumnHeader(h).ws)
+    if (firstIsSlot && restResolvable) {
+      parseMatrixFormat(rows, header, headerIdx, sheetName, out)
+    } else {
+      out.errors.push('工作表「' + sheetName + '」格式无法识别（支持：模板矩阵或 日期类型/工作站/时段/需求人数 长表）')
+    }
   }
 }
 
@@ -1141,25 +1146,37 @@ function applyAiResult(result) {
     return
   }
   const byType = { WORKDAY: 0, WEEKEND: 0, HOLIDAY: 0 }
+  let skipped = 0
+  const validWsIds = new Set(workstations.value.map(w => w.id))
   for (const e of entries) {
     const matrix = matrices.value[e.dayType]
-    if (!matrix) continue
     const slot = normalizeSlot(e.timeSlot)
-    if (!slot) continue
-    const row = matrix.find(r => r.slot === slot)
-    if (row) {
-      row.cells[e.workstationId] = {
-        min: e.requiredCount || 0,
-        ideal: Math.max(e.idealCount || 0, e.requiredCount || 0)
-      }
-      byType[e.dayType]++
+    const wsId = e.workstationId
+    if (!matrix || !slot || wsId == null || !validWsIds.has(wsId)) {
+      skipped++
+      continue
     }
+    const row = matrix.find(r => r.slot === slot)
+    if (!row) {
+      skipped++
+      continue
+    }
+    const prev = row.cells[wsId] || {}
+    row.cells[wsId] = {
+      min: e.requiredCount || 0,
+      ideal: Math.max(e.idealCount || 0, e.requiredCount || 0),
+      remark: prev.remark
+    }
+    byType[e.dayType]++
   }
   const summary = DAY_TYPES
     .filter(d => byType[d.value] > 0)
     .map(d => d.label + ' ' + byType[d.value] + ' 格')
     .join('、')
   ElMessage.success('AI 识别成功：' + summary + '（已并入编辑器，点击「保存」后生效）')
+  if (skipped > 0) {
+    ElMessage.warning(skipped + ' 条未匹配（日期类型/时段/工作站无效）已跳过')
+  }
   if (result?.warnings?.length) {
     ElMessage.warning(result.warnings.length + ' 条跳过，前 3 条：' + result.warnings.slice(0, 3).join('；'))
   }
@@ -1177,7 +1194,9 @@ function applyParsed(out) {
     if (!matrix) continue
     const r = matrix.find(x => x.slot === row.slot)
     if (r) {
-      r.cells[row.workstationId] = { min: row.min, ideal: row.ideal }
+      // 导入无 remark 时保留原备注
+      const prev = r.cells[row.workstationId] || {}
+      r.cells[row.workstationId] = { min: row.min, ideal: row.ideal, remark: prev.remark }
       byType[row.dayType]++
     }
   }

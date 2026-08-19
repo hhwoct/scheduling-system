@@ -98,7 +98,7 @@
       </el-table>
       <template #footer>
         <el-button @click="skillsVisible = false">取消</el-button>
-        <el-button type="primary" :loading="savingSkills" :disabled="savingSkills" @click="handleSaveSkills">保存技能</el-button>
+        <el-button type="primary" :loading="savingSkills" :disabled="savingSkills || skillsLoading" @click="handleSaveSkills">保存技能</el-button>
       </template>
     </el-dialog>
   </div>
@@ -263,7 +263,11 @@ const skillRows = ref([])
 const currentEmployee = ref(null)
 const currentEmployeeId = ref(0)
 
+// 请求序号：防止快速切换员工时慢响应覆盖
+let skillsSeq = 0
+
 async function openSkills(row) {
+  const seq = ++skillsSeq
   currentEmployee.value = row
   currentEmployeeId.value = row.id
   skillsVisible.value = true
@@ -271,6 +275,7 @@ async function openSkills(row) {
   try {
     const matrix = await getEmployeeSkills(row.id)
     const workstations = await getWorkstations()
+    if (seq !== skillsSeq) return
     skillRows.value = workstations.map(ws => {
       const existing = matrix.skills.find(s => s.workstationId === ws.id)
       return {
@@ -281,9 +286,14 @@ async function openSkills(row) {
       }
     })
   } catch (e) {
-    ElMessage.error('加载技能失败')
+    if (seq === skillsSeq) {
+      skillRows.value = []
+      ElMessage.error('加载技能失败')
+    }
   } finally {
-    skillsLoading.value = false
+    if (seq === skillsSeq) {
+      skillsLoading.value = false
+    }
   }
 }
 

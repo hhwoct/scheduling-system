@@ -5,9 +5,9 @@
       <el-form label-width="110px" style="max-width: 560px">
         <el-form-item label="排班方式" required>
           <el-radio-group v-model="scheduleMode">
-            <el-radio label="week">未来一周</el-radio>
-            <el-radio label="currentMonth">本月（1号-月末）</el-radio>
-            <el-radio label="nextMonth">下月（1号-月末）</el-radio>
+            <el-radio value="week">未来一周</el-radio>
+            <el-radio value="currentMonth">本月（1号-月末）</el-radio>
+            <el-radio value="nextMonth">下月（1号-月末）</el-radio>
           </el-radio-group>
         </el-form-item>
         <el-form-item label="参考日期" required>
@@ -299,7 +299,12 @@ async function handleDelete(row) {
   try {
     await deleteSchedule(row.id)
     ElMessage.success('删除成功')
-    loadPlans(page.value)
+    // 删除当前页最后一条时回退到上一页
+    if (plans.value.length === 1 && page.value > 1) {
+      loadPlans(page.value - 1)
+    } else {
+      loadPlans(page.value)
+    }
   } catch (e) {
     /* 拦截器已提示 */
   }

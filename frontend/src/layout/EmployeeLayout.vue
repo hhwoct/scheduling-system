@@ -78,7 +78,7 @@
         </div>
       </el-header>
       <el-main class="emp-content">
-        <router-view :key="$route.fullPath" />
+        <router-view :key="$route.path" />
       </el-main>
     </el-container>
   </el-container>
@@ -115,9 +115,12 @@ async function loadEmployeeList() {
     let total = 0
     do {
       const res = await getEmployees({ page, pageSize, status: 1 })
-      all = all.concat(res.items || [])
+      const items = res.items || []
+      all = all.concat(items)
       total = res.total || 0
       page++
+      // total>0 但本页无数据时终止，避免死循环
+      if (items.length === 0) break
     } while (all.length < total)
     employeeList.value = all
 

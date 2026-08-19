@@ -9,6 +9,7 @@
               v-model="month"
               type="month"
               value-format="YYYY-MM"
+              :clearable="false"
               style="width: 140px; margin-right: 8px"
             />
             <el-button type="primary" :loading="loading" @click="loadData">查询</el-button>
@@ -85,12 +86,12 @@ function formatWorkHours(hours) {
   if (!Number.isFinite(num)) return '0.0'
   return num.toFixed(1)
 }
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { getMySchedule } from '../api/employee'
 
 const route = useRoute()
-const employeeNo = ref(route.query.employeeNo || localStorage.getItem('shift_preview_employee_no') || '')
+const employeeNo = ref(Array.isArray(route.query.employeeNo) ? route.query.employeeNo[0] : (route.query.employeeNo || localStorage.getItem('shift_preview_employee_no') || ''))
 const loading = ref(false)
 const employee = ref(null)
 const plans = ref([])
@@ -119,9 +120,9 @@ async function loadData() {
   errorMsg.value = ''
   try {
     const data = await getMySchedule(month.value, employeeNo.value || undefined)
-    employee.value = data.employee
-    plans.value = data.plans || []
-    covers.value = data.covers || []
+    employee.value = data?.employee || null
+    plans.value = data?.plans || []
+    covers.value = data?.covers || []
   } catch (e) {
     employee.value = null
     plans.value = []
@@ -131,6 +132,21 @@ async function loadData() {
     loading.value = false
   }
 }
+
+// 预览员工（query employeeNo）变化时重载
+watch(() => route.query.employeeNo, (val) => {
+  employeeNo.value = Array.isArray(val) ? val[0] : (val || localStorage.getItem('shift_preview_employee_no') || '')
+  loadData()
+})
+
+// 月份变化自动重载；清空时回退当前月
+watch(month, () => {
+  if (!month.value) {
+    const now = new Date()
+    month.value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  }
+  loadData()
+})
 
 onMounted(loadData)
 </script>

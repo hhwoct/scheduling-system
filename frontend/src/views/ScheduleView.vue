@@ -358,6 +358,8 @@ const wsIdByName = computed(() => {
 // 默认只移动被拖的那半个小时
 function onChipMouseDown(e, emp, ws, slot) {
   if (e.button !== 0) return
+  // 休息块不可拖动
+  if (inBreak(emp, slot)) return
   const slotIdx = slots.value.findIndex(s => s.key === slot.key)
   dragMove.active = true
   dragMove.moved = false
@@ -465,7 +467,7 @@ async function onDragEnd() {
       toWorkstationId: dragMove.targetWorkstationId
     })
     ElMessage.success('已移动 ' + dragMove.empName + ' 的半小时 → ' + dragMove.targetWs + ' ' + toSlotKey)
-    await loadDay()
+    await loadDay(selectedDate.value || dayDate.value)
   } catch (err) {
     // request 拦截器已提示错误
   }
@@ -709,6 +711,8 @@ async function selectDate(date) { selectedDate.value = date; await loadDay(date)
 function onModeChange() {
   selectedDate.value = ''
   dailyRows.value = []
+  wsFilter.value = ''
+  typeFilter.value = ''
   // 切到日明细时：默认日期限定在当前方案的周期内
   if (viewMode.value === 'day') {
     const range = planRange()
@@ -772,6 +776,8 @@ function selectPlan(row) {
   dailyIssues.value = []
   monthRows.value = []
   issuesList.value = []
+  wsFilter.value = ''
+  typeFilter.value = ''
   // 保持当前视图，各视图按新方案自动重新加载；日明细日期会自动落到新方案周期内
   loadAll()
 }

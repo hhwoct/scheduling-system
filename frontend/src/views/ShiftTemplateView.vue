@@ -140,6 +140,8 @@ function openEdit(row) {
 }
 
 async function handleSave() {
+  // 跨天开关与起止时间自动同步（与甘特图/表格的 isCrossDayShift 判定一致）
+  form.isCrossDay = isCrossDayShift(form.startTime, form.endTime) ? 1 : 0
   saving.value = true
   try {
     await updateShiftTemplate(editingId.value, {

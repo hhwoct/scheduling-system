@@ -9,11 +9,11 @@
         active-text-color="#ffffff"
         @select="handleMenuSelect"
       >
-        <el-menu-item index="/dashboard">
+        <el-menu-item v-if="authStore.role !== 'EMPLOYEE'" index="/dashboard">
           <el-icon><DataBoard /></el-icon>
           <span>首页概览</span>
         </el-menu-item>
-        <el-sub-menu index="basic">
+        <el-sub-menu v-if="authStore.role !== 'EMPLOYEE'" index="basic">
           <template #title><span>基础数据</span></template>
           <el-menu-item index="/employees">员工管理</el-menu-item>
           <el-menu-item index="/workstations">工作站管理</el-menu-item>
@@ -23,7 +23,7 @@
           <el-menu-item index="/staffing-requirements">人数需求</el-menu-item>
           <el-menu-item index="/skill-matrix">技能等级</el-menu-item>
         </el-sub-menu>
-        <el-sub-menu index="schedule">
+        <el-sub-menu v-if="authStore.role !== 'EMPLOYEE'" index="schedule">
           <template #title><span>排班管理</span></template>
           <el-menu-item index="/schedules/generate">一键排班</el-menu-item>
           <el-menu-item index="/schedules/view">排班查看</el-menu-item>
@@ -61,7 +61,7 @@
       </el-header>
       <el-main class="main-content">
         <!-- 只对页面内容加 key，避免整个布局（含 sidebar）重新挂载 -->
-        <router-view :key="$route.fullPath" />
+        <router-view :key="$route.path" />
       </el-main>
     </el-container>
   </el-container>
@@ -91,9 +91,15 @@ async function refreshUnreadCount() {
 
 onMounted(async () => {
   if (authStore.isAuthenticated && !authStore.user) {
-    authStore.fetchCurrentUser().catch(() => {})
+    try {
+      await authStore.fetchCurrentUser()
+    } catch (e) {
+      console.error('获取当前用户失败', e)
+    }
   }
-  refreshUnreadCount()
+  if (authStore.isAuthenticated) {
+    refreshUnreadCount()
+  }
   window.addEventListener('focus', refreshUnreadCount)
 })
 

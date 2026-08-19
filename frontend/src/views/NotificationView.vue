@@ -93,8 +93,9 @@ async function loadData() {
       getNotifications(params),
       getUnreadCount(employeeNo.value || undefined)
     ])
-    list.value = notifs?.items || notifs || []
-    total.value = notifs?.total || 0
+    const items = Array.isArray(notifs) ? notifs : (notifs?.items || [])
+    list.value = items
+    total.value = notifs?.total ?? (Array.isArray(notifs) ? notifs.length : 0)
     unreadCount.value = countData?.count ?? 0
   } catch (e) {
     ElMessage.error('加载通知失败')

@@ -93,11 +93,17 @@ const loading = ref(false)
 const submitting = ref(false)
 const errorMsg = ref('')
 
-// 请假日期范围：不能早于今天，不能晚于 30 天后
-const TODAY0 = new Date()
-TODAY0.setHours(0, 0, 0, 0)
-const MAX_DATE = new Date(TODAY0)
-MAX_DATE.setDate(TODAY0.getDate() + 30)
+// 请假日期范围：不能早于今天，不能晚于 30 天后（每次调用计算，避免跨午夜失效）
+function getToday0() {
+  const d = new Date()
+  d.setHours(0, 0, 0, 0)
+  return d
+}
+function getMaxDate() {
+  const d = getToday0()
+  d.setDate(d.getDate() + 30)
+  return d
+}
 
 function formatDate(d) {
   return d ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` : ''
@@ -108,13 +114,13 @@ function toDate(str) {
 }
 
 function disabledStartDate(d) {
-  if (d < TODAY0 || d > MAX_DATE) return true
+  if (d < getToday0() || d > getMaxDate()) return true
   if (form.endDate && d > toDate(form.endDate)) return true
   return false
 }
 
 function disabledEndDate(d) {
-  if (d < TODAY0 || d > MAX_DATE) return true
+  if (d < getToday0() || d > getMaxDate()) return true
   if (form.startDate && d < toDate(form.startDate)) return true
   return false
 }
@@ -144,6 +150,11 @@ async function loadMine() {
 }
 
 async function handleSubmit() {
+  // 预览模式仅供查看，禁止以他人身份提交
+  if (authStore.role !== 'EMPLOYEE') {
+    ElMessage.warning('预览模式仅供查看，不能提交请假申请')
+    return
+  }
   if (!form.startDate || !form.endDate) {
     ElMessage.warning('请选择请假起止日期')
     return
@@ -152,11 +163,11 @@ async function handleSubmit() {
     ElMessage.warning('开始日期不能晚于结束日期')
     return
   }
-  if (form.startDate < formatDate(TODAY0)) {
+  if (form.startDate < formatDate(getToday0())) {
     ElMessage.warning('请假开始日期不能早于今天')
     return
   }
-  if (form.startDate > formatDate(MAX_DATE) || form.endDate > formatDate(MAX_DATE)) {
+  if (form.startDate > formatDate(getMaxDate()) || form.endDate > formatDate(getMaxDate())) {
     ElMessage.warning('请假日期不能晚于 30 天后')
     return
   }
@@ -182,6 +193,10 @@ async function handleEarlyReturn(row) {
     )
     const newEnd = value.trim()
     if (!newEnd) { ElMessage.warning('请输入返岗日期'); return }
+    if (newEnd <= row.startDate || newEnd >= row.endDate) {
+      ElMessage.warning('返岗日期须晚于开始日且早于原结束日')
+      return
+    }
     try {
       await earlyReturnLeave(row.id, newEnd)
       ElMessage.success('已更新为提前返岗')

@@ -39,6 +39,7 @@ import { onMounted, reactive, ref } from 'vue'
 import { getCurrentStore } from '../api/store'
 import request from '../utils/request'
 import { useAuthStore } from '../stores/auth'
+import { API_ROUTES } from '../constants/api'
 
 const authStore = useAuthStore()
 const store = ref(null)
@@ -47,7 +48,7 @@ const stats = reactive({})
 onMounted(async () => {
   const [storeRes, statsRes] = await Promise.allSettled([
     getCurrentStore(),
-    request.get('/dashboard/stats')
+    request.get(API_ROUTES.DASHBOARD.STATS)
   ])
 
   // 分别处理结果：一个请求失败不丢弃另一个有效数据

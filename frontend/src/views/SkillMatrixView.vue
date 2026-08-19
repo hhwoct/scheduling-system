@@ -239,10 +239,15 @@ async function handleGeneralist(row, val) {
   generalistLoading.add(row.id)
   try {
     const result = await setGeneralist({ employeeId: row.id, isGeneralist: enable ? 1 : 0 })
-    row.isGeneralist = result.isGeneralist
-    // 本地更新受影响的格子
-    cells.value = cells.value.filter(c => !(c.employeeId === row.id && result.cells.some(x => x.workstationId === c.workstationId)))
-    cells.value.push(...result.cells)
+    row.isGeneralist = result?.isGeneralist
+    // 本地更新受影响的格子；响应非全量（缺 cells）时重取矩阵保证一致
+    const resultCells = result?.cells ?? []
+    if (Array.isArray(result?.cells)) {
+      cells.value = cells.value.filter(c => !(c.employeeId === row.id && resultCells.some(x => x.workstationId === c.workstationId)))
+      cells.value.push(...resultCells)
+    } else {
+      await loadData()
+    }
     ElMessage.success(enable ? '已设置通岗（楼面岗位 ≥3 分）' : '已取消通岗（楼面岗位清 0）')
   } catch (e) {
     /* 拦截器已提示 */

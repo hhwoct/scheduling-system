@@ -110,17 +110,28 @@ const slots = computed(() => {
   return list
 })
 
-// P3-11: 缺口岗位也显示（只包含当前选中日期）
+// 日期 + N 天
+function addDays(dateStr, days) {
+  if (!dateStr) return ''
+  const d = new Date(dateStr + 'T00:00:00')
+  d.setDate(d.getDate() + days)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+// 缺口岗位也显示（含当前选中日期及其次日凌晨）
 const dailyWorkstations = computed(() => {
   const set = new Set()
   dailyRows.value.forEach(r => {
     if (r.workstationName) set.add(r.workstationName)
   })
-  dailyIssues.value
-    .filter(i => i.issueType === 'STAFFING_GAP' && i.workDate === selectedDate.value)
-    .forEach(i => {
-      if (i.workstationName) set.add(i.workstationName)
+  if (selectedDate.value) {
+    const nextDay = addDays(selectedDate.value, 1)
+    dailyIssues.value.forEach(i => {
+      if (i.issueType !== 'STAFFING_GAP' || !i.workstationName) return
+      const d = String(i.workDate || '').substring(0, 10)
+      if (d === selectedDate.value || d === nextDay) set.add(i.workstationName)
     })
+  }
   return Array.from(set)
 })
 
@@ -155,9 +166,10 @@ function breakTip(row) {
 }
 
 function dailySlotIssues(ws, slot, date) {
+  const d = slot.isNextDay ? addDays(date, 1) : date
   return dailyIssues.value.filter(i =>
     i.issueType === 'STAFFING_GAP' &&
-    i.workDate === date &&
+    String(i.workDate || '').substring(0, 10) === d &&
     i.workstationName === ws &&
     i.timeSlot && String(i.timeSlot).substring(0, 5) === slot.key
   )

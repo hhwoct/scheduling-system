@@ -60,7 +60,7 @@
             <div v-for="d in weekDays" :key="d.date" class="gantt-day-col">
               <template v-if="getDay(row, d.date)">
                 <div v-if="getDay(row, d.date).isRestDay === 1 && row.isParttime !== 1" class="day-block rest-block" :class="dayIssuesClass(row, d.date)">
-                  休<div v-if="dayIssues(row, d.date).length" class="issue-badge">{{ '连续' }}</div>
+                  休<div v-if="dayIssues(row, d.date).length" class="issue-badge">{{ dayIssueText(row, d.date) }}</div>
                 </div>
                 <div v-else-if="getDay(row, d.date).isRestDay === 1" class="day-block empty-block"></div>
                 <div v-else class="day-block work-block" :class="dayIssuesClass(row, d.date)">
@@ -130,7 +130,7 @@
 </template>
 
 <script setup>
-import { onMounted, ref, computed } from 'vue'
+import { onMounted, ref, computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { getWeekView, getScheduleIssues, getMonthView } from '../api/schedules'
@@ -168,6 +168,11 @@ function dayIssuesClass(row, date) {
   if (!list.length) return ''
   if (list.some(i => i.issueType === 'CONSECUTIVE_WORK')) return 'has-issue-person'
   return ''
+}
+function dayIssueText(row, date) {
+  const list = dayIssues(row, date)
+  if (!list.length) return ''
+  return list.some(i => i.issueType === 'OVERTIME') ? '超时' : '连续'
 }
 
 function getDay(row, date) { return row.days.find(d => d.workDate === date) }
@@ -246,6 +251,14 @@ async function loadData() {
   }
 }
 
+// query planId 变化时重载
+watch(() => route.query.planId, (val) => {
+  if (val) {
+    planId.value = val
+    loadData()
+  }
+})
+
 onMounted(loadData)
 </script>
 
@@ -272,5 +285,4 @@ onMounted(loadData)
 .empty-block { background: #fafafa; }
 .has-issue-person { box-shadow: inset 0 0 0 2px #f56c6c; }
 .issue-badge { margin-top: 2px; background: #f56c6c; color: #fff; font-size: 10px; border-radius: 2px; padding: 0 4px; }
-.has-gap .issue-badge { background: #e6a23c; }
 </style>

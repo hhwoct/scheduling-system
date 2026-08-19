@@ -32,7 +32,7 @@
         <el-table-column label="操作" width="180">
           <template #default="{ row }">
             <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
-            <el-button link type="danger" @click="handleDelete(row)">删除</el-button>
+            <el-button link type="danger" :disabled="deleting" @click="handleDelete(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -79,6 +79,7 @@ import { getPeakHours, createPeakHour, updatePeakHour, deletePeakHour } from '..
 
 const loading = ref(false)
 const saving = ref(false)
+const deleting = ref(false)
 const list = ref([])
 const dialogVisible = ref(false)
 const editingId = ref(null)
@@ -138,6 +139,7 @@ async function handleSave() {
 }
 
 async function handleDelete(row) {
+  if (deleting.value) return
   try {
     await ElMessageBox.confirm(`确定删除高峰时段 ${fmtTime(row.startTime)}-${fmtTime(row.endTime)} 吗？`, '提示', {
       confirmButtonText: '删除',
@@ -147,9 +149,16 @@ async function handleDelete(row) {
   } catch {
     return
   }
-  await deletePeakHour(row.id)
-  ElMessage.success('删除成功')
-  await loadData()
+  deleting.value = true
+  try {
+    await deletePeakHour(row.id)
+    ElMessage.success('删除成功')
+    await loadData()
+  } catch (e) {
+    ElMessage.error('删除失败：' + (e?.message || '网络错误'))
+  } finally {
+    deleting.value = false
+  }
 }
 
 onMounted(loadData)
