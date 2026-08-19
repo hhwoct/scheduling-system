@@ -366,6 +366,11 @@ api.MapPost("/employees", async (
     IEmployeeService employeeService,
     CancellationToken cancellationToken) =>
 {
+    if (request is null)
+    {
+        throw new BusinessException("请求参数不能为空", "INVALID_REQUEST");
+    }
+
     var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
     var result = await employeeService.CreateAsync(
         request,
@@ -384,6 +389,11 @@ api.MapPut("/employees/{id:long}", async (
     IEmployeeService employeeService,
     CancellationToken cancellationToken) =>
 {
+    if (request is null)
+    {
+        throw new BusinessException("请求参数不能为空", "INVALID_REQUEST");
+    }
+
     var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
     var result = await employeeService.UpdateAsync(
         id,
@@ -443,6 +453,11 @@ api.MapPut("/skill-matrix/cell", async (
     IEmployeeSkillService employeeSkillService,
     CancellationToken cancellationToken) =>
 {
+    if (request is null)
+    {
+        throw new BusinessException("请求参数不能为空", "INVALID_REQUEST");
+    }
+
     var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
     var result = await employeeSkillService.UpdateCellAsync(
         request,
@@ -460,6 +475,11 @@ api.MapPut("/skill-matrix/generalist", async (
     IEmployeeSkillService employeeSkillService,
     CancellationToken cancellationToken) =>
 {
+    if (request is null)
+    {
+        throw new BusinessException("请求参数不能为空", "INVALID_REQUEST");
+    }
+
     var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
     var result = await employeeSkillService.SetGeneralistAsync(
         request,
@@ -477,6 +497,11 @@ api.MapPut("/employees/{employeeId:long}/skills", async (
     IEmployeeSkillService employeeSkillService,
     CancellationToken cancellationToken) =>
 {
+    if (request is null)
+    {
+        throw new BusinessException("请求参数不能为空", "INVALID_REQUEST");
+    }
+
     var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
     await employeeSkillService.SaveAsync(
         employeeId,
@@ -507,6 +532,11 @@ api.MapPost("/workstations", async (
     IWorkstationService workstationService,
     CancellationToken cancellationToken) =>
 {
+    if (request is null)
+    {
+        throw new BusinessException("请求参数不能为空", "INVALID_REQUEST");
+    }
+
     var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
     var result = await workstationService.CreateAsync(
         request,
@@ -525,6 +555,11 @@ api.MapPut("/workstations/{id:long}", async (
     IWorkstationService workstationService,
     CancellationToken cancellationToken) =>
 {
+    if (request is null)
+    {
+        throw new BusinessException("请求参数不能为空", "INVALID_REQUEST");
+    }
+
     var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
     var result = await workstationService.UpdateAsync(
         id,
@@ -555,6 +590,11 @@ api.MapPut("/shift-templates/{id:long}", async (
     IShiftTemplateService shiftTemplateService,
     CancellationToken cancellationToken) =>
 {
+    if (request is null)
+    {
+        throw new BusinessException("请求参数不能为空", "INVALID_REQUEST");
+    }
+
     var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
     var result = await shiftTemplateService.UpdateAsync(
         id,
@@ -585,6 +625,11 @@ api.MapPut("/rules/{id:long}", async (
     IRuleConfigService ruleConfigService,
     CancellationToken cancellationToken) =>
 {
+    if (request is null)
+    {
+        throw new BusinessException("请求参数不能为空", "INVALID_REQUEST");
+    }
+
     var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
     var result = await ruleConfigService.UpdateAsync(
         id,
@@ -614,6 +659,11 @@ api.MapPost("/peak-restricted-hours", async (
     IPeakHourService peakHourService,
     CancellationToken cancellationToken) =>
 {
+    if (request is null)
+    {
+        throw new BusinessException("请求参数不能为空", "INVALID_REQUEST");
+    }
+
     var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
     var result = await peakHourService.CreateAsync(
         request,
@@ -632,6 +682,11 @@ api.MapPut("/peak-restricted-hours/{id:long}", async (
     IPeakHourService peakHourService,
     CancellationToken cancellationToken) =>
 {
+    if (request is null)
+    {
+        throw new BusinessException("请求参数不能为空", "INVALID_REQUEST");
+    }
+
     var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
     var result = await peakHourService.UpdateAsync(
         id,
@@ -679,6 +734,11 @@ api.MapPut("/staffing-requirements", async (
     IStaffingRequirementService staffingRequirementService,
     CancellationToken cancellationToken) =>
 {
+    if (request is null)
+    {
+        throw new BusinessException("请求参数不能为空", "INVALID_REQUEST");
+    }
+
     var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
     var result = await staffingRequirementService.SaveAsync(
         request,
@@ -805,6 +865,11 @@ api.MapPut("/ai/config", async (
     IAiConfigService aiConfigService,
     CancellationToken cancellationToken) =>
 {
+    if (request is null)
+    {
+        throw new BusinessException("请求参数不能为空", "INVALID_REQUEST");
+    }
+
     var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
     var result = await aiConfigService.SaveAsync(
         request,
@@ -833,6 +898,11 @@ api.MapPost("/ai/parse-requirement-doc", async (
     IDocumentAiService documentAiService,
     CancellationToken cancellationToken) =>
 {
+    if (request is null)
+    {
+        throw new BusinessException("请求参数不能为空", "INVALID_REQUEST");
+    }
+
     var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
     var result = await documentAiService.ParseAsync(storeId, request, cancellationToken);
     return ApiResponse.Ok(result, "AI 识别完成");
@@ -845,6 +915,11 @@ api.MapPost("/schedules/generate", async (
     IScheduleService scheduleService,
     CancellationToken cancellationToken) =>
 {
+    if (request is null)
+    {
+        throw new BusinessException("请求参数不能为空", "INVALID_REQUEST");
+    }
+
     var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
     var result = await scheduleService.GenerateAsync(
         request,
@@ -932,6 +1007,11 @@ api.MapPut("/schedules/{planId:long}/adjust", async (
     IScheduleService scheduleService,
     CancellationToken cancellationToken) =>
 {
+    if (request is null)
+    {
+        throw new BusinessException("请求参数不能为空", "INVALID_REQUEST");
+    }
+
     var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
     await scheduleService.AdjustAsync(
         planId,
@@ -951,6 +1031,11 @@ api.MapPut("/schedules/{planId:long}/day-status", async (
     IScheduleService scheduleService,
     CancellationToken cancellationToken) =>
 {
+    if (request is null)
+    {
+        throw new BusinessException("请求参数不能为空", "INVALID_REQUEST");
+    }
+
     var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
     await scheduleService.SetDayStatusAsync(
         planId,
@@ -971,6 +1056,11 @@ api.MapPut("/schedules/{planId:long}/move-segment", async (
     IScheduleService scheduleService,
     CancellationToken cancellationToken) =>
 {
+    if (request is null)
+    {
+        throw new BusinessException("请求参数不能为空", "INVALID_REQUEST");
+    }
+
     var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
     var result = await scheduleService.MoveSegmentAsync(
         planId,
@@ -989,6 +1079,11 @@ api.MapPut("/schedules/{planId:long}/slot-status", async (
     IScheduleService scheduleService,
     CancellationToken cancellationToken) =>
 {
+    if (request is null)
+    {
+        throw new BusinessException("请求参数不能为空", "INVALID_REQUEST");
+    }
+
     var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
     await scheduleService.SetSlotStatusAsync(
         planId,
@@ -1395,6 +1490,11 @@ api.MapPost("/leave-requests", async (
     IAuditLogService audit,
     CancellationToken ct) =>
 {
+    if (request is null)
+    {
+        throw new BusinessException("请求参数不能为空", "INVALID_REQUEST");
+    }
+
     var username = currentUser.Username;
     var emp = await db.Employees.AsNoTracking().FirstOrDefaultAsync(x => x.EmployeeNo == username && x.StoreId == currentUser.StoreId && x.Status == 1, ct)
         ?? throw new NotFoundException("员工档案不存在");
@@ -1505,6 +1605,11 @@ api.MapPut("/leave-requests/{id:long}/early-return", async (
     IAuditLogService audit,
     CancellationToken ct) =>
 {
+    if (request is null)
+    {
+        throw new BusinessException("请求参数不能为空", "INVALID_REQUEST");
+    }
+
     var username = currentUser.Username;
     var emp = await db.Employees.AsNoTracking().FirstOrDefaultAsync(x => x.EmployeeNo == username && x.StoreId == currentUser.StoreId && x.Status == 1, ct)
         ?? throw new NotFoundException("员工档案不存在");
@@ -1586,6 +1691,11 @@ api.MapPut("/leave-requests/{id:long}/review", async (
     IAuditLogService audit,
     CancellationToken ct) =>
 {
+    if (review is null)
+    {
+        throw new BusinessException("请求参数不能为空", "INVALID_REQUEST");
+    }
+
     if (currentUser.Role == "EMPLOYEE")
         throw new BusinessException("无权限", "FORBIDDEN");
 
@@ -1646,6 +1756,11 @@ api.MapPost("/shift-swaps", async (
     IAuditLogService audit,
     CancellationToken ct) =>
 {
+    if (request is null)
+    {
+        throw new BusinessException("请求参数不能为空", "INVALID_REQUEST");
+    }
+
     var username = currentUser.Username;
     var requesterEmp = await db.Employees.AsNoTracking().FirstOrDefaultAsync(x => x.EmployeeNo == username && x.StoreId == currentUser.StoreId && x.Status == 1, ct)
         ?? throw new NotFoundException("员工档案不存在");
@@ -1850,6 +1965,11 @@ api.MapPut("/shift-swaps/{id:long}/review", async (
     IAuditLogService audit,
     CancellationToken ct) =>
 {
+    if (review is null)
+    {
+        throw new BusinessException("请求参数不能为空", "INVALID_REQUEST");
+    }
+
     if (currentUser.Role == "EMPLOYEE")
         throw new BusinessException("无权限", "FORBIDDEN");
 
