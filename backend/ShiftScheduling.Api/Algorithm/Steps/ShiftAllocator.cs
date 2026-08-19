@@ -357,7 +357,9 @@ public sealed class ShiftAllocator
             .Where(kv => InWindow(kv.Key.Date, kv.Key.Slot, date))
             .Sum(kv => kv.Value);
 
-    private const int MaxDemandShiftBlocksPerDay = 8;
+    // D 班次按工作站分块后块数增多（每站每缺口区间一块），上限放宽；
+    // 每天总人数仍受需求与可用员工自然约束。
+    private const int MaxDemandShiftBlocksPerDay = 32;
 
     private const int MaxDemandShiftHeadcount = 12;
 
@@ -380,43 +382,6 @@ public sealed class ShiftAllocator
         Dictionary<long, HashSet<(DateOnly Date, TimeSpan Slot)>> busySlotsByEmployee,
         IReadOnlyDictionary<DemandKey, int> idealRequirements)
     {
-        // 只取【当天日历日】的缺口时段
-        var gapSlots = remaining
-            .Where(kv => kv.Value > 0 && kv.Key.Date == workDate)
-            .Select(kv => kv.Key.Slot)
-            .Distinct()
-            .OrderBy(s => s)
-            .ToList();
-        if (gapSlots.Count == 0)
-        {
-            return;
-        }
-
-        // 合并连续缺口块（30 分钟相邻）
-        var blocks = new List<(TimeSpan Start, TimeSpan EndExclusive)>();
-        var blockStart = gapSlots[0];
-        var prev = gapSlots[0];
-        for (var i = 1; i < gapSlots.Count; i++)
-        {
-            var nextOfPrev = prev.Add(TimeSpan.FromMinutes(30));
-            if (nextOfPrev >= TimeSpan.FromHours(24))
-            {
-                nextOfPrev -= TimeSpan.FromHours(24);
-            }
-
-            if (gapSlots[i] == nextOfPrev)
-            {
-                prev = gapSlots[i];
-                continue;
-            }
-
-            blocks.Add((blockStart, EndOf(prev)));
-            blockStart = gapSlots[i];
-            prev = gapSlots[i];
-        }
-
-        blocks.Add((blockStart, EndOf(prev)));
-
         // 临时班次可覆盖的工作站集合（用于技能校验与选站）
         var allWorkstationIds = input.StaffingRequirements
             .Select(r => r.WorkstationId)
@@ -424,32 +389,81 @@ public sealed class ShiftAllocator
             .Distinct()
             .ToList();
 
-        foreach (var block in blocks.Take(MaxDemandShiftBlocksPerDay))
+        // 按【工作站】分组生成缺口块：每个 D 班次只跟随单个工作站自己的缺口区间。
+        // 修复：原来按时段跨站合并成一个块，员工被塞进"别站有缺口的时段"时，
+        // 其本站在该时段已满员（上限），整班被人数上限误拒，缺口无人可补。
+        var blocksUsed = 0;
+        foreach (var wsGroup in remaining
+                     .Where(kv => kv.Value > 0 && kv.Key.Date == workDate)
+                     .GroupBy(kv => kv.Key.WorkstationId)
+                     .OrderBy(g => g.Key))
         {
-            if (!BlockHasDemand(block.Start, block.EndExclusive, remaining, workDate))
+            var workstationId = wsGroup.Key;
+            var gapSlots = wsGroup
+                .Select(kv => kv.Key.Slot)
+                .Distinct()
+                .OrderBy(s => s)
+                .ToList();
+
+            // 合并该工作站自己的连续缺口块（30 分钟相邻）
+            var blocks = new List<(TimeSpan Start, TimeSpan EndExclusive)>();
+            var blockStart = gapSlots[0];
+            var prev = gapSlots[0];
+            for (var i = 1; i < gapSlots.Count; i++)
             {
-                continue;
+                var nextOfPrev = prev.Add(TimeSpan.FromMinutes(30));
+                if (nextOfPrev >= TimeSpan.FromHours(24))
+                {
+                    nextOfPrev -= TimeSpan.FromHours(24);
+                }
+
+                if (gapSlots[i] == nextOfPrev)
+                {
+                    prev = gapSlots[i];
+                    continue;
+                }
+
+                blocks.Add((blockStart, EndOf(prev)));
+                blockStart = gapSlots[i];
+                prev = gapSlots[i];
             }
 
-            var n = generatedTemplates.Count + 1;
-            var code = "D" + n;
-            var isCrossDay = block.EndExclusive <= block.Start ? 1 : 0;
-            var template = new ShiftTemplateInput(
-                -1000 - n,
-                code,
-                "按需求补班",
-                block.Start,
-                block.EndExclusive,
-                isCrossDay,
-                1,
-                allWorkstationIds);
-            generatedTemplates.Add(template);
+            blocks.Add((blockStart, EndOf(prev)));
 
-            var usedThisBlock = 0;
-            while (BlockHasDemand(block.Start, block.EndExclusive, remaining, workDate) && usedThisBlock < MaxDemandShiftHeadcount)
+            foreach (var block in blocks)
+            {
+                if (blocksUsed >= MaxDemandShiftBlocksPerDay)
+                {
+                    return;
+                }
+
+                if (!BlockHasDemandForStation(block.Start, block.EndExclusive, workstationId, remaining, workDate))
+                {
+                    continue;
+                }
+
+                blocksUsed++;
+                var n = generatedTemplates.Count + 1;
+                var code = "D" + n;
+                var isCrossDay = block.EndExclusive <= block.Start ? 1 : 0;
+                var template = new ShiftTemplateInput(
+                    -1000 - n,
+                    code,
+                    "按需求补班",
+                    block.Start,
+                    block.EndExclusive,
+                    isCrossDay,
+                    1,
+                    allWorkstationIds);
+                generatedTemplates.Add(template);
+
+                var usedThisBlock = 0;
+                while (BlockHasDemandForStation(block.Start, block.EndExclusive, workstationId, remaining, workDate) && usedThisBlock < MaxDemandShiftHeadcount)
             {
                 var orderedCandidates = workingEmployees
-                    .Where(e => !assignedToday.Contains(e.Id))
+                    // 修复：不再用 assignedToday 排除当天已有班次的员工——只要 D 班次时段
+                    // 与其已有班次不重叠（HasOverlap 校验）即可补位；否则"20:00 才上班的
+                    // 楼面员工无法补 17:00-19:30 缺口"这类本可覆盖的缺口永远补不上。
                     .Where(e => !HasOverlap(busySlotsByEmployee, e.Id, template, workDate))
                     .Where(e => weeklyHours.GetValueOrDefault(e.Id) < input.MaxWeeklyHours)
                     .Where(e => HasSkillForShift(e.Id, template, skillsByEmployee))
@@ -491,6 +505,7 @@ public sealed class ShiftAllocator
                 DecrementRemaining(template, targetWs, workDate, remaining);
                 IncrementCoverage(template, targetWs, workDate, coverage);
                 usedThisBlock++;
+                }
             }
         }
     }
@@ -501,14 +516,18 @@ public sealed class ShiftAllocator
         return end >= TimeSpan.FromHours(24) ? end - TimeSpan.FromHours(24) : end;
     }
 
-    private static bool BlockHasDemand(
+    private static bool BlockHasDemandForStation(
         TimeSpan start,
         TimeSpan endExclusive,
+        long workstationId,
         IReadOnlyDictionary<DemandKey, int> remaining,
         DateOnly workDate)
     {
         var slots = SchedulingTimeHelper.GetShiftSlots(start, endExclusive, endExclusive <= start ? 1 : 0);
-        return remaining.Any(kv => kv.Value > 0 && kv.Key.Date == workDate && slots.Contains(kv.Key.Slot));
+        return remaining.Any(kv => kv.Value > 0 &&
+                                   kv.Key.Date == workDate &&
+                                   kv.Key.WorkstationId == workstationId &&
+                                   slots.Contains(kv.Key.Slot));
     }
 
     private static bool HasSkillForShift(

@@ -42,10 +42,15 @@ public sealed class BreakAllocator
                 g => g.Key,
                 g => g.ToDictionary(s => s.WorkstationId, s => (Score: s.SkillScore, IsPrimary: s.IsPrimarySkill)));
 
-        // 员工在某个时段的原工作站：(employeeId, 班次开始日期) -> slot -> workstationId
+        // 员工在某个时段的原工作站：(employeeId, 班次开始日期) -> slot -> workstationId。
+        // 同一员工同一天可能有多个互不重叠的班次，同 slot 可能有多行（跨天回绕与凌晨 D 班次），
+        // 取第一条即可（工作站在该 slot 唯一）。
         var wsByEmployeeDateSlot = workstationAssignments
             .GroupBy(a => (a.EmployeeId, a.WorkDate))
-            .ToDictionary(g => g.Key, g => g.ToDictionary(a => a.TimeSlot, a => a.WorkstationId));
+            .ToDictionary(
+                g => g.Key,
+                g => g.GroupBy(a => a.TimeSlot)
+                      .ToDictionary(x => x.Key, x => x.First().WorkstationId));
 
         // 员工当天主工作站（分配次数最多的站）
         var mainWsByEmployeeDate = workstationAssignments

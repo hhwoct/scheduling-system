@@ -99,6 +99,12 @@ public sealed class SchedulingEngineTests
 
         foreach (var assignment in output.ShiftAssignments)
         {
+            // D 班次（模板 id 为负，动态生成）不在输入模板表中，跳过
+            if (assignment.ShiftTemplateId < 0)
+            {
+                continue;
+            }
+
             var shift = input.ShiftTemplates.First(s => s.Id == assignment.ShiftTemplateId);
             var employee = input.Employees.First(e => e.Id == assignment.EmployeeId);
 

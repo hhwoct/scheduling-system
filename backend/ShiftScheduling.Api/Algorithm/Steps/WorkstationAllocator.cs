@@ -301,7 +301,10 @@ public sealed class WorkstationAllocator
             }
         }
 
-        var borrowCountByEmployee = dayShifts.ToDictionary(s => s.EmployeeId, _ => 0);
+        // 员工同一天可能有多个互不重叠的班次（如 S4 + 补充 D 班次），按员工分组去重
+        var borrowCountByEmployee = dayShifts
+            .GroupBy(s => s.EmployeeId)
+            .ToDictionary(g => g.Key, _ => 0);
 
         // ========== 2D + 2E：检测连续缺口块 & 块状借调 ==========
         var gapBlocks = DetectGapBlocks(assignments, requirements, dayDate, shiftById, shiftSlotsCache);
@@ -311,12 +314,14 @@ public sealed class WorkstationAllocator
             BorrowForBlock(assignments, block, dayShifts, requirements, skillsByEmployee, shiftById, shiftSlotsCache, borrowCountByEmployee, true);
         }
 
-        // ========== 2F：二次连续块填补（放宽约束） ==========
+        // ========== 2F：二次连续块填补 ==========
+        // 修复：与 2E 一样要求借出站在整块时段都有富余（strict=true），
+        // 不再允许"拆东墙补西墙"——把已覆盖岗位的人挪走会凭空制造新缺口。
         var remainingBlocks = DetectGapBlocks(assignments, requirements, dayDate, shiftById, shiftSlotsCache);
 
         foreach (var block in remainingBlocks)
         {
-            BorrowForBlock(assignments, block, dayShifts, requirements, skillsByEmployee, shiftById, shiftSlotsCache, borrowCountByEmployee, false);
+            BorrowForBlock(assignments, block, dayShifts, requirements, skillsByEmployee, shiftById, shiftSlotsCache, borrowCountByEmployee, true);
         }
 
         // ========== 2G：最终逐段兜底 ==========
@@ -354,7 +359,18 @@ public sealed class WorkstationAllocator
                         }
 
                         var currentWs = existing[0].WorkstationId;
-                        return currentWs != req.Key && HasSkill(s.EmployeeId, req.Key, skillsByEmployee);
+                        if (currentWs == req.Key || !HasSkill(s.EmployeeId, req.Key, skillsByEmployee))
+                        {
+                            return false;
+                        }
+
+                        // 修复：借出站在该时段必须有富余（覆盖 > 需求），否则挪走只会制造新缺口
+                        var sourceCount = assignments.Count(a =>
+                            a.TimeSlot == slot &&
+                            a.WorkstationId == currentWs &&
+                            AssignmentCalendarDate(a, shiftById) == slotDate);
+                        var sourceReq = requirements.GetValueOrDefault((slotDate, slot))?.GetValueOrDefault(currentWs) ?? 0;
+                        return sourceCount > sourceReq;
                     })
                     .OrderByDescending(s => SkillScore(s.EmployeeId, req.Key, skillsByEmployee))
                     .Take(shortfall)
