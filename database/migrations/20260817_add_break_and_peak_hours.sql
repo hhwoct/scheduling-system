@@ -15,6 +15,7 @@ ALTER TABLE schedule_summaries
 
 -- 2. 高峰禁休时段表（按门店配置，可多条）
 -- 注意：TIME 类型无法表达跨午夜区间；本表仅支持单日内区间，故加 CHECK (start_time < end_time)。
+--       约束名为 chk_peak_hours_time_range；将来若需支持跨午夜，可 DROP 该 CHECK 后改建模。
 --       跨午夜高峰需求请拆成两条（如 23:00-24:00 与 00:00-01:00）。
 CREATE TABLE IF NOT EXISTS peak_restricted_hours (
   id bigint NOT NULL AUTO_INCREMENT,

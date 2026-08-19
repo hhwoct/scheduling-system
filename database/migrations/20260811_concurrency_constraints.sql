@@ -31,6 +31,9 @@ ALTER TABLE shift_swaps
 ALTER TABLE leave_requests
   ADD CONSTRAINT chk_leave_type CHECK (leave_type IN ('PERSONAL', 'SICK', 'ANNUAL'));
 
--- 不能自己换自己
+-- 不能自己换自己。requester_employee_id / target_employee_id 均为 NOT NULL，
+-- 故 <> 恒返回 TRUE/FALSE，不会出现 NULL（NULL 会让 CHECK 判定通过、形同虚设）；
+-- 若将来放宽为可空，需改写为
+-- CHECK (requester_employee_id IS NULL OR target_employee_id IS NULL OR requester_employee_id <> target_employee_id)。
 ALTER TABLE shift_swaps
   ADD CONSTRAINT chk_not_self CHECK (requester_employee_id <> target_employee_id);

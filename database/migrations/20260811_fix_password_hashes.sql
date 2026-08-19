@@ -15,7 +15,9 @@ DELIMITER $$
 DROP PROCEDURE IF EXISTS tmp_fix_password_hashes$$
 CREATE PROCEDURE tmp_fix_password_hashes()
 BEGIN
-    DECLARE v_rows BIGINT;
+    DECLARE v_count BIGINT;
+    DECLARE v_missing VARCHAR(500);
+    DECLARE v_msg VARCHAR(500);
     DECLARE EXIT HANDLER FOR SQLEXCEPTION
     BEGIN
         ROLLBACK;
@@ -24,6 +26,7 @@ BEGIN
 
     START TRANSACTION;
 
+    -- 1. 为已存在的账号设置独立 bcrypt 哈希
     UPDATE users
     SET password_hash = CASE username
         WHEN 'admin'   THEN '$2b$12$9p9nWbNUcDdJk9wAvqapge0GCFfX4quD8OH6XTJJVn9WPB2xORj12'
@@ -57,31 +60,47 @@ BEGIN
     WHERE username IN ('admin', 'manager', 'E001','E002','E003','E004','E005','E006','E007','E008','E009','E010',
                        'E011','E012','E013','E014','E015','E016','E017','E018','E019','E020','E021','E022','E023');
 
-    SET v_rows = ROW_COUNT();
+    -- 2. 校验核心 24 账号（admin/manager/E001~E022）完整存在。
+    --    用 COUNT(*) 而非 ROW_COUNT()：ROW_COUNT 只反映「变更行数」，重跑时已正确的哈希可能为 0，
+    --    无法可靠反映「账号是否存在」。
+    SELECT COUNT(*) INTO v_count
+    FROM users
+    WHERE username IN ('admin','manager','E001','E002','E003','E004','E005','E006','E007','E008','E009','E010',
+                       'E011','E012','E013','E014','E015','E016','E017','E018','E019','E020','E021','E022');
 
-    -- 校验：老库应为 admin/manager + E001~E022 = 24 行；若 E023 账号已存在则为 25 行。
-    --       少于 24 说明账号缺失或表结构漂移，报错中断，避免静默无操作。
-    IF v_rows NOT BETWEEN 24 AND 25 THEN
-        SIGNAL SQLSTATE '45000'
-            SET MESSAGE_TEXT = 'fix_password_hashes: updated row count mismatch (expected 24~25)';
+    IF v_count <> 24 THEN
+        -- 定位缺失的具体账号（admin/manager 缺失同样报错）
+        SELECT GROUP_CONCAT(t.username ORDER BY t.username SEPARATOR ', ') INTO v_missing
+        FROM (
+            SELECT 'admin' AS username UNION ALL SELECT 'manager'
+            UNION ALL SELECT 'E001' UNION ALL SELECT 'E002' UNION ALL SELECT 'E003'
+            UNION ALL SELECT 'E004' UNION ALL SELECT 'E005' UNION ALL SELECT 'E006'
+            UNION ALL SELECT 'E007' UNION ALL SELECT 'E008' UNION ALL SELECT 'E009'
+            UNION ALL SELECT 'E010' UNION ALL SELECT 'E011' UNION ALL SELECT 'E012'
+            UNION ALL SELECT 'E013' UNION ALL SELECT 'E014' UNION ALL SELECT 'E015'
+            UNION ALL SELECT 'E016' UNION ALL SELECT 'E017' UNION ALL SELECT 'E018'
+            UNION ALL SELECT 'E019' UNION ALL SELECT 'E020' UNION ALL SELECT 'E021'
+            UNION ALL SELECT 'E022'
+        ) t
+        LEFT JOIN users u ON u.username = t.username
+        WHERE u.username IS NULL;
+
+        SET v_msg = CONCAT('fix_password_hashes: 核心账号缺失(', v_count, '/24): ', COALESCE(v_missing, ''));
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = v_msg;
     END IF;
 
-    -- 兜底：后补录员工（如 E023 赵保洁）的登录账号可能缺失，按「密码=工号」创建，
-    --       确保 UPDATE 覆盖列表之外的员工账号也存在且可登录；已存在则跳过。
+    -- 3. E023 账号若缺失则补建（仅 E023；E001~E022 缺失已由上方 SIGNAL 报错，
+    --    不再为其它工号生成空哈希账号）
     INSERT INTO users (store_id, username, password_hash, nickname, role, status, created_at, updated_at)
     SELECT e.store_id, e.employee_no,
-           CASE e.employee_no
-             WHEN 'E023' THEN '$2b$12$Y/M96/9xESm86gGkSP10mOeZjeYiGasg9w2WrtrnHV9qd7iVFFE52'
-             ELSE ''  -- 未知工号的账号无可用初始密码，需人工设置后再登录
-           END,
-           e.name,
-           CASE WHEN e.employee_no = 'E001' THEN 'STORE_MANAGER' ELSE 'EMPLOYEE' END,
-           1, NOW(), NOW()
+           '$2b$12$Y/M96/9xESm86gGkSP10mOeZjeYiGasg9w2WrtrnHV9qd7iVFFE52',
+           e.name, 'EMPLOYEE', 1, NOW(), NOW()
     FROM employees e
     WHERE e.status = 1
-      AND e.employee_no BETWEEN 'E001' AND 'E023'
+      AND e.employee_no = 'E023'
       AND NOT EXISTS (SELECT 1 FROM users u WHERE u.username = e.employee_no);
 
+    -- 4. 审计
     INSERT INTO audit_logs (store_id, operator_user_id, operator_name, action_type, target_type, target_id, after_content, remark)
     VALUES (1, 1, '系统管理员', 'FIX_PASSWORD_HASHES', 'USER', NULL,
             '为 admin/manager/23名员工（E001~E023）设置独立真实 bcrypt 哈希，替代无效/共享占位哈希',

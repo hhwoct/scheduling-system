@@ -5,7 +5,7 @@ INSERT INTO date_parameters (store_id, work_date, week_day, day_type, is_legal_h
 SELECT 1, d, DAYOFWEEK(d),
   CASE WHEN DAYOFWEEK(d) IN (1,7) THEN 'HOLIDAY' ELSE 'WORKDAY' END,
   0,
-  CASE WHEN DAYOFWEEK(d) = 6 THEN 1 ELSE 0 END
+  CASE WHEN d = '2026-09-24' THEN 1 ELSE 0 END  -- 节前日=中秋前一日（周四），非周五(6)
 FROM (
   SELECT DATE('2026-09-01') + INTERVAL seq DAY AS d
   FROM (

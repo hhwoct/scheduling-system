@@ -70,6 +70,8 @@ CREATE TABLE employees (
   hire_date DATE NULL,
   primary_position VARCHAR(100) NULL,
   max_weekly_hours DECIMAL(5,2) NOT NULL DEFAULT 48.00,
+  is_parttime TINYINT NOT NULL DEFAULT 0 COMMENT '是否兼职人员',
+  is_generalist TINYINT NOT NULL DEFAULT 0 COMMENT '是否通岗（楼面低技能岗位通用）',
   status TINYINT NOT NULL DEFAULT 1,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -84,6 +86,7 @@ CREATE TABLE workstations (
   code VARCHAR(50) NOT NULL,
   name VARCHAR(100) NOT NULL,
   sort_order INT NOT NULL DEFAULT 0,
+  is_low_skill TINYINT NOT NULL DEFAULT 0 COMMENT '是否低技术含量岗位',
   remark VARCHAR(255) NULL,
   status TINYINT NOT NULL DEFAULT 1,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -515,9 +518,10 @@ INSERT INTO rule_configs (store_id, rule_key, rule_name, rule_value, value_type,
 -- 8 月日期参数。week_day 存 MySQL DAYOFWEEK 值（Sunday=1，Saturday=7）。
 -- 业务口径（与 20260818 及算法 RestDayAllocator.IsPeakDay 一致）：
 --   WEEKEND = 周五(6) + 周六(7)（晚市高峰日）；周日(1) 为工作日 WORKDAY。
--- 因此周末判据为 IN (6,7) 而非 IN (1,7)，is_holiday_eve=5 表示周四（法定假日前夕）。
+-- 因此周末判据为 IN (6,7) 而非 IN (1,7)。2026 年 8 月无法定节假日，
+--   is_legal_holiday 与 is_holiday_eve 均为 0（节前日仅在 9 月中秋前一日 09-24 单独标记）。
 INSERT INTO date_parameters (store_id, work_date, week_day, day_type, is_legal_holiday, is_holiday_eve)
-SELECT 1, d, DAYOFWEEK(d), CASE WHEN DAYOFWEEK(d) IN (6,7) THEN 'WEEKEND' ELSE 'WORKDAY' END, 0, CASE WHEN DAYOFWEEK(d) = 5 THEN 1 ELSE 0 END
+SELECT 1, d, DAYOFWEEK(d), CASE WHEN DAYOFWEEK(d) IN (6,7) THEN 'WEEKEND' ELSE 'WORKDAY' END, 0, 0
 FROM (
   SELECT DATE('2026-08-01') + INTERVAL seq DAY AS d
   FROM (
@@ -588,11 +592,9 @@ VALUES (1, NULL, '系统管理员', 'INIT_DATABASE', 'DATABASE', NULL, '初始�
 
 -- ================================================================
 -- 兼职人员 + 低技能岗位标记（并入基线）
+-- （is_low_skill / is_parttime / is_generalist 列已并入上方 CREATE TABLE，此处仅回填标记）
 -- ================================================================
-ALTER TABLE workstations ADD COLUMN is_low_skill TINYINT NOT NULL DEFAULT 0 COMMENT '是否低技术含量岗位' AFTER sort_order;
 UPDATE workstations SET is_low_skill = 1 WHERE code IN ('DELIVERY', 'CLEANING', 'SERVICE', 'RECEPTION');
-ALTER TABLE employees ADD COLUMN is_parttime TINYINT NOT NULL DEFAULT 0 COMMENT '是否兼职人员' AFTER max_weekly_hours;
-ALTER TABLE employees ADD COLUMN is_generalist TINYINT NOT NULL DEFAULT 0 COMMENT '是否通岗（楼面低技能岗位通用）' AFTER is_parttime;
 INSERT INTO employees (store_id, employee_no, name, phone, department, hire_date, primary_position, max_weekly_hours, is_parttime, status) VALUES
 (1, 'E101', '兼保洁A', '13900000101', '兼职', '2026-08-01', '保洁岗', 32, 1, 1),
 (1, 'E102', '兼保洁B', '13900000102', '兼职', '2026-08-01', '保洁岗', 32, 1, 1),
@@ -605,14 +607,25 @@ INSERT INTO employees (store_id, employee_no, name, phone, department, hire_date
 (1, 'E109', '兼服务C', '13900000109', '兼职', '2026-08-01', '服务岗', 32, 1, 1),
 (1, 'E110', '兼服务D', '13900000110', '兼职', '2026-08-01', '服务岗', 32, 1, 1);
 INSERT INTO employee_skills (employee_id, workstation_id, skill_score, is_primary_skill, status)
-SELECT e.id, w.id, CASE WHEN e.primary_position = w.name THEN 4 ELSE 2 END, CASE WHEN e.primary_position = w.name THEN 1 ELSE 0 END, 1
+SELECT e.id, w.id,
+  CASE WHEN m.primary_position IS NULL THEN 2 ELSE 4 END,
+  CASE WHEN m.primary_position IS NULL THEN 0 ELSE 1 END,
+  1
 FROM employees e CROSS JOIN workstations w
-WHERE e.store_id = 1 AND w.store_id = 1 AND e.employee_no LIKE 'E1%' AND w.code IN ('CLEANING', 'RECEPTION', 'DELIVERY', 'SERVICE');
+LEFT JOIN (
+  SELECT '保洁岗' AS primary_position, 'CLEANING' AS code UNION ALL
+  SELECT '咨客岗', 'RECEPTION' UNION ALL
+  SELECT '传送岗', 'DELIVERY' UNION ALL
+  SELECT '服务岗', 'SERVICE'
+) m ON m.primary_position = e.primary_position AND m.code = w.code
+WHERE e.store_id = 1 AND w.store_id = 1 AND e.is_parttime = 1 AND w.code IN ('CLEANING', 'RECEPTION', 'DELIVERY', 'SERVICE');
 
 -- ================================================================
 -- AI 文档识别配置（DeepSeek，20260820 并入基线）
 -- 说明：api_key 明文保存（内部工具，GET 接口只返回掩码）；api_key='' 表示「未配置」
 --      （后端 AiConfigService 将空串视为未配置，故不加 CHECK(api_key<>'') 以免破坏该语义）。
+--      更优备选（不改变现有应用语义，供将来演进）：api_key 允许 NULL，NULL=未配置，加
+--      CHECK (api_key IS NULL OR api_key <> '')。
 --      生产建议由 KMS/密钥管理注入或应用层加密存储，数据库层无法强制。
 -- ================================================================
 CREATE TABLE ai_configs (
@@ -626,7 +639,7 @@ CREATE TABLE ai_configs (
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   UNIQUE KEY uk_ai_config_store_provider (store_id, provider),
-  CONSTRAINT fk_ai_config_store FOREIGN KEY (store_id) REFERENCES stores(id)
+  CONSTRAINT fk_ai_config_store FOREIGN KEY (store_id) REFERENCES stores(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ================================================================

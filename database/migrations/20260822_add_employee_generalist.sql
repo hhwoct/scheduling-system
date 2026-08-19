@@ -2,6 +2,8 @@
 -- 20260822: 员工「通岗」标记
 -- 通岗 = 大部分楼面工作都能做（传送/保洁/咨客/服务等低技能岗位）。
 -- 勾选后系统自动为这些岗位写入至少 3 分的技能；取消时清 0（技能行保留）。
+-- 该「自动补技能」逻辑在应用层 EmployeeSkillService.SetGeneralistAsync（接口 /skill-matrix/generalist），
+-- 数据库仅存标记列、无触发器；本迁移只加列，不直接改技能行。
 -- 执行方式：mysql -u root -p shift_mvp < database/migrations/20260822_add_employee_generalist.sql
 -- ============================================================
 USE shift_mvp;

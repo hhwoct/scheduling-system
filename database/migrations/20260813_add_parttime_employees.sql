@@ -19,18 +19,23 @@ INSERT INTO employees (store_id, employee_no, name, phone, department, hire_date
 (1, 'E110', '兼服务D', '13900000110', '兼职', '2026-08-01', '服务岗', 32, 1, 1);
 
 -- 兼职技能：仅低技术含量岗位（保洁/咨客/传送/服务），算法据此只能安排兼职到这些岗位
+-- 用 e.is_parttime=1 而非 LIKE 'E1%'（过宽，可能误纳其它 E1xx 工号）；
+-- 岗位名→code 显式映射（避免依赖 primary_position 与 workstations.name 的字符串精确匹配易漂移）。
 INSERT INTO employee_skills (employee_id, workstation_id, skill_score, is_primary_skill, status)
 SELECT e.id, w.id,
-  CASE
-    WHEN e.primary_position = w.name THEN 4
-    ELSE 2
-  END AS skill_score,
-  CASE WHEN e.primary_position = w.name THEN 1 ELSE 0 END AS is_primary_skill,
+  CASE WHEN m.primary_position IS NULL THEN 2 ELSE 4 END AS skill_score,
+  CASE WHEN m.primary_position IS NULL THEN 0 ELSE 1 END AS is_primary_skill,
   1
 FROM employees e
 CROSS JOIN workstations w
+LEFT JOIN (
+  SELECT '保洁岗' AS primary_position, 'CLEANING' AS code UNION ALL
+  SELECT '咨客岗', 'RECEPTION' UNION ALL
+  SELECT '传送岗', 'DELIVERY' UNION ALL
+  SELECT '服务岗', 'SERVICE'
+) m ON m.primary_position = e.primary_position AND m.code = w.code
 WHERE e.store_id = 1 AND w.store_id = 1
-  AND e.employee_no LIKE 'E1%'
+  AND e.is_parttime = 1
   AND w.code IN ('CLEANING', 'RECEPTION', 'DELIVERY', 'SERVICE');
 
 INSERT INTO audit_logs (store_id, operator_user_id, operator_name, action_type, target_type, remark)

@@ -14,15 +14,14 @@ INNER JOIN employee_skills e2
   AND e1.id > e2.id;
 
 -- ===== P2-7: 清理 employees 重复员工号（保留最小 id 的活跃记录）=====
+-- 用多表自连接，避免 ERROR 1093（不能在 UPDATE 目标表的 EXISTS 子查询里再引用同一张表）。
 UPDATE employees e1
-SET status = 0
-WHERE EXISTS (
-    SELECT 1 FROM employees e2
-    WHERE e2.store_id = e1.store_id
-    AND e2.employee_no = e1.employee_no
-    AND e2.id < e1.id
-    AND e2.status = 1
-);
+INNER JOIN employees e2
+  ON e2.store_id = e1.store_id
+  AND e2.employee_no = e1.employee_no
+  AND e2.id < e1.id
+  AND e2.status = 1
+SET e1.status = 0;
 
 -- ===== P2-9: 换班请求唯一约束（PENDING 去重）=====
 -- 生成列：仅 PENDING 状态记录非 NULL
@@ -59,7 +58,9 @@ INNER JOIN schedule_results r2
   AND r1.time_slot = r2.time_slot
   AND r1.id < r2.id;
 
--- 添加生成列 + 唯一索引
+-- 添加生成列 + 唯一索引。
+-- 注：CONCAT 参数 plan_id/employee_id/work_date/time_slot 均为 NOT NULL，结果永不为 NULL，
+--     无需 COALESCE 兜底；若未来放开任一列为 NULL，需改 COALESCE(...,'') 以防唯一键失效。
 ALTER TABLE schedule_results
   ADD COLUMN assignment_key VARCHAR(255)
   GENERATED ALWAYS AS (CONCAT(plan_id, '|', employee_id, '|', work_date, '|', time_slot)) STORED;
@@ -97,6 +98,8 @@ CROSS JOIN (
 ) dates
 -- 仅插入缺失行，不覆盖已有值（no-op 形式：自赋值）。避免重跑覆盖后续人工/业务修改；
 -- 9 月日期口径的最终修正由 20260818_add_weekend_staffing.sql 统一完成。
+-- 注：自赋值 no-op 是安全的——week_day/day_type/is_legal_holiday/is_holiday_eve 均为 NOT NULL，
+--     自赋值不会引入 NULL；不要改成 INSERT IGNORE（会吞掉其它非重复键错误）。
 ON DUPLICATE KEY UPDATE
   week_day = date_parameters.week_day,
   day_type = date_parameters.day_type,
