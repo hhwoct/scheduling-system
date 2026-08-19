@@ -234,7 +234,13 @@ public sealed class WorkstationAllocator
             }
 
             long? mainWorkstation;
-            if (reference.TryGetValue(shift.EmployeeId, out var refSlots) && refSlots.Count > 0)
+            if (shift.WorkstationId is not null && HasSkill(shift.EmployeeId, shift.WorkstationId.Value, skillsByEmployee))
+            {
+                // 优先沿用班次分配阶段选定的工作站（ShiftAllocator 按需求扣减的口径），
+                // 保证两个分配器口径一致，避免"班次算外吧、这里改保洁"的错位。
+                mainWorkstation = shift.WorkstationId.Value;
+            }
+            else if (reference.TryGetValue(shift.EmployeeId, out var refSlots) && refSlots.Count > 0)
             {
                 mainWorkstation = refSlots
                     .GroupBy(x => x.Value)
@@ -270,6 +276,21 @@ public sealed class WorkstationAllocator
                 : SchedulingTimeHelper.GetShiftSlots(template.StartTime, template.EndTime, template.IsCrossDay);
             foreach (var slot in shiftSlots)
             {
+                // 单时段人数上限：主站在该时段(按实际日历日)已满员(>=最好人数)时不再追加，
+                // 避免整班固定主站造成单时段人数超过需求配置（该员工此时段视为浮动，不显示岗位）
+                var slotDate = SchedulingTimeHelper.SlotCalendarDate(slot, template.StartTime, shift.WorkDate);
+                var atCeiling = idealBySlot.TryGetValue((slotDate, slot), out var slotIdeals) &&
+                                slotIdeals.TryGetValue(mainWorkstation.Value, out var idealLimit) &&
+                                assignments.Count(a =>
+                                    a.WorkstationId == mainWorkstation.Value &&
+                                    a.TimeSlot == slot &&
+                                    AssignmentCalendarDate(a, shiftById) == slotDate) >= idealLimit;
+
+                if (atCeiling)
+                {
+                    continue;
+                }
+
                 assignments.Add(new WorkstationAssignment(
                     shift.EmployeeId,
                     shift.WorkDate,

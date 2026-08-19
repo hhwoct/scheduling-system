@@ -105,17 +105,12 @@ public sealed class ShiftAllocator
                 var toAssign = Math.Min(required, candidates.Count);
                 foreach (var employee in candidates.Take(toAssign))
                 {
-                    var targetWs = SelectWorkstation(employee.Id, shift, date.WorkDate, remaining, skillsByEmployee, input.LowSkillWorkstationIds);
+                    // 选站时即校验单时段人数上限：首选岗位被上限否决时会尝试其余有需求岗位
+                    var targetWs = SelectWorkstation(employee.Id, shift, date.WorkDate, remaining, skillsByEmployee,
+                        input.LowSkillWorkstationIds, coverage, idealRequirements);
                     if (targetWs is null)
                     {
-                        continue;  // 无技能匹配且有需求的工作站时不占用人员
-                    }
-
-                    // 单时段人数上限：分配后该工作站在班次窗口内任一【已配置正需求】的时段
-                    // 不得超过「最好人数」，防止整段班次/重叠班次造成单时段人数超过配置。
-                    if (ExceedsCeiling(shift, targetWs.Value, date.WorkDate, coverage, idealRequirements))
-                    {
-                        continue;
+                        continue;  // 无可分配(有需求且不超上限)的岗位时不占用人员
                     }
 
                     assignments.Add(new ShiftAssignment(employee.Id, date.WorkDate, shift.Id, shift.Code, targetWs));
@@ -177,7 +172,9 @@ public sealed class ShiftAllocator
                     break;  // 软性阶段无合适班次，停止补充
                 }
 
-                var targetWs = SelectWorkstation(employee.Id, bestShift, date.WorkDate, demand, skillsByEmployee, input.LowSkillWorkstationIds);
+                // 选站时即校验单时段人数上限：首选岗位被上限否决时会尝试其余有需求岗位
+                var targetWs = SelectWorkstation(employee.Id, bestShift, date.WorkDate, demand, skillsByEmployee,
+                    input.LowSkillWorkstationIds, coverage, idealRequirements);
                 if (targetWs is null)
                 {
                     if (hardPhase)
@@ -186,12 +183,6 @@ public sealed class ShiftAllocator
                     }
 
                     break;
-                }
-
-                // 单时段人数上限：任一时段超过「最好人数」则跳过（缺口交 D 班次按块回填或上报）
-                if (ExceedsCeiling(bestShift, targetWs.Value, date.WorkDate, coverage, idealRequirements))
-                {
-                    continue;
                 }
 
                 assignments.Add(new ShiftAssignment(employee.Id, date.WorkDate, bestShift.Id, bestShift.Code, targetWs));
@@ -473,13 +464,10 @@ public sealed class ShiftAllocator
                 long? targetWs = null;
                 foreach (var e in orderedCandidates)
                 {
-                    var ws = SelectWorkstation(e.Id, template, workDate, remaining, skillsByEmployee, input.LowSkillWorkstationIds);
+                    // 选站时即校验单时段人数上限：首选岗位被上限否决时会尝试其余有需求岗位
+                    var ws = SelectWorkstation(e.Id, template, workDate, remaining, skillsByEmployee,
+                        input.LowSkillWorkstationIds, coverage, idealRequirements);
                     if (ws is null)
-                    {
-                        continue;
-                    }
-
-                    if (ExceedsCeiling(template, ws.Value, workDate, coverage, idealRequirements))
                     {
                         continue;
                     }
@@ -673,8 +661,11 @@ public sealed class ShiftAllocator
     }
 
     /// <summary>
-    /// 为员工选择剩余需求最高的工作站，优先员工技能分最高的。
-    /// 修复：不允许把员工放到无技能的岗位——有技能时只在技能匹配的候选中选；
+    /// <summary>
+    /// 为员工选择有剩余需求的工作站：优先技能分最高的，且必须满足单时段人数上限
+    /// （不超过「最好人数」）。首个被上限否决的岗位不再直接丢弃员工，
+    /// 而是按技能顺序尝试班次覆盖的其余有需求岗位。
+    /// 不允许把员工放到无技能的岗位——有技能时只在技能匹配的候选中选；
     /// 无技能匹配时仅允许低技能岗位兜底；无可分配岗位时返回 null（跳过该员工）。
     /// </summary>
     private static long? SelectWorkstation(
@@ -683,7 +674,9 @@ public sealed class ShiftAllocator
         DateOnly workDate,
         IReadOnlyDictionary<DemandKey, int> remaining,
         IReadOnlyDictionary<long, Dictionary<long, int>> skillsByEmployee,
-        IReadOnlyDictionary<long, bool> lowSkillWorkstationIds)
+        IReadOnlyDictionary<long, bool> lowSkillWorkstationIds,
+        IReadOnlyDictionary<DemandKey, int> coverage,
+        IReadOnlyDictionary<DemandKey, int> ceiling)
     {
         var slotKeys = ShiftSlots(shift, workDate).Select(x => (x.Date, x.Slot)).ToList();
 
@@ -699,20 +692,31 @@ public sealed class ShiftAllocator
         var hasSkills = skillsByEmployee.TryGetValue(employeeId, out var skills) && skills.Count > 0;
         if (!hasSkills)
         {
-            // 无任何技能的员工只允许低技能岗位
-            return candidates.FirstOrDefault(ws => lowSkillWorkstationIds.ContainsKey(ws));
-        }
-
-        var skilled = candidates.Where(ws => skills!.ContainsKey(ws)).ToList();
-        if (skilled.Count > 0)
-        {
-            return skilled
-                .OrderByDescending(ws => skills![ws])
-                .ThenBy(ws => ws)
+            // 无任何技能的员工只允许低技能岗位。
+            // 注意：必须用 Select((long?)ws).FirstOrDefault() 转可空，
+            // 否则 List<long> 的 FirstOrDefault 会返回 0（非 null），产生"工作站 0"的假分配。
+            return candidates
+                .Where(ws => lowSkillWorkstationIds.ContainsKey(ws) && !ExceedsCeiling(shift, ws, workDate, coverage, ceiling))
+                .Select(ws => (long?)ws)
                 .FirstOrDefault();
         }
 
+        // 技能匹配的岗位按技能分降序逐个尝试，取第一个不超过人数上限的
+        foreach (var ws in candidates.Where(ws => skills!.ContainsKey(ws))
+                     .OrderByDescending(ws => skills![ws])
+                     .ThenBy(ws => ws))
+        {
+            if (!ExceedsCeiling(shift, ws, workDate, coverage, ceiling))
+            {
+                return ws;
+            }
+        }
+
         // 有技能但均不匹配有需求的岗位：仅低技能岗位可兜底
-        return candidates.FirstOrDefault(ws => lowSkillWorkstationIds.ContainsKey(ws));
+        // （同样注意 FirstOrDefault 返回 0 的问题，转成可空后再取）
+        return candidates
+            .Where(ws => lowSkillWorkstationIds.ContainsKey(ws) && !ExceedsCeiling(shift, ws, workDate, coverage, ceiling))
+            .Select(ws => (long?)ws)
+            .FirstOrDefault();
     }
 }
