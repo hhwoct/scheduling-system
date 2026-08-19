@@ -17,17 +17,21 @@
     init_shift_mvp.sql         建库建表 + 模拟数据
     migrations/                增量迁移脚本
     backups/                   备份文件
-  docs/                    项目文档
+  docs/                    项目文档（交接/功能清单/接口文档/测试计划/测试报告/集成测试报告/安全审查）
   README.md                项目启动说明
 ```
 
 ## 功能特性
 
 ### 排班核心
-- **一键生成排班**：自动分配休息日 → 班次 → 工作站，支持周视图/月视图/日明细
+- **一键生成排班**：自动完成四阶段分配（休息日 → 班次 → 工作站 → 班中休息），支持周视图/月视图/日明细
 - **并发峰值需求计算**：按 (工作站, 时段) 并发需求排班，需求满足后多余员工（兼职）当天空闲
+- **人数需求矩阵**：平日/周末/节假日 × 最少/最好人数两档，甘特图编辑 + 框选批量 + 格子备注 + Excel 导入导出 + AI 识别导入
 - **连续工作约束**：执行 `max_consecutive_work_days` 规则，连续工作达上限自动强制休息打断
-- **合理度趋势**：`/schedules/{planId}/rationality` 基于真实覆盖÷需求计算每日合理度
+- **班中休息**：30 分钟固定休息（<4 小时班不休息、避开高峰禁休时段），冗余不足借调顶岗（每人每天 ≤2 次），无人顶岗告警
+- **高峰禁休时段**：门店可配多条（默认 20:00-22:00），班中休息不得与其重叠
+- **按需自动补班次**：模板班次不足时按连续缺口块自动生成临时班次 D1/D2…（可跨午夜）
+- **合理度趋势**：`/schedules/{planId}/rationality` 基于真实覆盖÷需求计算每日合理度（修复后 87%→97%，无人顶岗休息时段扣减覆盖）
 - **问题诊断**：岗位缺口（含低技能兼职建议）/技能不匹配/工时超限/连续工作超限
 - **发布确认**：存在 ERROR 问题时二次确认强制发布（force=true）
 
@@ -36,11 +40,14 @@
 - **角色权限分离**：
   - SYSTEM_ADMIN（admin）：可修改排班规则/所有管理操作
   - STORE_MANAGER（店长 E001）：排班规则只读，其他管理可操作
-- **员工自助**：员工端查看班表、提交请假、申请换班、**提前返岗**（缩短已批准请假）
+- **技能等级总览**：员工 × 工作站技能矩阵色块编辑 + 通岗开关（楼面低技能岗位自动 ≥3 分）
+- **员工自助**：员工端查看班表（含班中休息与「我顶岗的记录」）、提交请假、申请换班、**提前返岗**（缩短已批准请假）
 
 ### 安全加固（代码审查 P0/P1）
 - 密码重置 OTP 验证码 + 按 IP 限流 + 失败锁定
 - JWT 有效期默认 1440 分钟（24 小时，可在 Jwt:ExpireMinutes 配置 5~1440），前端另有 15 分钟无操作自动登出
+- JWT 绑定 password_version：改密码后旧 Token 全部失效
+- 员工手机号脱敏与格式校验；OTP 验证码不进响应体（生产不落日志）
 - 审计日志事务原子化
 - 多租户 StoreId 隔离 + 并发唯一索引
 
@@ -143,35 +150,76 @@ dotnet test
 curl http://localhost:5059/api/health
 ```
 
-## 已实现 API
+## 已实现 API（共 66 个端点，详见 docs/接口文档.md v1.1）
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | /api/health | 健康检查 |
-| POST | /api/auth/login | 管理员登录 |
+| GET | /api/health | 健康检查（无需认证） |
+| POST | /api/auth/login | 登录（限流 5 次/分） |
+| POST | /api/auth/send-reset-otp | 发送密码重置验证码（验证码不进响应体） |
+| POST | /api/auth/forgot-password | 忘记密码重置 |
 | GET | /api/auth/me | 当前用户（需登录） |
 | GET | /api/stores/current | 当前门店（需登录） |
-| GET | /api/employees | 员工分页查询（需登录） |
-| GET | /api/employees/{id} | 员工详情（需登录） |
-| POST | /api/employees | 新增员工（需登录） |
-| PUT | /api/employees/{id} | 编辑员工（需登录） |
-| DELETE | /api/employees/{id} | 停用员工（需登录） |
-| GET | /api/employees/{id}/skills | 员工技能矩阵（需登录） |
-| PUT | /api/employees/{id}/skills | 保存员工技能（需登录） |
-| GET | /api/workstations | 工作站列表（需登录） |
-| PUT | /api/workstations/{id} | 编辑工作站（需登录） |
-| GET | /api/shift-templates | 班次列表（需登录） |
-| PUT | /api/shift-templates/{id} | 编辑班次（需登录） |
-| GET | /api/rules | 规则配置列表（需登录） |
-| PUT | /api/rules/{id} | 保存规则（需登录） |
-| POST | /api/schedules/generate | 一键生成排班（需登录） |
-| GET | /api/schedules | 排班计划列表（需登录） |
-| GET | /api/schedules/{planId}/month-view | 月视图（需登录） |
-| GET | /api/schedules/{planId}/week-view | 周视图（需登录） |
-| GET | /api/schedules/{planId}/daily-view | 日明细（需登录） |
-| GET | /api/schedules/{planId}/summary | 排班摘要（需登录） |
-| PUT | /api/schedules/{planId}/adjust | 手动调整（需登录） |
-| POST | /api/schedules/{planId}/publish | 发布排班（需登录） |
+| GET | /api/dashboard/stats | 仪表盘统计（AdminOnly） |
+| GET | /api/employees | 员工分页查询（手机号脱敏） |
+| GET | /api/employees/{id} | 员工详情 |
+| POST | /api/employees | 新增员工（手机号 11 位校验） |
+| PUT | /api/employees/{id} | 编辑员工 |
+| DELETE | /api/employees/{id} | 停用员工（软删除） |
+| GET | /api/employees/{id}/skills | 员工技能矩阵 |
+| PUT | /api/employees/{id}/skills | 保存员工技能 |
+| GET | /api/skill-matrix | 技能等级总览（管理员+店长） |
+| PUT | /api/skill-matrix/cell | 单格技能修改 |
+| PUT | /api/skill-matrix/generalist | 通岗设置 |
+| GET | /api/workstations | 工作站列表 |
+| POST | /api/workstations | 新增工作站 |
+| PUT | /api/workstations/{id} | 编辑工作站 |
+| GET | /api/shift-templates | 班次列表 |
+| PUT | /api/shift-templates/{id} | 编辑班次 |
+| GET | /api/rules | 规则配置列表 |
+| PUT | /api/rules/{id} | 保存规则（SystemAdminOnly + 乐观锁） |
+| GET | /api/peak-restricted-hours | 高峰禁休时段列表 |
+| POST | /api/peak-restricted-hours | 新增高峰时段 |
+| PUT | /api/peak-restricted-hours/{id} | 修改/启停高峰时段 |
+| DELETE | /api/peak-restricted-hours/{id} | 删除高峰时段 |
+| GET | /api/staffing-requirements | 人数需求查询（三档 × 最少/最好） |
+| PUT | /api/staffing-requirements | 批量保存人数需求 |
+| GET | /api/staffing-requirements/preview | 周期需求预览 |
+| GET | /api/ai/config | 获取 AI 配置（Key 掩码） |
+| PUT | /api/ai/config | 保存 AI 配置 |
+| POST | /api/ai/test | AI 连通性测试 |
+| POST | /api/ai/parse-requirement-doc | AI 识别人数需求文档 |
+| POST | /api/schedules/generate | 一键生成排班（四阶段 + 临时班次） |
+| GET | /api/schedules | 排班计划列表 |
+| DELETE | /api/schedules/{planId} | 删除排班（级联） |
+| GET | /api/schedules/{planId}/month-view | 月视图（含休息时段） |
+| GET | /api/schedules/{planId}/week-view | 周视图（含休息/顶岗） |
+| GET | /api/schedules/{planId}/daily-view | 日明细（含休息/顶岗） |
+| GET | /api/schedules/{planId}/summary | 排班摘要 |
+| GET | /api/schedules/{planId}/issues | 问题列表 |
+| GET | /api/schedules/{planId}/rationality | 每日合理度 |
+| PUT | /api/schedules/{planId}/adjust | 手动调整 |
+| PUT | /api/schedules/{planId}/day-status | 批量设置休息/上班 |
+| PUT | /api/schedules/{planId}/move-segment | 拖动移动工作段 |
+| PUT | /api/schedules/{planId}/slot-status | 批量设置半小时休息状态 |
+| POST | /api/schedules/{planId}/publish | 发布排班（force 强制） |
+| POST | /api/leave-requests | 提交请假 |
+| GET | /api/leave-requests/mine | 我的请假列表 |
+| GET | /api/leave-requests/review | 请假审批列表 |
+| PUT | /api/leave-requests/{id}/review | 审批请假 |
+| PUT | /api/leave-requests/{id}/early-return | 提前返岗 |
+| POST | /api/shift-swaps | 提交换班申请 |
+| GET | /api/shift-swaps/mine | 我的换班列表 |
+| POST | /api/shift-swaps/candidates | 可换班同事 |
+| GET | /api/shift-swaps/review | 换班审批列表 |
+| PUT | /api/shift-swaps/{id}/review | 审批换班（并发原子） |
+| GET | /api/notifications | 通知列表 |
+| GET | /api/notifications/unread-count | 未读数量 |
+| PUT | /api/notifications/{id}/read | 标记已读 |
+| PUT | /api/notifications/read-all | 全部已读 |
+| GET | /api/audit-logs | 审计日志查询 |
+| GET | /api/employee/my-schedule | 员工端我的班表（含顶岗记录） |
+| GET | /api/employee/swap-plans | 员工端可换班计划 |
 
 ## 开发进度
 
@@ -183,3 +231,6 @@ curl http://localhost:5059/api/health
 - [x] 步骤 6：排班业务接口（一键生成、月/周/日视图、手动调整、发布 + 站内通知，共 8 个接口）
 - [x] 步骤 7~10：前端页面（登录/布局/员工/技能/工作站/班次/规则/一键排班/月/周/日视图/报表，共 10 个路由）
 - [x] 步骤 11：联调测试（后端 5059 + 前端 5173 已跑通：健康检查、登录、员工、班次、一键生成、月/周/日视图、摘要；修复 DateOnly 启动崩溃和休息天数周期折算 bug）
+- [x] 步骤 12（08-17）：班中休息（阶段四，30 分钟固定休息 + 借调顶岗）+ 高峰禁休时段 + 安全加固（password_version/IP 限流/OTP/脱敏/并发审批）
+- [x] 步骤 13（08-18）：人数需求三档两档（平日/周末/节假日 × 最少/最好）、人数需求甘特图页、通岗、技能矩阵总览、AI 文档识别（DeepSeek）、按需临时班次 D1/D2
+- [x] 步骤 14（08-18/19）：二/三轮代码审查修复、引擎修复（选站丢员工、合理度 87%→97%、需求上限、OTP 绑定手机号）、测试套件扩展至 186 用例、WORKDAY 需求回填迁移
