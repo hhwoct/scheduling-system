@@ -38,3 +38,9 @@ logs/
 # 备份文件
 *.bak
 *.backup
+
+# ===== 测试本地 NuGet 缓存 =====
+backend/.nuget-packages/
+
+# ===== 集成测试运行产物（含 dev JWT，勿入库） =====
+scripts/itest-*.json

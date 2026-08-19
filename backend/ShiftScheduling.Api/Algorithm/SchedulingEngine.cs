@@ -271,12 +271,14 @@ public sealed class SchedulingEngine
             .ToListAsync(cancellationToken);
 
         // 高峰禁休时段（无配置时算法使用默认 20:00-22:00）
-        var peakRestrictedHours = await _dbContext.PeakRestrictedHours
+        // 排序放客户端：SQLite 无法翻译 TimeSpan 的 ORDER BY，且数据量极小（每店最多 10 条）
+        var peakRestrictedHours = (await _dbContext.PeakRestrictedHours
             .AsNoTracking()
             .Where(x => x.StoreId == storeId && x.Status == 1)
-            .OrderBy(x => x.StartTime)
             .Select(x => new PeakRestrictedHourInput(x.StartTime, x.EndTime))
-            .ToListAsync(cancellationToken);
+            .ToListAsync(cancellationToken))
+            .OrderBy(x => x.StartTime)
+            .ToList();
 
         var rules = await _dbContext.RuleConfigs
             .AsNoTracking()
