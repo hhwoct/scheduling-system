@@ -33,11 +33,16 @@
           <el-menu-item index="/swap-review">换班审批</el-menu-item>
           <el-menu-item index="/notifications">通知消息</el-menu-item>
         </el-sub-menu>
-        <el-menu-item v-if="authStore.role !== 'EMPLOYEE'" index="/employee/schedule">
-          <el-icon><Calendar /></el-icon>
-          <span>员工端（我的班表）</span>
-        </el-menu-item>
       </el-menu>
+      <!-- 员工端入口固定在 sidebar 最底部，与菜单视觉分隔 -->
+      <div
+        v-if="authStore.role !== 'EMPLOYEE'"
+        class="aside-footer"
+        @click="handleMenuSelect('/employee/schedule')"
+      >
+        <el-icon><Calendar /></el-icon>
+        <span>员工端（我的班表）</span>
+      </div>
     </el-aside>
     <el-container>
       <el-header class="main-header">
@@ -139,6 +144,8 @@ async function handleCommand(command) {
   height: 100%;
 }
 .main-aside {
+  display: flex;
+  flex-direction: column;
   background-color: #001529;
 }
 .logo {
@@ -150,7 +157,24 @@ async function handleCommand(command) {
   font-weight: 600;
 }
 .main-aside :deep(.el-menu) {
+  flex: 1;
+  overflow-y: auto;
   border-right: none;
+}
+.aside-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 20px;
+  color: rgba(255, 255, 255, 0.65);
+  cursor: pointer;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  transition: color 0.2s, background-color 0.2s;
+  user-select: none;
+}
+.aside-footer:hover {
+  color: #fff;
+  background-color: rgba(255, 255, 255, 0.06);
 }
 .main-header {
   display: flex;

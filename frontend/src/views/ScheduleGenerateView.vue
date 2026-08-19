@@ -205,7 +205,9 @@ function refreshRange() {
 }
 
 watch([scheduleMode, refDate], refreshRange, { immediate: true })
-watch([startDate, endDate], loadPreview)
+// 修复：watch2 需 immediate——否则 watch1(immediate) 同步执行 refreshRange 更新日期后，
+// watch2 才注册并收集依赖（初始值已是更新后的日期），首次进入页面概览永远不加载。
+watch([startDate, endDate], loadPreview, { immediate: true })
 
 async function handleGenerate() {
   if (generating.value) return

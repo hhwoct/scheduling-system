@@ -117,18 +117,18 @@
         </div>
         <div v-if="selectedDate" style="margin-top: 24px">
           <el-divider content-position="left">{{ selectedDate }}</el-divider>
-          <div v-loading="dailyLoading" class="matrix-wrap"><div class="matrix">
+          <div v-loading="dailyLoading" class="matrix-wrap"><div class="matrix" :class="{ 'has-chip-highlight': highlightedEmpId }" @click="highlightedEmpId = null">
             <div class="m-row m-header"><div class="m-ws-col">工作站</div><div v-for="slot in slots" :key="slot.key" class="m-slot-col" :title="slot.display"><span v-if="isHour(slot)">{{ slot.display }}</span></div></div>
-            <div v-for="ws in dailyWorkstations" :key="ws" class="m-row"><div class="m-ws-col">{{ ws }}<el-tag v-if="wsLowSkill(ws)" type="success" size="small" style="margin-left:4px">兼</el-tag></div><div v-for="(slot, si) in slots" :key="slot.key" class="m-slot-col" :class="[cellClass(ws, slot), snapTarget.ws === ws && snapTarget.slotIdx === si ? 'snap-target' : '']"><div v-if="dailySlotIssues(ws, slot).length" class="gap-flag" :class="{ 'gap-flag-low': lowSkillGapIssues(ws, slot).length > 0 }" :title="gapTooltip(ws, slot)">{{ lowSkillGapIssues(ws, slot).length > 0 ? '兼' : '缺' }}</div><div v-for="emp in dailyCellUsers(ws, slot)" :key="emp.employeeId" class="emp-chip" :class="{ 'is-parttime': emp.isParttime === 1, 'pt-first': isFirstPartTimeChip(emp, ws, slot), 'is-break': inBreak(emp, slot) }" :title="'[v3] 点击切换休息/上班，按住拖动可移动半小时'" @mousedown.prevent.stop="onChipMouseDown($event, emp, ws, slot)" @click.stop="onChipClick(emp, slot)"><div class="emp-name">{{ emp.employeeName }}<span v-if="inBreak(emp, slot)" class="break-flag" :title="breakTip(emp)">休</span></div><div v-if="!inBreak(emp, slot)" class="emp-shift">{{ emp.shiftCode || '--' }}</div><div v-else class="emp-shift break-info" :title="breakTip(emp)">休息</div></div></div></div>
+            <div v-for="ws in dailyWorkstations" :key="ws" class="m-row"><div class="m-ws-col">{{ ws }}<el-tag v-if="wsLowSkill(ws)" type="success" size="small" style="margin-left:4px">兼</el-tag></div><div v-for="(slot, si) in slots" :key="slot.key" class="m-slot-col" :class="[cellClass(ws, slot), snapTarget.ws === ws && snapTarget.slotIdx === si ? 'snap-target' : '']"><div v-if="dailySlotIssues(ws, slot).length" class="gap-flag" :class="{ 'gap-flag-low': lowSkillGapIssues(ws, slot).length > 0 }" :title="gapTooltip(ws, slot)">{{ lowSkillGapIssues(ws, slot).length > 0 ? '兼' : '缺' }}</div><div v-for="emp in dailyCellUsers(ws, slot)" :key="emp.employeeId" class="emp-chip" :class="{ 'is-parttime': emp.isParttime === 1, 'pt-first': isFirstPartTimeChip(emp, ws, slot), 'is-break': inBreak(emp, slot), 'is-highlighted': highlightedEmpId === emp.employeeId }" :title="'单击高亮该员工当天全部色块；双击切换休息/上班；按住拖动可移动半小时'" @mousedown.prevent.stop="onChipMouseDown($event, emp, ws, slot)" @click.stop="onChipClick(emp, slot)" @dblclick.stop="onChipDblClick(emp, slot)"><div class="emp-name">{{ emp.employeeName }}<span v-if="inBreak(emp, slot)" class="break-flag" :title="breakTip(emp)">休</span></div><div v-if="!inBreak(emp, slot)" class="emp-shift">{{ emp.shiftCode || '--' }}</div><div v-else class="emp-shift break-info" :title="breakTip(emp)">休息</div></div></div></div>
           </div></div>
         </div>
       </div>
 
       <div v-if="viewMode === 'day'" v-loading="loading">
         <el-date-picker v-model="dayDate" type="date" value-format="YYYY-MM-DD" style="width: 150px; margin-bottom: 12px" placeholder="选择日期" :disabled-date="disabledDate" @change="loadDay" />
-        <div v-if="dayDate" class="matrix-wrap"><div class="matrix">
+        <div v-if="dayDate" class="matrix-wrap"><div class="matrix" :class="{ 'has-chip-highlight': highlightedEmpId }" @click="highlightedEmpId = null">
           <div class="m-row m-header"><div class="m-ws-col">工作站</div><div v-for="slot in slots" :key="slot.key" class="m-slot-col" :title="slot.display"><span v-if="isHour(slot)">{{ slot.display }}</span></div></div>
-          <div v-for="ws in dailyWorkstations" :key="ws" class="m-row"><div class="m-ws-col">{{ ws }}<el-tag v-if="wsLowSkill(ws)" type="success" size="small" style="margin-left:4px">兼</el-tag></div><div v-for="(slot, si) in slots" :key="slot.key" class="m-slot-col" :class="[cellClass(ws, slot), snapTarget.ws === ws && snapTarget.slotIdx === si ? 'snap-target' : '']"><div v-if="dailySlotIssues(ws, slot).length" class="gap-flag" :class="{ 'gap-flag-low': lowSkillGapIssues(ws, slot).length > 0 }" :title="gapTooltip(ws, slot)">{{ lowSkillGapIssues(ws, slot).length > 0 ? '兼' : '缺' }}</div><div v-for="emp in dailyCellUsers(ws, slot)" :key="emp.employeeId" class="emp-chip" :class="{ 'is-parttime': emp.isParttime === 1, 'pt-first': isFirstPartTimeChip(emp, ws, slot), 'is-break': inBreak(emp, slot) }" :title="'[v3] 点击切换休息/上班，按住拖动可移动半小时'" @mousedown.prevent.stop="onChipMouseDown($event, emp, ws, slot)" @click.stop="onChipClick(emp, slot)"><div class="emp-name">{{ emp.employeeName }}<span v-if="inBreak(emp, slot)" class="break-flag" :title="breakTip(emp)">休</span></div><div v-if="!inBreak(emp, slot)" class="emp-shift">{{ emp.shiftCode || '--' }}</div><div v-else class="emp-shift break-info" :title="breakTip(emp)">休息</div></div></div></div>
+          <div v-for="ws in dailyWorkstations" :key="ws" class="m-row"><div class="m-ws-col">{{ ws }}<el-tag v-if="wsLowSkill(ws)" type="success" size="small" style="margin-left:4px">兼</el-tag></div><div v-for="(slot, si) in slots" :key="slot.key" class="m-slot-col" :class="[cellClass(ws, slot), snapTarget.ws === ws && snapTarget.slotIdx === si ? 'snap-target' : '']"><div v-if="dailySlotIssues(ws, slot).length" class="gap-flag" :class="{ 'gap-flag-low': lowSkillGapIssues(ws, slot).length > 0 }" :title="gapTooltip(ws, slot)">{{ lowSkillGapIssues(ws, slot).length > 0 ? '兼' : '缺' }}</div><div v-for="emp in dailyCellUsers(ws, slot)" :key="emp.employeeId" class="emp-chip" :class="{ 'is-parttime': emp.isParttime === 1, 'pt-first': isFirstPartTimeChip(emp, ws, slot), 'is-break': inBreak(emp, slot), 'is-highlighted': highlightedEmpId === emp.employeeId }" :title="'单击高亮该员工当天全部色块；双击切换休息/上班；按住拖动可移动半小时'" @mousedown.prevent.stop="onChipMouseDown($event, emp, ws, slot)" @click.stop="onChipClick(emp, slot)" @dblclick.stop="onChipDblClick(emp, slot)"><div class="emp-name">{{ emp.employeeName }}<span v-if="inBreak(emp, slot)" class="break-flag" :title="breakTip(emp)">休</span></div><div v-if="!inBreak(emp, slot)" class="emp-shift">{{ emp.shiftCode || '--' }}</div><div v-else class="emp-shift break-info" :title="breakTip(emp)">休息</div></div></div></div>
         </div></div>
       </div>
 
@@ -191,7 +191,7 @@
       :style="{ left: dragGhost.x + 'px', top: dragGhost.y + 'px', width: dragGhost.width + 'px', height: dragGhost.height + 'px' }"
     >{{ dragGhost.text }}</div>
 
-    <!-- 点击色块：切换该半小时 休息/上班 -->
+    <!-- 双击色块：切换该半小时 休息/上班 -->
     <el-dialog v-model="slotStatusDialog.visible" title="切换时段状态" width="420px">
       <div class="ds-info">
         <div><span class="ds-label">员工：</span>{{ slotStatusDialog.employeeName }}（{{ slotStatusDialog.employeeNo }}）</div>
@@ -380,12 +380,26 @@ function onChipMouseDown(e, emp, ws, slot) {
   updateDragGhost(e.clientX, e.clientY)
 }
 
-// 点击（未拖动）→ 休息/上班切换
+// 当前高亮的员工（当天全部工作色块），null 表示无高亮
+const highlightedEmpId = ref(null)
+
+// 单击（未拖动）→ 高亮该员工当天全部工作色块；再次单击同一员工取消高亮
 function onChipClick(emp, slot) {
   if (dragMove.justDragged) {
     dragMove.justDragged = false
     return
   }
+  highlightedEmpId.value = highlightedEmpId.value === emp.employeeId ? null : emp.employeeId
+}
+
+// 双击（未拖动）→ 切换该半小时 休息/上班（同时保持该员工高亮）
+function onChipDblClick(emp, slot) {
+  if (dragMove.justDragged) {
+    dragMove.justDragged = false
+    return
+  }
+  // 双击的第二下单击已把高亮关掉，这里重新打开，保证对话框打开时高亮仍在
+  highlightedEmpId.value = emp.employeeId
   openSlotStatusDialog(emp, slot)
 }
 
@@ -706,11 +720,12 @@ async function loadDay(date) {
   } finally { dailyLoading.value = false }
 }
 
-async function selectDate(date) { selectedDate.value = date; await loadDay(date) }
+async function selectDate(date) { selectedDate.value = date; highlightedEmpId.value = null; await loadDay(date) }
 
 function onModeChange() {
   selectedDate.value = ''
   dailyRows.value = []
+  highlightedEmpId.value = null
   wsFilter.value = ''
   typeFilter.value = ''
   // 切到日明细时：默认日期限定在当前方案的周期内
@@ -774,6 +789,7 @@ function selectPlan(row) {
   dayDate.value = ''
   dailyRows.value = []
   dailyIssues.value = []
+  highlightedEmpId.value = null
   monthRows.value = []
   issuesList.value = []
   wsFilter.value = ''
@@ -979,7 +995,25 @@ onBeforeUnmount(() => {
 .next-day .emp-chip { background: #e6a23c; }
 .next-day .emp-chip.is-parttime { background: #67c23a; }
 .next-day .emp-chip.is-break { background: #909399; }
-/* 色块可点击：切换该半小时 休息/上班 */
+/* 单击高亮：该员工当天全部工作色块——亮黄底 + 白边 + 呼吸光晕，其余色块压暗 */
+.emp-chip.is-highlighted {
+  background: #ffb800 !important;
+  color: #303133;
+  font-weight: 600;
+  box-shadow: 0 0 0 2px #fff, 0 0 0 4px #ffb800, 0 0 16px 3px rgba(255, 184, 0, 0.9);
+  z-index: 2;
+  animation: chip-highlight-pulse 1.4s ease-in-out infinite;
+}
+.emp-chip.is-highlighted:hover { opacity: 1; }
+.emp-chip.is-highlighted .emp-shift { color: #303133; opacity: 1; }
+.emp-chip.is-highlighted .break-flag { background: #e6a23c; }
+@keyframes chip-highlight-pulse {
+  0%, 100% { box-shadow: 0 0 0 2px #fff, 0 0 0 4px #ffb800, 0 0 10px 2px rgba(255, 184, 0, 0.8); }
+  50% { box-shadow: 0 0 0 2px #fff, 0 0 0 4px #ffb800, 0 0 24px 7px rgba(255, 184, 0, 1); }
+}
+/* 有高亮时压暗其他员工色块，突出被高亮员工的全部安排 */
+.matrix.has-chip-highlight .emp-chip:not(.is-highlighted) { opacity: 0.35; transition: opacity 0.2s; }
+.matrix.has-chip-highlight .emp-chip:not(.is-highlighted):hover { opacity: 0.75; }
 .emp-chip { cursor: grab; }
 .emp-chip:hover { opacity: 0.85; }
 
