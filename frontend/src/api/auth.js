@@ -9,10 +9,6 @@ export function getCurrentUser() {
   return request.get(API_ROUTES.AUTH.ME).then(res => res.data)
 }
 
-export function sendResetOtp(data) {
-  return request.post(API_ROUTES.AUTH.SEND_RESET_OTP, data).then(res => res.data)
-}
-
 export function forgotPassword(data) {
   return request.post(API_ROUTES.AUTH.FORGOT_PASSWORD, data).then(res => res.data)
 }

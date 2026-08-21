@@ -1,6 +1,6 @@
 <template>
   <el-container class="emp-layout">
-    <el-aside width="200px" class="emp-aside">
+    <el-aside width="220px" class="emp-aside">
       <div class="logo">排班系统 · 员工端</div>
       <el-menu
         :default-active="$route.path"
@@ -31,10 +31,14 @@
         <!-- 预览提示 -->
         <div v-if="authStore.role !== 'EMPLOYEE'" class="preview-tip">预览模式：仅供查看班表</div>
       </el-menu>
-      <div class="emp-aside-footer">
-        <el-button link type="primary" size="small" style="color: rgba(255,255,255,0.65)" @click="router.push('/dashboard')">
-          ← 返回管理端
-        </el-button>
+      <!-- 管理员/店长预览模式：返回管理端入口（普通员工不显示），样式与管理端底部入口一致 -->
+      <div
+        v-if="authStore.role !== 'EMPLOYEE'"
+        class="emp-aside-footer"
+        @click="router.push('/dashboard')"
+      >
+        <el-icon><ArrowLeft /></el-icon>
+        <span>返回管理端</span>
       </div>
     </el-aside>
     <el-container>
@@ -86,7 +90,7 @@
 
 <script setup>
 import { onMounted, onUnmounted, ref, watch } from 'vue'
-import { ArrowDown, Bell, Calendar, Document, Switch } from '@element-plus/icons-vue'
+import { ArrowDown, ArrowLeft, Bell, Calendar, Document, Switch } from '@element-plus/icons-vue'
 import { ElMessageBox } from 'element-plus'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
@@ -254,8 +258,19 @@ async function handleCommand(command) {
   flex: 1;
 }
 .emp-aside-footer {
-  padding: 8px 12px;
-  border-top: 1px solid rgba(255,255,255,0.1);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 20px;
+  color: rgba(255, 255, 255, 0.65);
+  cursor: pointer;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  transition: color 0.2s, background-color 0.2s;
+  user-select: none;
+}
+.emp-aside-footer:hover {
+  color: #fff;
+  background-color: rgba(255, 255, 255, 0.06);
 }
 .preview-tip {
   padding: 6px 12px;

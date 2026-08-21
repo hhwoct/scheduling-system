@@ -133,14 +133,17 @@ async function loadPreview() {
   previewLoading.value = true
   try {
     const data = await getStaffingRequirementPreview({ startDate: startDate.value, endDate: endDate.value })
-    const rows = Object.entries(data.byType || {}).map(([type, v]) => ({
-      label: DAY_TYPE_LABELS[type] || type,
-      days: v.days,
-      minHours: v.minHours,
-      idealHours: v.idealHours,
-      peakMin: v.peakMin,
-      peakIdeal: v.peakIdeal
-    }))
+    const rows = Object.entries(data.byType || {})
+      // 周期内没有该日期类型（如无节假日）时不展示该行，避免出现一排 0
+      .filter(([, v]) => (v.days || 0) > 0)
+      .map(([type, v]) => ({
+        label: DAY_TYPE_LABELS[type] || type,
+        days: v.days,
+        minHours: v.minHours,
+        idealHours: v.idealHours,
+        peakMin: v.peakMin,
+        peakIdeal: v.peakIdeal
+      }))
     rows.push({
       label: '合计',
       days: '-',

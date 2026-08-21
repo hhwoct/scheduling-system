@@ -25,13 +25,14 @@
 
       <el-radio-group v-if="planId" v-model="viewMode" @change="onModeChange" style="margin-bottom: 16px">
         <el-radio-button label="week">周视图</el-radio-button>
+        <el-radio-button label="whole">整月排班</el-radio-button>
         <el-radio-button label="month">月视图</el-radio-button>
         <el-radio-button label="day">日明细</el-radio-button>
         <el-radio-button label="issues">问题详情</el-radio-button>
       </el-radio-group>
 
-      <div v-if="viewMode === 'week'" v-loading="loading">
-        <el-date-picker v-model="weekStart" type="date" value-format="YYYY-MM-DD" style="width: 150px; margin-bottom: 12px" placeholder="选择起始日" :disabled-date="disabledDate" @change="loadWeek" />
+      <div v-if="viewMode === 'week' || viewMode === 'whole'" v-loading="loading">
+        <el-date-picker v-if="viewMode === 'week'" v-model="weekStart" type="date" value-format="YYYY-MM-DD" style="width: 150px; margin-bottom: 12px" placeholder="选择起始日" :disabled-date="disabledDate" @change="loadWeek" />
         <div class="gantt">
           <div class="gantt-row gantt-header">
             <div class="gantt-emp-col">员工</div>
@@ -70,8 +71,8 @@
           </template>
         </div>
 
-        <!-- 兼职替补需求色块：低技能岗位缺口 -->
-        <div v-if="weekPartTimeNeeds.length" class="parttime-block" style="margin-top: 16px">
+        <!-- 兼职替补需求色块：低技能岗位缺口（仅周视图展示，整月视图横向过长） -->
+        <div v-if="viewMode === 'week' && weekPartTimeNeeds.length" class="parttime-block" style="margin-top: 16px">
           <div class="parttime-title">
             <span class="parttime-badge">兼</span>
             兼职替补需求（低技能岗位缺口，建议寻找兼职人员临时填补）
@@ -177,7 +178,7 @@
           <el-table-column prop="workDate" label="日期" width="110" />
           <el-table-column label="时段" width="90"><template #default="{ row }">{{ row.timeSlot ? String(row.timeSlot).substring(0, 5) : '整周期' }}</template></el-table-column>
           <el-table-column prop="workstationName" label="工作站" width="120"><template #default="{ row }">{{ row.workstationName || '--' }}</template></el-table-column>
-          <el-table-column label="类型" width="110"><template #default="{ row }"><el-tag v-if="row.issueType === 'STAFFING_GAP'" type="danger" size="small">岗位缺口</el-tag><el-tag v-else-if="row.issueType === 'SKILL_MISMATCH'" type="warning" size="small">技能不匹配</el-tag><el-tag v-else-if="row.issueType === 'OVERTIME'" type="info" size="small">工时超限</el-tag><el-tag v-else-if="row.issueType === 'CONSECUTIVE_WORK'" type="info" size="small">连续工作超限</el-tag><el-tag v-else-if="row.issueType === 'BREAK_BORROW_INEXPERIENCED'" type="info" size="small">不熟练顶岗</el-tag><el-tag v-else size="small">{{ row.issueType }}</el-tag></template></el-table-column>
+          <el-table-column label="类型" width="110"><template #default="{ row }"><el-tag v-if="row.issueType === 'STAFFING_GAP'" type="danger" size="small">岗位缺口</el-tag><el-tag v-else-if="row.issueType === 'SKILL_MISMATCH'" type="warning" size="small">技能不匹配</el-tag><el-tag v-else-if="row.issueType === 'OVERTIME'" type="info" size="small">工时超限</el-tag><el-tag v-else-if="row.issueType === 'CONSECUTIVE_WORK'" type="info" size="small">连续工作超限</el-tag><el-tag v-else-if="row.issueType === 'BREAK_BORROW_INEXPERIENCED'" type="info" size="small">不熟练顶岗</el-tag><el-tag v-else-if="row.issueType === 'MIN_DAILY_HOURS'" type="warning" size="small">每日工时不足</el-tag><el-tag v-else size="small">{{ row.issueType }}</el-tag></template></el-table-column>
           <el-table-column prop="severity" label="严重度" width="80"><template #default="{ row }"><el-tag :type="row.severity === 'ERROR' ? 'danger' : (row.severity === 'INFO' ? 'info' : 'warning')" size="small">{{ row.severity === 'ERROR' ? '错误' : (row.severity === 'INFO' ? '提示' : '警告') }}</el-tag></template></el-table-column>
           <el-table-column prop="description" label="说明" min-width="280" show-overflow-tooltip />
         </el-table>
@@ -585,6 +586,7 @@ async function loadAll() {
   try {
     if (viewMode.value === 'issues') await loadIssues()
     else if (viewMode.value === 'week') await loadWeek()
+    else if (viewMode.value === 'whole') await loadWhole()
     else if (viewMode.value === 'month') await loadMonth()
     else if (viewMode.value === 'day') await loadDay()
   } catch (e) { errorMsg.value = e.message }
@@ -691,6 +693,53 @@ function hasPartTimeNeed(ws, date) {
 }
 
 async function loadMonth() { if (!planId.value) { errorMsg.value = '请输入计划ID'; return }; monthRows.value = await getMonthView(planId.value); buildCalendar() }
+
+function fmtDate(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+// 整月排班：拉取计划周期内所有周的数据合并，按"员工 × 整月日期"渲染（样式与周视图一致）
+async function loadWhole() {
+  if (!planId.value) { errorMsg.value = '请输入计划ID'; return }
+  const plan = currentPlan.value
+  if (!plan) return
+
+  // 周期拆成自然周（每 7 天一段）并行拉取，再按员工合并
+  const weeks = []
+  const end = new Date(plan.endDate + 'T00:00:00')
+  for (let d = new Date(plan.startDate + 'T00:00:00'); d <= end; d.setDate(d.getDate() + 7)) {
+    weeks.push(fmtDate(d))
+  }
+  const weekResults = await Promise.all(weeks.map(w => getWeekView(planId.value, w)))
+
+  const empMap = new Map()
+  for (const week of weekResults) {
+    for (const row of week || []) {
+      let entry = empMap.get(row.employeeId)
+      if (!entry) {
+        entry = {
+          employeeId: row.employeeId,
+          employeeNo: row.employeeNo,
+          employeeName: row.employeeName,
+          department: row.department,
+          isParttime: row.isParttime,
+          days: []
+        }
+        empMap.set(row.employeeId, entry)
+      }
+      entry.days = entry.days.concat(row.days || [])
+    }
+  }
+  weekRows.value = Array.from(empMap.values())
+
+  // 整月日期轴：计划周期内的每一天
+  const days = []
+  for (let d = new Date(plan.startDate + 'T00:00:00'); d <= end; d.setDate(d.getDate() + 1)) {
+    const dow = d.getDay()
+    days.push({ date: fmtDate(d), weekday: dow === 0 ? 6 : dow - 1 })
+  }
+  weekDays.value = days
+}
 
 async function loadDay(date) {
   if (!planId.value) return
@@ -934,18 +983,18 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .gantt { border: 1px solid #ebeef5; border-radius: 4px; overflow-x: auto; }
-.gantt-row { display: flex; border-bottom: 1px solid #ebeef5; min-width: max-content; }
+.gantt-row { display: flex; border-bottom: 1px solid #ebeef5; min-width: 100%; }
 .gantt-row-parttime .gantt-emp-col { background: #f7fdf5; }
 .gantt-divider { background: #f0f9eb; color: #67c23a; font-weight: 600; font-size: 12px; padding: 5px 10px; border-bottom: 1px solid #c2e7b0; display: flex; align-items: center; gap: 6px; }
 .gantt-divider-badge { display: inline-block; background: #67c23a; color: #fff; border-radius: 3px; font-size: 11px; padding: 0 5px; line-height: 16px; }
 .gantt-header { background: #f5f7fa; font-weight: 600; }
 .gantt-emp-col { width: 140px; flex-shrink: 0; padding: 6px 8px; border-right: 1px solid #ebeef5; position: sticky; left: 0; background: #fff; z-index: 3; }
 .gantt-header .gantt-emp-col { background: #f5f7fa; z-index: 4; }
-.gantt-day-col { flex: 1; min-width: 100px; padding: 4px; border-right: 1px solid #ebeef5; }
+.gantt-day-col { width: 150px; flex-shrink: 0; padding: 4px; border-right: 1px solid #ebeef5; box-sizing: border-box; }
 .day-label { font-size: 12px; color: #606266; }
 .day-sub { font-size: 11px; color: #909399; }
-.day-block { border-radius: 4px; padding: 6px; text-align: center; font-size: 12px; min-height: 40px; }
-.work-block { background: #ecf5ff; }
+.day-block { border-radius: 4px; padding: 6px; text-align: center; font-size: 12px; height: 72px; box-sizing: border-box; overflow: hidden; }
+.work-block { background: #ecf5ff; display: flex; flex-direction: column; align-items: center; justify-content: center; }
 .rest-block { background: #fef0f0; color: #f56c6c; font-weight: 600; }
 .empty-block { background: #fafafa; }
 .shift-code { font-weight: 600; }

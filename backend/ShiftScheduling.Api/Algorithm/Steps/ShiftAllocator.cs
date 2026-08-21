@@ -11,7 +11,8 @@ public sealed class ShiftAllocator
         ["S1"] = 5,
         ["S6"] = 6,
         ["S4"] = 7,
-        ["S5"] = 8
+        ["S5"] = 8,
+        ["S9"] = 9
     };
 
     /// <summary>需求键：(工作站, 日历日, 时段)。日历日 00:00-05:30 归属上一营业日。</summary>
@@ -62,8 +63,10 @@ public sealed class ShiftAllocator
 
         foreach (var date in dates)
         {
-            // P1-5 修复3：周工时在每周周一边界重置
-            if (date.WeekDay == 1)
+            // 周工时在每周周一边界重置（WeekDay 为 MySQL DAYOFWEEK：1=周日，2=周一）。
+            // 必须与合规检查的自然周（周一~周日）口径一致，否则周日班次会被算进"新的一周"，
+            // 导致周工时上限校验漏掉周日的超限（如周一~周六 60h + 周日 12h = 72h）。
+            if (date.WeekDay == 2)
             {
                 foreach (var key in weeklyHours.Keys.ToList())
                 {
@@ -91,14 +94,17 @@ public sealed class ShiftAllocator
                     continue;
                 }
 
+                var shiftHoursForCap = SchedulingTimeHelper.GetShiftHours(shift.StartTime, shift.EndTime, shift.IsCrossDay);
                 var candidates = workingEmployees
                     .Where(e => !assignedToday.Contains(e.Id))
                     .Where(e => !HasOverlap(busySlotsByEmployee, e.Id, shift, date.WorkDate))
-                    .Where(e => weeklyHours.GetValueOrDefault(e.Id) < input.MaxWeeklyHours)
+                    // 周工时硬约束：排完该班后周累计不得超过上限（不再允许"分配前未超、排完超限"）
+                    .Where(e => weeklyHours.GetValueOrDefault(e.Id) + shiftHoursForCap <= input.MaxWeeklyHours)
                     .Where(e => HasSkillForShift(e.Id, shift, skillsByEmployee))
+                    .Where(e => RespectsMinDailyHours(e, shift, assignedToday, input))
                     .OrderBy(e => e.IsParttime)  // 全职优先，兼职靠后
                     .ThenByDescending(e => e.IsParttime == 1 ? periodHours.GetValueOrDefault(e.Id) : 0m)
-                    .ThenByDescending(e => SkillCoverage(e.Id, shift, skillsByEmployee) * 100 + MaxSkillScore(e.Id, shift, skillsByEmployee))
+                    .ThenByDescending(e => TotalSkillScore(e.Id, shift, skillsByEmployee))
                     .ThenBy(e => e.IsParttime == 1 ? 0m : weeklyHours.GetValueOrDefault(e.Id))
                     .ToList();
 
@@ -158,6 +164,11 @@ public sealed class ShiftAllocator
                     .Where(s => ShiftHasOutstandingDemand(s, demand, date.WorkDate))
                     .Where(s => !HasOverlap(busySlotsByEmployee, employee.Id, s, date.WorkDate))
                     .Where(s => HasSkillForShift(employee.Id, s, skillsByEmployee))
+                    // 周工时硬约束：排完该班后周累计不得超过上限
+                    .Where(s => weeklyHours.GetValueOrDefault(employee.Id)
+                                + SchedulingTimeHelper.GetShiftHours(s.StartTime, s.EndTime, s.IsCrossDay)
+                                <= input.MaxWeeklyHours)
+                    .Where(s => RespectsMinDailyHours(employee, s, assignedToday, input))
                     .OrderByDescending(s => ShiftDemandScore(s, demand, date.WorkDate))
                     .ThenBy(s => SchedulingTimeHelper.GetShiftHours(s.StartTime, s.EndTime, s.IsCrossDay))
                     .FirstOrDefault();
@@ -460,16 +471,26 @@ public sealed class ShiftAllocator
                 var usedThisBlock = 0;
                 while (BlockHasDemandForStation(block.Start, block.EndExclusive, workstationId, remaining, workDate) && usedThisBlock < MaxDemandShiftHeadcount)
             {
+                // 目标岗位 = 该缺口块所属工作站：D 班次只为这一个岗位补人，
+                // 候选按"目标岗位技能分"排序——让该岗位的专职人员（如保洁 5 分）优先于
+                // 行政多面手（保洁只有 3 分），避免专家被跨岗挤掉、岗位缺口反而扩大。
+                var targetWorkstationId = workstationId;
                 var orderedCandidates = workingEmployees
                     // 修复：不再用 assignedToday 排除当天已有班次的员工——只要 D 班次时段
                     // 与其已有班次不重叠（HasOverlap 校验）即可补位；否则"20:00 才上班的
                     // 楼面员工无法补 17:00-19:30 缺口"这类本可覆盖的缺口永远补不上。
                     .Where(e => !HasOverlap(busySlotsByEmployee, e.Id, template, workDate))
-                    .Where(e => weeklyHours.GetValueOrDefault(e.Id) < input.MaxWeeklyHours)
+                    // 周工时硬约束：排完该班后周累计不得超过上限
+                    .Where(e => weeklyHours.GetValueOrDefault(e.Id)
+                                + SchedulingTimeHelper.GetShiftHours(template.StartTime, template.EndTime, template.IsCrossDay)
+                                <= input.MaxWeeklyHours)
                     .Where(e => HasSkillForShift(e.Id, template, skillsByEmployee))
+                    .Where(e => RespectsMinDailyHours(e, template, assignedToday, input))
                     .OrderBy(e => e.IsParttime)
                     .ThenByDescending(e => e.IsParttime == 1 ? periodHours.GetValueOrDefault(e.Id) : 0m)
-                    .ThenByDescending(e => SkillCoverage(e.Id, template, skillsByEmployee) * 100 + MaxSkillScore(e.Id, template, skillsByEmployee))
+                    .ThenByDescending(e => skillsByEmployee.TryGetValue(e.Id, out var s)
+                        ? s.GetValueOrDefault(targetWorkstationId)
+                        : 0)
                     .ThenBy(e => e.IsParttime == 1 ? 0m : weeklyHours.GetValueOrDefault(e.Id))
                     .ToList();
 
@@ -543,7 +564,12 @@ public sealed class ShiftAllocator
         return shift.WorkstationIds.Any(ws => skills.ContainsKey(ws));
     }
 
-    private static int SkillCoverage(
+    /// <summary>
+    /// 员工对该班次覆盖岗位的综合技能分（各岗位技能分之和）。
+    /// 优先选"综合技能最强"的人，而不是"覆盖岗位最多"的人——
+    /// 避免高分的专职人员（如管理岗 5 分的店长）输给多岗位 3 分的多面手而长期排不上班。
+    /// </summary>
+    private static int TotalSkillScore(
         long employeeId,
         ShiftTemplateInput shift,
         IReadOnlyDictionary<long, Dictionary<long, int>> skillsByEmployee)
@@ -553,20 +579,7 @@ public sealed class ShiftAllocator
             return 0;
         }
 
-        return shift.WorkstationIds.Count(ws => skills.ContainsKey(ws));
-    }
-
-    private static int MaxSkillScore(
-        long employeeId,
-        ShiftTemplateInput shift,
-        IReadOnlyDictionary<long, Dictionary<long, int>> skillsByEmployee)
-    {
-        if (!skillsByEmployee.TryGetValue(employeeId, out var skills))
-        {
-            return 0;
-        }
-
-        return shift.WorkstationIds.Where(skills.ContainsKey).Max(ws => skills[ws]);
+        return shift.WorkstationIds.Sum(ws => skills.GetValueOrDefault(ws));
     }
 
     /// <summary>计算软性缺口：(工作站, 日历日, 时段) -> 最好人数 - 已排人数（仅 > 0 的保留）。</summary>
@@ -738,4 +751,19 @@ public sealed class ShiftAllocator
             .Select(ws => (long?)ws)
             .FirstOrDefault();
     }
+
+    /// <summary>
+    /// 正式员工每日最低工时约束：当天还没有任何班次的正式员工，
+    /// 若该班次单独排下来不足每日最低工时则不允许排（避免出现只上
+    /// 0.5h/1.5h 短班的"碎班工作日"）。兼职员工不受此约束；
+    /// 当天已有班次的员工可继续追加短班补缺口。
+    /// </summary>
+    private static bool RespectsMinDailyHours(
+        EmployeeInput employee,
+        ShiftTemplateInput shift,
+        HashSet<long> assignedToday,
+        SchedulingInput input)
+        => employee.IsParttime == 1
+           || assignedToday.Contains(employee.Id)
+           || SchedulingTimeHelper.GetShiftHours(shift.StartTime, shift.EndTime, shift.IsCrossDay) >= input.MinDailyWorkHours;
 }

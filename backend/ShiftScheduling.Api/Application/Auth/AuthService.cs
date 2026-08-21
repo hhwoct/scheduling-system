@@ -15,8 +15,6 @@ public sealed class AuthService : IAuthService
     private readonly ICurrentUser _currentUser;
     private readonly IAuditLogService _auditLogService;
     private readonly IPasswordResetService _passwordResetService;
-    private readonly IWebHostEnvironment _environment;
-    private readonly ILoggerFactory _loggerFactory;
 
     public AuthService(
         ShiftSchedulingDbContext dbContext,
@@ -24,9 +22,7 @@ public sealed class AuthService : IAuthService
         IPasswordService passwordService,
         ICurrentUser currentUser,
         IAuditLogService auditLogService,
-        IPasswordResetService passwordResetService,
-        IWebHostEnvironment environment,
-        ILoggerFactory loggerFactory)
+        IPasswordResetService passwordResetService)
     {
         _dbContext = dbContext;
         _jwtTokenService = jwtTokenService;
@@ -34,8 +30,6 @@ public sealed class AuthService : IAuthService
         _currentUser = currentUser;
         _auditLogService = auditLogService;
         _passwordResetService = passwordResetService;
-        _environment = environment;
-        _loggerFactory = loggerFactory;
     }
 
     public async Task<LoginResponse> LoginAsync(LoginRequest request, string? clientIp, CancellationToken cancellationToken)
@@ -72,6 +66,9 @@ public sealed class AuthService : IAuthService
                 _passwordService.Verify(request.Password, "$2b$12$Ci01D3eY4zXe10SHH5XRCuKKGN2aHGqB1AhsBTBCqQ0tX8xvAmLKO");
             }
             _passwordResetService.RecordFailure(username, clientIp);
+            // 失败固定时延：即使客户端回车卡键/连发，也只能约 1 秒/次，
+            // 避免瞬间刷满失败次数触发锁定（同时增强防暴力破解）
+            await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
             throw new InvalidCredentialsException();
         }
 
@@ -79,6 +76,7 @@ public sealed class AuthService : IAuthService
         {
             // 用户已停用：统一返回"用户名或密码错误"，不泄露账号状态
             _passwordResetService.RecordFailure(username, clientIp);
+            await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
             throw new InvalidCredentialsException();
         }
 
@@ -118,54 +116,6 @@ public sealed class AuthService : IAuthService
         return user ?? throw new UnauthorizedBusinessException("当前用户不存在或已被停用");
     }
 
-    public async Task SendPasswordResetOtpAsync(SendResetOtpRequest request, string? clientIp, CancellationToken cancellationToken)
-    {
-        var username = request.Username?.Trim() ?? string.Empty;
-        var verifyInfo = request.VerifyInfo?.Trim() ?? string.Empty;
-        if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(verifyInfo))
-        {
-            throw new BusinessException("用户名和注册手机号不能为空", "INVALID_FORGOT_REQUEST");
-        }
-
-        // 统一错误消息，不暴露用户是否存在
-        var user = await _dbContext.Users
-            .AsNoTracking()
-            .FirstOrDefaultAsync(x => x.Username == username && x.Status == 1, cancellationToken);
-        if (user is null || (user.Role != "EMPLOYEE" && user.Role != "STORE_MANAGER"))
-        {
-            // 为不存在的用户生成一个随机验证码消耗时间，防枚举
-            _passwordResetService.CheckRateLimit(username, clientIp);
-            await Task.Delay(Random.Shared.Next(300, 800), cancellationToken);
-            _passwordResetService.RecordFailure(username, clientIp);
-            throw new InvalidCredentialsException("用户名或验证信息不正确");
-        }
-
-        var employee = await _dbContext.Employees
-            .AsNoTracking()
-            .FirstOrDefaultAsync(x => x.EmployeeNo == username && x.StoreId == user.StoreId && x.Status == 1, cancellationToken);
-        if (employee is null || string.IsNullOrWhiteSpace(employee.Phone) ||
-            !string.Equals(employee.Phone, verifyInfo, StringComparison.Ordinal))
-        {
-            // 手机号与注册信息不符：与用户不存在同等处理，防枚举
-            _passwordResetService.RecordFailure(username, clientIp);
-            throw new InvalidCredentialsException("用户名或验证信息不正确");
-        }
-
-        // 限流 + 锁定检查
-        _passwordResetService.CheckRateLimit(username, clientIp);
-
-        var otp = _passwordResetService.GenerateOtp(username, employee.Phone);
-        // TODO: 集成短信网关时在此调用发送短信
-        // await _smsService.SendAsync(employee.Phone, $"您的排班系统验证码是 {otp}，10 分钟内有效。");
-
-        // 安全：验证码不进入 HTTP 响应。短信网关接入前，仅非生产环境写入服务端日志便于联调。
-        if (!_environment.IsProduction())
-        {
-            _loggerFactory.CreateLogger("PasswordReset").LogWarning(
-                "[DEV-OTP] username={Username}, otp={Otp}", username, otp);
-        }
-    }
-
     public async Task ForgotPasswordAsync(ForgotPasswordRequest request, string? clientIp, CancellationToken cancellationToken)
     {
         var username = request.Username?.Trim();
@@ -197,12 +147,7 @@ public sealed class AuthService : IAuthService
             throw new BusinessException("两次输入的密码不一致", "PASSWORD_MISMATCH");
         }
 
-        if (string.IsNullOrWhiteSpace(request.OtpCode))
-        {
-            throw new BusinessException("验证码不能为空", "INVALID_OTP");
-        }
-
-        // 限流 + 锁定检查
+        // 限流 + 锁定检查（无验证码环节，用户名+手机号即可重置，限流防暴力尝试）
         _passwordResetService.CheckRateLimit(username, clientIp);
 
         var user = await _dbContext.Users
@@ -225,13 +170,7 @@ public sealed class AuthService : IAuthService
             throw new InvalidCredentialsException("用户名或验证信息不正确");
         }
 
-        // 验证 OTP（单次有效）
-        if (!_passwordResetService.ValidateOtp(username, employee.Phone, request.OtpCode))
-        {
-            _passwordResetService.RecordFailure(username, clientIp);
-            throw new BusinessException("验证码错误或已过期", "INVALID_OTP");
-        }
-
+        // 无验证码：手机号匹配即视为身份验证通过（限流/锁定由 PasswordResetService 兜底）
         user.PasswordHash = _passwordService.Hash(request.NewPassword);
         user.UpdatedAt = DateTime.UtcNow;
         user.PasswordVersion++;  // 使旧 JWT 令牌失效

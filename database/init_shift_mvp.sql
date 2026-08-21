@@ -347,6 +347,7 @@ CREATE TABLE leave_requests (
   review_user_id BIGINT NULL,
   review_time DATETIME NULL,
   review_remark VARCHAR(255) NULL,
+  early_returned TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否提前返岗（1=是）',
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   INDEX idx_leave_requests_employee (employee_id, start_date),
@@ -431,7 +432,8 @@ INSERT INTO shift_templates (store_id, code, name, start_time, end_time, is_cros
 (1, 'S5', '楼面B班', '21:00:00', '06:00:00', 1, 8, 1),
 (1, 'S6', '吧台班', '18:30:00', '04:00:00', 1, 6, 1),
 (1, 'S7', '厨房A班', '18:00:00', '03:00:00', 1, 1, 1),
-(1, 'S8', '厨房B班', '19:00:00', '04:00:00', 1, 2, 1);
+(1, 'S8', '厨房B班', '19:00:00', '04:00:00', 1, 2, 1),
+(1, 'S9', '保洁班', '16:00:00', '04:00:00', 1, 9, 1);
 
 INSERT INTO shift_workstations (shift_template_id, workstation_id)
 SELECT s.id, w.id FROM shift_templates s JOIN workstations w ON s.store_id = w.store_id
@@ -439,10 +441,11 @@ WHERE (s.code = 'S1' AND w.code IN ('MANAGER','CLERK_WAREHOUSE','PURCHASE'))
    OR (s.code = 'S2' AND w.code IN ('ENGINEERING','NETWORK'))
    OR (s.code = 'S3' AND w.code IN ('ENGINEERING','NETWORK'))
    OR (s.code = 'S4' AND w.code IN ('RECEPTION','DELIVERY','SERVICE','CUSTOMER_MANAGER'))
-   OR (s.code = 'S5' AND w.code IN ('RECEPTION','DELIVERY','SERVICE','CUSTOMER_MANAGER','CLEANING'))
+   OR (s.code = 'S5' AND w.code IN ('RECEPTION','DELIVERY','SERVICE','CUSTOMER_MANAGER'))
    OR (s.code = 'S6' AND w.code IN ('INNER_BAR','OUTER_BAR'))
    OR (s.code = 'S7' AND w.code IN ('KITCHEN'))
-   OR (s.code = 'S8' AND w.code IN ('KITCHEN'));
+   OR (s.code = 'S8' AND w.code IN ('KITCHEN'))
+   OR (s.code = 'S9' AND w.code IN ('CLEANING'));
 
 INSERT INTO employees (store_id, employee_no, name, phone, department, hire_date, primary_position, max_weekly_hours, status) VALUES
 (1, 'E001', '张店长', '13800000001', '管理', '2024-01-01', '管理岗', 48, 1),
@@ -513,7 +516,8 @@ INSERT INTO rule_configs (store_id, rule_key, rule_name, rule_value, value_type,
 (1, 'skill_match_weight', '技能匹配权重', '40', 'number', '算法软约束权重', 1),
 (1, 'work_hour_balance_weight', '工时均衡权重', '30', 'number', '算法软约束权重', 1),
 (1, 'preference_weight', '员工偏好权重', '10', 'number', 'MVP 预留', 1),
-(1, 'station_continuity_weight', '工作站连续性权重', '20', 'number', '减少同日频繁换岗', 1);
+(1, 'station_continuity_weight', '工作站连续性权重', '20', 'number', '减少同日频繁换岗', 1),
+(1, 'min_daily_work_hours', '正式员工每日最低工时', '6.5', 'number', '正式员工上班当天工时不得低于该值（小时），0 表示不限制', 1);
 
 -- 8 月日期参数。week_day 存 MySQL DAYOFWEEK 值（Sunday=1，Saturday=7）。
 -- 业务口径（与 20260818 及算法 RestDayAllocator.IsPeakDay 一致）：

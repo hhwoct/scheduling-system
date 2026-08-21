@@ -44,29 +44,39 @@ public sealed class SchedulingEngine
             ? input
             : input with { ShiftTemplates = input.ShiftTemplates.Concat(generatedTemplates).ToList() };
 
-        // 阶段三：工作站分配（收集岗位缺口）
-        var staffingGaps = new List<ScheduleIssueOutput>();
-        var workstationAssignments = workstationAllocator.Allocate(effectiveInput, effectiveRestDays, shiftAssignments, staffingGaps);
+        // 阶段三：工作站分配（缺口不在此报告——兜底填充后按最终状态统一报告）
+        var workstationAssignments = workstationAllocator.Allocate(effectiveInput, effectiveRestDays, shiftAssignments, null);
 
         // 阶段四：班中休息分配（30 分钟固定休息：错峰 → 借调 → 告警）
         var breakAllocator = new BreakAllocator();
         var breakIssues = new List<ScheduleIssueOutput>();
         var breakAssignments = breakAllocator.Allocate(effectiveInput, shiftAssignments, workstationAssignments, breakIssues);
 
+        // 阶段四.5：剩余缺口兜底填充（全职优先，兼职填充剩余格子）
+        var shiftAssignmentsFinal = shiftAssignments.ToList();
+        var workstationAssignmentsFinal = workstationAssignments.ToList();
+        var residualTemplates = new List<ShiftTemplateInput>();
+        var remainingResidual = ResidualGapFiller.Fill(effectiveInput, effectiveRestDays, shiftAssignmentsFinal, workstationAssignmentsFinal, residualTemplates);
+        // 缺口报告以兜底填充后的最终状态为准
+        var staffingGaps = ResidualGapFiller.BuildGapIssues(effectiveInput, remainingResidual);
+        var summaryInput = residualTemplates.Count == 0
+            ? effectiveInput
+            : effectiveInput with { ShiftTemplates = effectiveInput.ShiftTemplates.Concat(residualTemplates).ToList() };
+
         // 生成日汇总
-        var daySummaries = BuildDaySummaries(effectiveInput, effectiveRestDays, shiftAssignments, workstationAssignments);
+        var daySummaries = BuildDaySummaries(summaryInput, effectiveRestDays, shiftAssignmentsFinal, workstationAssignmentsFinal);
 
         // 合规检查（合并岗位缺口、休息告警与合规违规）
-        var complianceIssues = BuildComplianceIssues(effectiveInput, effectiveRestDays, shiftAssignments, workstationAssignments, daySummaries);
+        var complianceIssues = BuildComplianceIssues(summaryInput, effectiveRestDays, shiftAssignmentsFinal, workstationAssignmentsFinal, daySummaries);
         var issues = staffingGaps.Concat(breakIssues).Concat(complianceIssues).ToList();
 
         // 需求覆盖统计（按最少人数口径）
-        var demandCoverage = ComputeDemandCoverage(effectiveInput, workstationAssignments, generatedTemplates.Count);
+        var demandCoverage = ComputeDemandCoverage(effectiveInput, workstationAssignmentsFinal, generatedTemplates.Count);
 
         return new SchedulingOutput(
             restDays,
-            shiftAssignments,
-            workstationAssignments,
+            shiftAssignmentsFinal,
+            workstationAssignmentsFinal,
             breakAssignments,
             daySummaries,
             issues,
@@ -223,7 +233,7 @@ public sealed class SchedulingEngine
         var workstations = await _dbContext.Workstations
             .AsNoTracking()
             .Where(x => x.StoreId == storeId && x.Status == 1)
-            .Select(x => new { x.Id, x.IsLowSkill })
+            .Select(x => new { x.Id, x.Code, x.Name, x.IsLowSkill })
             .ToListAsync(cancellationToken);
 
         var shiftTemplates = await _dbContext.ShiftTemplates
@@ -289,10 +299,18 @@ public sealed class SchedulingEngine
         var maxWeeklyHours = GetRuleDecimal(rules, "max_weekly_hours", 48m);
         var maxConsecutiveWorkDays = GetRuleInt(rules, "max_consecutive_work_days", 6);
         var minRestHoursAfterNightShift = GetRuleInt(rules, "min_rest_hours_after_night_shift", 10);
+        // 正式员工每日最低工时：上班当天工时不得低于该值（0 表示不限制）
+        var minDailyWorkHours = GetRuleDecimal(rules, "min_daily_work_hours", 6.5m);
 
         var lowSkillWorkstationIds = workstations
             .Where(x => x.IsLowSkill == 1)
             .ToDictionary(x => x.Id, _ => true);
+
+        // 缺口仅提醒工作站（如工程维修岗）：岗位缺口不逐时段记录，整周期只出一条汇总提醒。
+        // 按工作站编码识别，如需扩展（如网络维护岗），在此追加编码即可。
+        var warnOnlyGapWorkstations = workstations
+            .Where(x => x.Code == "ENGINEERING")
+            .ToDictionary(x => x.Id, x => x.Name);
 
         return new SchedulingInput(
             storeId,
@@ -306,10 +324,12 @@ public sealed class SchedulingEngine
             approvedLeaves,
             peakRestrictedHours,
             lowSkillWorkstationIds,
+            warnOnlyGapWorkstations,
             defaultMonthlyRestDays,
             maxWeeklyHours,
             maxConsecutiveWorkDays,
-            minRestHoursAfterNightShift);
+            minRestHoursAfterNightShift,
+            minDailyWorkHours);
     }
 
     /// <summary>
@@ -343,9 +363,12 @@ public sealed class SchedulingEngine
     {
         var summaries = new List<DaySummaryOutput>();
         var shiftById = input.ShiftTemplates.ToDictionary(x => x.Id);
-        var shiftMap = shiftAssignments
+        // 一天可能有多个互不重叠的班次（模板班次 + 按需补班 D 班次）：
+        // 不能只取第一个班次，否则会出现"只显示凌晨 30 分钟短班、休息却在晚上"的错位展示，
+        // 且工时被少算。按 (员工, 日期) 分组后合并（见下方主班次/总工时逻辑）。
+        var shiftsByEmployeeDate = shiftAssignments
             .GroupBy(x => (x.EmployeeId, x.WorkDate))
-            .ToDictionary(g => g.Key, g => g.First());
+            .ToDictionary(g => g.Key, g => g.ToList());
         var restSet = restDays.ToHashSet();
 
         var dates = input.DateParameters
@@ -364,14 +387,36 @@ public sealed class SchedulingEngine
                     continue;
                 }
 
-                if (!shiftMap.TryGetValue((employee.Id, date), out var shift) ||
-                    !shiftById.TryGetValue(shift.ShiftTemplateId, out var template))
+                var dayShifts = shiftsByEmployeeDate.GetValueOrDefault((employee.Id, date)) ?? new List<ShiftAssignment>();
+                var resolvable = dayShifts
+                    .Where(s => shiftById.TryGetValue(s.ShiftTemplateId, out _))
+                    .ToList();
+
+                if (resolvable.Count == 0)
                 {
                     // 未安排班次但也不是"正式休息日"的空闲日：补记为休息，
                     // 避免视图出现既无班次也无休息标记的空白格（语义 = 休息）。
                     summaries.Add(new DaySummaryOutput(employee.Id, date, 1, null, null, null, 0m, null));
                     continue;
                 }
+
+                // 主班次 = 当天工时最长的班次：起止时间与班次编码以它为准（休息通常落在其时段内）
+                var mainShift = resolvable
+                    .OrderByDescending(s =>
+                    {
+                        var t = shiftById[s.ShiftTemplateId];
+                        return SchedulingTimeHelper.GetShiftHours(t.StartTime, t.EndTime, t.IsCrossDay);
+                    })
+                    .ThenBy(s => s.ShiftTemplateId)
+                    .First();
+                var mainTemplate = shiftById[mainShift.ShiftTemplateId];
+
+                // 总工时 = 当天全部班次工时之和（含短班，避免汇总少算）
+                var totalHours = resolvable.Sum(s =>
+                {
+                    var t = shiftById[s.ShiftTemplateId];
+                    return SchedulingTimeHelper.GetShiftHours(t.StartTime, t.EndTime, t.IsCrossDay);
+                });
 
                 var covered = workstationAssignments
                     .Where(a => a.EmployeeId == employee.Id && a.WorkDate == date)
@@ -384,10 +429,10 @@ public sealed class SchedulingEngine
                     employee.Id,
                     date,
                     0,
-                    template.Id,
-                    template.StartTime,
-                    template.EndTime,
-                    SchedulingTimeHelper.GetShiftHours(template.StartTime, template.EndTime, template.IsCrossDay),
+                    mainTemplate.Id,
+                    mainTemplate.StartTime,
+                    mainTemplate.EndTime,
+                    totalHours,
                     covered.Count == 0 ? null : string.Join(",", covered)));
             }
         }
@@ -488,6 +533,26 @@ public sealed class SchedulingEngine
                     assignment.EmployeeId,
                     assignment.WorkstationId,
                     $"员工已分配到无技能的工作站 {assignment.WorkstationId}"));
+            }
+        }
+
+        // 4. 正式员工每日最低工时检查（上班当天工时不得低于规则值，0 表示不限制）
+        if (input.MinDailyWorkHours > 0)
+        {
+            foreach (var summary in daySummaries.Where(x =>
+                         x.IsRestDay == 0 && x.WorkHours > 0m && x.WorkHours < input.MinDailyWorkHours))
+            {
+                if (employeeById.TryGetValue(summary.EmployeeId, out var emp) && emp.IsParttime == 0)
+                {
+                    issues.Add(new ScheduleIssueOutput(
+                        "MIN_DAILY_HOURS",
+                        "WARN",
+                        summary.WorkDate,
+                        null,
+                        summary.EmployeeId,
+                        null,
+                        $"员工 {emp.Name} 在 {summary.WorkDate:yyyy-MM-dd} 当日工时 {summary.WorkHours:0.##}h 低于正式员工每日最低 {input.MinDailyWorkHours:0.##}h"));
+                }
             }
         }
 

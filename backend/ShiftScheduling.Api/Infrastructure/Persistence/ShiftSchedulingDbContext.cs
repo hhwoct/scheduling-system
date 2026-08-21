@@ -354,6 +354,7 @@ public sealed class ShiftSchedulingDbContext : DbContext
             entity.Property(x => x.ReviewUserId).HasColumnName("review_user_id");
             entity.Property(x => x.ReviewTime).HasColumnName("review_time");
             entity.Property(x => x.ReviewRemark).HasColumnName("review_remark");
+            entity.Property(x => x.EarlyReturned).HasColumnName("early_returned");
             entity.HasIndex(x => new { x.EmployeeId, x.StartDate });
             entity.HasIndex(x => new { x.StoreId, x.Status });
             entity.HasIndex(x => x.Status);

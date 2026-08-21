@@ -1,7 +1,6 @@
 export const API_ROUTES = {
   AUTH: {
     LOGIN: '/auth/login',
-    SEND_RESET_OTP: '/auth/send-reset-otp',
     FORGOT_PASSWORD: '/auth/forgot-password',
     ME: '/auth/me'
   },

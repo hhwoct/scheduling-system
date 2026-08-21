@@ -66,10 +66,12 @@ public sealed record SchedulingInput(
     IReadOnlyList<ApprovedLeaveInput> ApprovedLeaves,
     IReadOnlyList<PeakRestrictedHourInput> PeakRestrictedHours,
     IReadOnlyDictionary<long, bool> LowSkillWorkstationIds,
+    IReadOnlyDictionary<long, string> WarnOnlyGapWorkstations,
     int DefaultMonthlyRestDays,
     decimal MaxWeeklyHours,
     int MaxConsecutiveWorkDays,
-    int MinRestHoursAfterNightShift);
+    int MinRestHoursAfterNightShift,
+    decimal MinDailyWorkHours);
 
 public sealed record RestDayAssignment(long EmployeeId, DateOnly WorkDate);
 

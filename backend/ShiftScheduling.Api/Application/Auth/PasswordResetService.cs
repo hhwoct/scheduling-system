@@ -7,6 +7,8 @@ namespace ShiftScheduling.Api.Application.Auth;
 
 /// <summary>
 /// 内存实现：验证码生成/验证 + 失败锁定 + 限流。
+/// 账号锁定机制保留，但锁定后不再提示"账号已锁定"，
+/// 统一按"用户名或密码错误"处理（不泄露账号状态）。
 /// </summary>
 public sealed class PasswordResetService : IPasswordResetService
 {
@@ -76,57 +78,48 @@ public sealed class PasswordResetService : IPasswordResetService
 
     public void CheckRateLimit(string username, string? clientIp)
     {
+        // 失败计数/锁定按用户名维度（不影响同 IP 的其他账号）。
+        // 锁定后不再提示"账号已锁定"，统一返回"用户名或密码错误"（不泄露账号状态）。
         var userKey = BuildKey(username, string.Empty);
-        var ipKey = $"ip:{clientIp ?? "unknown"}";
         var now = DateTime.UtcNow;
 
-        // 锁定检查
-        foreach (var key in new[] { userKey, ipKey })
+        // 锁定检查（静默：与密码错误表现一致）
+        if (_lockouts.TryGetValue(userKey, out var lockout) && lockout.LockedUntil > now)
         {
-            if (_lockouts.TryGetValue(key, out var lockout) && lockout.LockedUntil > now)
-            {
-                var mins = (int)Math.Ceiling((lockout.LockedUntil - now).TotalMinutes);
-                throw new BusinessException($"尝试次数过多，账号已锁定 {mins} 分钟", "ACCOUNT_LOCKED");
-            }
+            throw new InvalidCredentialsException();
         }
 
-        // 限流窗口内尝试计数（用户名 + IP 任一超限即拒绝）
-        foreach (var key in new[] { userKey, ipKey })
+        // 限流窗口内尝试计数（仅用户名维度）
+        var queue = _attempts.GetOrAdd(userKey, _ => new ConcurrentQueue<AttemptEntry>());
+        TrimQueue(queue, now);
+        if (queue.Count >= MaxAttemptsPerWindow)
         {
-            var queue = _attempts.GetOrAdd(key, _ => new ConcurrentQueue<AttemptEntry>());
-            TrimQueue(queue, now);
-            if (queue.Count >= MaxAttemptsPerWindow)
-            {
-                throw new BusinessException("操作过于频繁，请稍后再试", "RATE_LIMITED");
-            }
+            throw new BusinessException("操作过于频繁，请稍后再试", "RATE_LIMITED");
         }
     }
 
     public void RecordFailure(string username, string? clientIp)
     {
+        // 仅用户名维度记录失败：一个账号密码错多了，不影响同 IP 的其他账号
         var userKey = BuildKey(username, string.Empty);
-        var ipKey = $"ip:{clientIp ?? "unknown"}";
         var now = DateTime.UtcNow;
 
         // 锁内完成"检查 + 记录"，消除 CheckRateLimit 与 RecordFailure 之间的竞态窗口
-        foreach (var key in new[] { userKey, ipKey })
+        var queue = _attempts.GetOrAdd(userKey, _ => new ConcurrentQueue<AttemptEntry>());
+        lock (queue)
         {
-            var queue = _attempts.GetOrAdd(key, _ => new ConcurrentQueue<AttemptEntry>());
-            lock (queue)
+            TrimQueue(queue, now);
+            if (queue.Count >= MaxAttemptsPerWindow)
             {
-                TrimQueue(queue, now);
-                if (queue.Count >= MaxAttemptsPerWindow)
-                {
-                    throw new BusinessException("操作过于频繁，请稍后再试", "RATE_LIMITED");
-                }
-                queue.Enqueue(new AttemptEntry(now));
+                throw new BusinessException("操作过于频繁，请稍后再试", "RATE_LIMITED");
+            }
+            queue.Enqueue(new AttemptEntry(now));
 
-                // 如果窗口内失败次数达到阈值则锁定
-                if (queue.Count >= LockoutThreshold)
-                {
-                    _lockouts[key] = new LockoutEntry(now.AddMinutes(LockoutMinutes));
-                    queue.Clear();
-                }
+            // 窗口内失败次数达到阈值则锁定该账号（锁定期间静默拒绝登录）
+            if (queue.Count >= LockoutThreshold)
+            {
+                _lockouts[userKey] = new LockoutEntry(now.AddMinutes(LockoutMinutes));
+                queue.Clear();
             }
         }
     }
@@ -136,19 +129,13 @@ public sealed class PasswordResetService : IPasswordResetService
         var userKey = BuildKey(username, string.Empty);
         _attempts.TryRemove(userKey, out _);
         _lockouts.TryRemove(userKey, out _);
-
-        // 只清除用户自己的失败计数；IP 维度计数保留至窗口自然过期，
-        // 防止攻击者用自己的账号成功登录来清空共享出口 IP 的失败计数（锁定绕过）。
-        _ = clientIp;
     }
 
     public bool IsLocked(string username, string? clientIp)
     {
         var userKey = BuildKey(username, string.Empty);
-        var ipKey = $"ip:{clientIp ?? "unknown"}";
         var now = DateTime.UtcNow;
-        return (_lockouts.TryGetValue(userKey, out var l1) && l1.LockedUntil > now)
-            || (_lockouts.TryGetValue(ipKey, out var l2) && l2.LockedUntil > now);
+        return _lockouts.TryGetValue(userKey, out var lockout) && lockout.LockedUntil > now;
     }
 
     private static void TrimQueue(ConcurrentQueue<AttemptEntry> queue, DateTime now)

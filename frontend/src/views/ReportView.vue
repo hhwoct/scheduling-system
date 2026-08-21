@@ -2,84 +2,96 @@
   <div>
     <el-card>
       <template #header>
-        <div style="display: flex; align-items: center; justify-content: space-between">
+        <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px">
           <span>排班报表</span>
-          <div style="display: flex; gap: 8px">
-            <el-button v-if="planId" type="success" :loading="exporting" @click="exportCsv">导出 CSV</el-button>
-            <el-button type="primary" :loading="loading" @click="loadReport">查询</el-button>
+          <div style="display: flex; align-items: center; gap: 8px">
+            <el-select
+              v-model="planId"
+              placeholder="请选择已发布的排班计划"
+              style="width: 360px"
+              :disabled="!plans.length"
+              @change="loadData"
+            >
+              <el-option
+                v-for="p in plans"
+                :key="p.id"
+                :label="`${p.planName}（${p.startDate} ~ ${p.endDate}）`"
+                :value="p.id"
+              />
+            </el-select>
+            <el-button type="primary" :loading="loading" :disabled="!planId" @click="loadData">刷新</el-button>
+            <el-button v-if="plans.length" type="success" :loading="exporting" @click="exportCsv">导出 CSV</el-button>
           </div>
         </div>
       </template>
 
-      <!-- 排班计划选择 -->
-      <el-table :data="plans" v-loading="plansLoading" border stripe size="small" style="margin-bottom: 16px" highlight-current-row @current-change="selectPlan">
-        <el-table-column prop="id" label="ID" width="60" />
-        <el-table-column prop="planName" label="计划名称" />
-        <el-table-column label="周期" width="200">
-          <template #default="{ row }">{{ row.startDate }} ~ {{ row.endDate }}</template>
-        </el-table-column>
-        <el-table-column label="状态" width="100">
-          <template #default="{ row }">
-            <el-tag :type="row.status === 'PUBLISHED' ? 'success' : 'info'">{{ row.status === 'PUBLISHED' ? '已发布' : '草稿' }}</el-tag>
-          </template>
-        </el-table-column>
-      </el-table>
+      <!-- 没有任何已发布的排班安排 -->
+      <el-empty v-if="!plansLoading && !plans.length" description="暂未发布排班安排，请发布后再查看" />
 
-      <template v-if="summary">
-        <!-- 摘要卡片 -->
-        <el-row :gutter="16" style="margin-bottom: 16px">
-          <el-col :span="4"><el-card shadow="hover"><div class="stat">{{ summary.employeeCount || 0 }}</div><div class="label">员工数</div></el-card></el-col>
-          <el-col :span="4"><el-card shadow="hover"><div class="stat">{{ summary.restDayCount || 0 }}</div><div class="label">休息人天</div></el-card></el-col>
-          <el-col :span="4"><el-card shadow="hover"><div class="stat">{{ summary.workDayCount || 0 }}</div><div class="label">上班人天</div></el-card></el-col>
-          <el-col :span="4"><el-card shadow="hover"><div class="stat">{{ summary.totalWorkHours || 0 }}</div><div class="label">总工时</div></el-card></el-col>
-          <el-col :span="4"><el-card shadow="hover"><div class="stat" style="color:#e6a23c">{{ summary.issueCount || 0 }}</div><div class="label">问题数</div></el-card></el-col>
-          <el-col :span="4"><el-card shadow="hover"><div class="stat" :style="{ color: (summary.gapCount || 0) > 0 ? '#f56c6c' : '#67c23a' }">{{ summary.gapCount || 0 }}</div><div class="label">岗位缺口</div></el-card></el-col>
-        </el-row>
+      <template v-else>
+        <el-alert v-if="errorMsg" :title="errorMsg" type="warning" :closable="false" style="margin-bottom: 12px" />
 
-        <!-- 员工工时汇总 -->
-        <el-card header="员工工时汇总" style="margin-bottom: 16px">
-          <el-table :data="employeeStats" border stripe size="small" max-height="400">
-            <el-table-column prop="employeeNo" label="工号" width="100" />
-            <el-table-column prop="employeeName" label="姓名" width="120" />
-            <el-table-column prop="department" label="部门" width="100" />
-            <el-table-column label="休息天数" width="90">
-              <template #default="{ row }">{{ row.restCount }}</template>
-            </el-table-column>
-            <el-table-column label="上班天数" width="90">
-              <template #default="{ row }">{{ row.workCount }}</template>
-            </el-table-column>
-            <el-table-column label="总工时" width="100" prop="totalHours" />
-            <el-table-column label="常上班次" width="120">
-              <template #default="{ row }">{{ row.topShift || '--' }}</template>
-            </el-table-column>
-          </el-table>
-        </el-card>
+        <div v-loading="loading || plansLoading">
+          <template v-if="rows.length">
+            <!-- 员工 × 日期 排班表（样式同「排班查看 · 周视图」） -->
+            <div class="gantt">
+              <div class="gantt-row gantt-header">
+                <div class="gantt-emp-col">员工</div>
+                <div v-for="d in dayList" :key="d.date" class="gantt-day-col" :class="{ weekend: d.weekend }">
+                  <div class="day-label" :class="{ 'day-weekend': d.weekend }">{{ d.weekday }}</div>
+                  <div class="day-sub">{{ d.date.slice(5) }}</div>
+                </div>
+              </div>
 
-        <!-- 逐日明细 -->
-        <el-card header="逐日明细" style="margin-bottom: 16px">
-          <el-table :data="pagedRows" border stripe size="small" max-height="400">
-            <el-table-column prop="employeeNo" label="工号" width="100" />
-            <el-table-column prop="employeeName" label="姓名" width="120" />
-            <el-table-column prop="department" label="部门" width="100" />
-            <el-table-column prop="workDate" label="日期" width="120" />
-            <el-table-column label="状态" width="100">
-              <template #default="{ row }">
-                <el-tag v-if="row.isRestDay === 1" type="danger" size="small">休息</el-tag>
-                <el-tag v-else type="success" size="small">上班</el-tag>
+              <template v-for="(row, i) in rows" :key="row.employeeId">
+                <!-- 全职员工与兼职员工之间的分隔行 -->
+                <div v-if="i === firstPartTimeIndex" class="gantt-divider">
+                  <span class="gantt-divider-badge">兼</span>兼职员工
+                </div>
+                <div class="gantt-row" :class="{ 'gantt-row-parttime': row.isParttime === 1 }">
+                  <div class="gantt-emp-col">
+                    <div class="emp-name">
+                      {{ row.employeeName }}
+                      <el-tag v-if="row.isParttime === 1" type="success" size="small" style="margin-left: 4px">兼</el-tag>
+                    </div>
+                    <div class="emp-sub">{{ row.department }} · {{ row.employeeNo }}</div>
+                  </div>
+                  <div v-for="d in dayList" :key="d.date" class="gantt-day-col" :class="{ weekend: d.weekend }">
+                    <template v-if="getDay(row, d.date)">
+                      <div v-if="getDay(row, d.date).isRestDay === 1 && row.isParttime !== 1" class="day-block rest-block">休</div>
+                      <div v-else-if="getDay(row, d.date).isRestDay === 1" class="day-block empty-block"></div>
+                      <div v-else class="day-block work-block" :title="workTip(getDay(row, d.date))">
+                        <div class="shift-code">{{ getDay(row, d.date).shiftCode || '班' }}</div>
+                        <div class="shift-time">{{ fmt(getDay(row, d.date).startTime) }}-{{ fmt(getDay(row, d.date).endTime) }}</div>
+                        <div class="shift-hours">{{ Number(getDay(row, d.date).workHours || 0).toFixed(1) }}h</div>
+                        <div
+                          v-if="getDay(row, d.date).breakStartTime && row.isParttime !== 1"
+                          class="shift-break"
+                          :title="getDay(row, d.date).breakCoverEmployeeName
+                            ? `休息 ${fmt(getDay(row, d.date).breakStartTime)}-${fmt(getDay(row, d.date).breakEndTime)}，由 ${getDay(row, d.date).breakCoverEmployeeName} 顶班`
+                            : `休息 ${fmt(getDay(row, d.date).breakStartTime)}-${fmt(getDay(row, d.date).breakEndTime)}`"
+                        >
+                          休 {{ fmt(getDay(row, d.date).breakStartTime) }}-{{ fmt(getDay(row, d.date).breakEndTime) }}{{ getDay(row, d.date).breakCoverEmployeeName ? ' · ' + getDay(row, d.date).breakCoverEmployeeName + ' 顶' : '' }}
+                        </div>
+                      </div>
+                    </template>
+                    <div v-else class="day-block empty-block"></div>
+                  </div>
+                </div>
               </template>
-            </el-table-column>
-            <el-table-column prop="shiftCode" label="班次" width="80" />
-            <el-table-column prop="workHours" label="工时" width="80" />
-          </el-table>
-          <el-pagination
-            style="margin-top: 12px"
-            layout="total, prev, pager, next"
-            :total="detailTotal"
-            :page-size="detailPageSize"
-            :current-page="detailPage"
-            @current-change="detailPage = $event"
-          />
-        </el-card>
+            </div>
+
+            <div class="legend">
+              <span class="legend-item"><span class="legend-box rest-legend-box">休</span>休息</span>
+              <span class="legend-item"><span class="legend-box work-legend-box"></span>上班班次（班次 / 时间 / 工时）</span>
+              <span class="legend-item"><span class="legend-box break-legend-box">休</span>班中休息（含顶班人）</span>
+              <span class="legend-item"><span class="legend-box pt-legend-box">兼</span>兼职员工（休息日留空）</span>
+              <span class="legend-item legend-hint">悬停班次色块可查看班次、工时、工作站与顶班详情</span>
+            </div>
+          </template>
+
+          <el-empty v-else-if="!loading && !errorMsg" description="该排班计划暂无排班数据" />
+        </div>
       </template>
     </el-card>
   </div>
@@ -88,48 +100,78 @@
 <script setup>
 import { onMounted, ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
-import { getMonthView, getScheduleSummary, getSchedules } from '../api/schedules'
+import { getSchedules, getWeekView } from '../api/schedules'
+import { getWorkstations } from '../api/workstations'
 
 const planId = ref('')
-const loading = ref(false)
-const exporting = ref(false)
 const plans = ref([])
 const plansLoading = ref(false)
-const summary = ref(null)
-const rows = ref([])
-const detailPage = ref(1)
-const detailPageSize = 20
+const loading = ref(false)
+const exporting = ref(false)
+const errorMsg = ref('')
+const rawRows = ref([])
+const wsMap = ref({})
 
-const pagedRows = computed(() => {
-  const start = (detailPage.value - 1) * detailPageSize
-  return rows.value.slice(start, start + detailPageSize)
+const weekdayNames = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
+
+function fmtDate(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+function fmt(t) { return t ? String(t).substring(0, 5) : '--' }
+function wsNames(covered) {
+  return String(covered || '').split(',').map(id => wsMap.value[id]).filter(Boolean)
+}
+
+const currentPlan = computed(() => plans.value.find(p => p.id === planId.value) || null)
+
+// 计划周期内的每一天
+const dayList = computed(() => {
+  const plan = currentPlan.value
+  if (!plan) return []
+  const list = []
+  const start = new Date(plan.startDate + 'T00:00:00')
+  const end = new Date(plan.endDate + 'T00:00:00')
+  for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+    list.push({
+      date: fmtDate(d),
+      weekday: weekdayNames[(d.getDay() + 6) % 7],
+      weekend: d.getDay() === 0 || d.getDay() === 6
+    })
+  }
+  return list
 })
-const detailTotal = computed(() => rows.value.length)
 
-const employeeStats = computed(() => {
-  const map = {}
-  rows.value.forEach(r => {
-    if (!map[r.employeeNo]) {
-      map[r.employeeNo] = { employeeNo: r.employeeNo, employeeName: r.employeeName, department: r.department, restCount: 0, workCount: 0, totalHours: 0, shiftCounts: {} }
-    }
-    const entry = map[r.employeeNo]
-    if (r.isRestDay === 1) entry.restCount++
-    else {
-      entry.workCount++
-      entry.totalHours += Number(r.workHours) || 0
-      if (r.shiftCode) entry.shiftCounts[r.shiftCode] = (entry.shiftCounts[r.shiftCode] || 0) + 1
-    }
+function getDay(row, date) { return row.dayMap[date] }
+
+// 兼职员工整个排班周期一天班都没上的（全部休息/无排班），不展示也不导出
+const filteredRows = computed(() => (rawRows.value || []).filter(r => {
+  if (Number(r.isParttime) !== 1) return true
+  return dayList.value.some(d => {
+    const day = r.dayMap[d.date]
+    return !!day && day.isRestDay === 0
   })
-  return Object.values(map).map(e => {
-    const top = Object.entries(e.shiftCounts).sort((a, b) => b[1] - a[1])[0]
-    return { ...e, totalHours: e.totalHours.toFixed(1), topShift: top ? `${top[0]}(${top[1]})` : null }
-  })
+}))
+
+// 全职在前、兼职在后（同组按工号），供分隔行渲染
+const rows = computed(() => {
+  const list = [...(filteredRows.value || [])]
+  list.sort((a, b) => (Number(a.isParttime) - Number(b.isParttime)) || String(a.employeeNo || '').localeCompare(String(b.employeeNo || '')))
+  return list
 })
+const firstPartTimeIndex = computed(() => rows.value.findIndex(r => Number(r.isParttime) === 1))
 
-function selectPlan(row) {
-  if (!row) return
-  planId.value = row.id
-  loadReport()
+// 班次色块悬停提示：班次、时间、工时、工作站、班中休息与顶班人
+function workTip(d) {
+  const lines = [
+    `${d.shiftCode || '班次'} ${fmt(d.startTime)} - ${fmt(d.endTime)}`,
+    `工时 ${Number(d.workHours || 0).toFixed(1)}h`
+  ]
+  const wss = wsNames(d.coveredWorkstations)
+  if (wss.length) lines.push(`工作站：${wss.join('、')}`)
+  if (d.breakStartTime) {
+    lines.push(`班中休息 ${fmt(d.breakStartTime)} - ${fmt(d.breakEndTime)}${d.breakCoverEmployeeName ? `（${d.breakCoverEmployeeName} 顶班）` : ''}`)
+  }
+  return lines.join('\n')
 }
 
 async function loadPlans() {
@@ -137,32 +179,57 @@ async function loadPlans() {
   try {
     const res = await getSchedules({ page: 1, pageSize: 100, status: 'PUBLISHED' })
     plans.value = res.items || []
+    if (plans.value.length) {
+      planId.value = plans.value[0].id
+      await loadData()
+    }
   } finally {
     plansLoading.value = false
   }
 }
 
-async function loadReport() {
+async function loadData() {
   if (!planId.value) return
   loading.value = true
+  errorMsg.value = ''
   try {
-    const [s, m] = await Promise.all([
-      getScheduleSummary(planId.value),
-      getMonthView(planId.value)
-    ])
-    summary.value = s
-    rows.value = (m || []).flatMap(r =>
-      (r.days || []).map(d => ({
-        employeeNo: r.employeeNo,
-        employeeName: r.employeeName,
-        department: r.department,
-        workDate: d.workDate,
-        isRestDay: d.isRestDay,
-        shiftCode: d.shiftCode,
-        workHours: d.workHours
-      }))
-    )
-    detailPage.value = 1
+    const plan = currentPlan.value
+    if (!plan) {
+      rawRows.value = []
+      return
+    }
+    // 计划周期拆成多个自然周（周视图接口按 7 天切片），并行拉取后合并
+    const weeks = []
+    const end = new Date(plan.endDate + 'T00:00:00')
+    for (let d = new Date(plan.startDate + 'T00:00:00'); d <= end; d.setDate(d.getDate() + 7)) {
+      weeks.push(fmtDate(d))
+    }
+    const weekResults = await Promise.all(weeks.map(w => getWeekView(planId.value, w)))
+
+    const empMap = new Map()
+    for (const week of weekResults) {
+      for (const row of week || []) {
+        let entry = empMap.get(row.employeeId)
+        if (!entry) {
+          entry = {
+            employeeId: row.employeeId,
+            employeeNo: row.employeeNo,
+            employeeName: row.employeeName,
+            department: row.department,
+            isParttime: row.isParttime,
+            dayMap: {}
+          }
+          empMap.set(row.employeeId, entry)
+        }
+        for (const d of row.days || []) {
+          if (d && d.workDate) entry.dayMap[d.workDate] = d
+        }
+      }
+    }
+    rawRows.value = Array.from(empMap.values())
+  } catch (e) {
+    rawRows.value = []
+    errorMsg.value = '加载排班数据失败：' + (e.message || '网络错误')
   } finally {
     loading.value = false
   }
@@ -171,11 +238,9 @@ async function loadReport() {
 // CSV 注入防护：转义逗号/引号/换行，并中性化 Excel 公式前缀(=, +, -, @)
 function csvEscape(value) {
   let v = String(value ?? '')
-  // 公式注入防护：若以（可含前导空白）=, +, -, @, \t, \r 开头，在前面加单引号
   if (/^\s*[=+\-@\t\r]/.test(v)) {
     v = "'" + v
   }
-  // 特殊字符转义：包含逗号/引号/换行时用双引号包裹，内部引号翻倍
   if (/[",\n\r]/.test(v)) {
     v = '"' + v.replace(/"/g, '""') + '"'
   }
@@ -185,25 +250,33 @@ function csvEscape(value) {
 async function exportCsv() {
   exporting.value = true
   try {
-    const headers = ['工号', '姓名', '部门', '日期', '状态', '班次', '工时'].map(csvEscape).join(',')
+    const headers = ['工号', '姓名', '部门', '日期', '状态', '班次', '时间', '工时', '工作站', '班中休息'].map(csvEscape).join(',')
     const csv = [headers]
-    rows.value.forEach(r => {
-      csv.push([
-        csvEscape(r.employeeNo),
-        csvEscape(r.employeeName),
-        csvEscape(r.department),
-        csvEscape(r.workDate),
-        csvEscape(r.isRestDay === 1 ? '休息' : '上班'),
-        csvEscape(r.shiftCode),
-        csvEscape(r.workHours)
-      ].join(','))
-    })
+    for (const row of filteredRows.value) {
+      const days = Object.values(row.dayMap)
+      days.sort((a, b) => (a.workDate < b.workDate ? -1 : a.workDate > b.workDate ? 1 : 0))
+      for (const d of days) {
+        const work = d.isRestDay !== 1
+        csv.push([
+          csvEscape(row.employeeNo),
+          csvEscape(row.employeeName),
+          csvEscape(row.department),
+          csvEscape(d.workDate),
+          csvEscape(work ? '上班' : '休息'),
+          csvEscape(d.shiftCode || ''),
+          csvEscape(work ? `${fmt(d.startTime)}-${fmt(d.endTime)}` : ''),
+          csvEscape(work ? Number(d.workHours || 0).toFixed(1) : ''),
+          csvEscape(wsNames(d.coveredWorkstations).join('、')),
+          csvEscape(d.breakStartTime ? `${fmt(d.breakStartTime)}-${fmt(d.breakEndTime)}${d.breakCoverEmployeeName ? `（${d.breakCoverEmployeeName} 顶班）` : ''}` : '')
+        ].join(','))
+      }
+    }
     const blob = new Blob(['\uFEFF' + csv.join('\n')], { type: 'text/csv;charset=utf-8;' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `排班报表_${planId.value}_${new Date().toISOString().slice(0, 10)}.csv`
-    // P3-23: 延迟释放 URL，避免下载开始前被回收
+    const planName = currentPlan.value ? currentPlan.value.planName : planId.value
+    a.download = `排班报表_${planName}_${new Date().toISOString().slice(0, 10)}.csv`
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
@@ -216,10 +289,76 @@ async function exportCsv() {
   }
 }
 
-onMounted(loadPlans)
+onMounted(async () => {
+  loadPlans()
+  try {
+    const list = await getWorkstations()
+    const map = {}
+    for (const w of list || []) map[w.id] = w.name
+    wsMap.value = map
+  } catch {
+    // 工作站映射失败不影响排班表主体展示
+  }
+})
 </script>
 
 <style scoped>
-.stat { font-size: 26px; font-weight: 700; color: #409eff; }
-.label { margin-top: 6px; color: #909399; }
+.gantt { border: 1px solid #ebeef5; border-radius: 4px; overflow-x: auto; }
+.gantt-row { display: flex; border-bottom: 1px solid #ebeef5; min-width: 100%; }
+.gantt-row:last-child { border-bottom: none; }
+.gantt-row-parttime .gantt-emp-col { background: #f7fdf5; }
+.gantt-divider {
+  background: #f0f9eb;
+  color: #67c23a;
+  font-weight: 600;
+  font-size: 12px;
+  padding: 5px 10px;
+  border-bottom: 1px solid #c2e7b0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  position: sticky;
+  left: 0;
+}
+.gantt-divider-badge { display: inline-block; background: #67c23a; color: #fff; border-radius: 3px; font-size: 11px; padding: 0 5px; line-height: 16px; }
+.gantt-header { background: #f5f7fa; font-weight: 600; position: sticky; top: 0; z-index: 4; }
+.gantt-emp-col {
+  width: 150px;
+  flex-shrink: 0;
+  padding: 6px 8px;
+  border-right: 1px solid #ebeef5;
+  position: sticky;
+  left: 0;
+  background: #fff;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.gantt-header .gantt-emp-col { background: #f5f7fa; z-index: 5; }
+.gantt-day-col { width: 160px; flex-shrink: 0; padding: 4px; border-right: 1px solid #ebeef5; box-sizing: border-box; }
+.gantt-day-col:last-child { border-right: none; }
+.gantt-day-col.weekend { background-color: #fafafa; }
+.day-label { font-size: 12px; color: #606266; text-align: center; }
+.day-label.day-weekend { color: #e6a23c; }
+.day-sub { font-size: 11px; color: #909399; text-align: center; }
+.day-block { border-radius: 4px; padding: 6px; text-align: center; font-size: 12px; height: 80px; box-sizing: border-box; overflow: hidden; }
+.work-block { background: #ecf5ff; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.rest-block { background: #fef0f0; color: #f56c6c; font-weight: 600; display: flex; align-items: center; justify-content: center; }
+.empty-block { background: #fafafa; }
+.shift-code { font-weight: 600; }
+.shift-time { font-size: 11px; color: #909399; }
+.shift-hours { font-size: 11px; color: #79bbff; }
+.shift-break { margin-top: 2px; font-size: 10px; color: #e6a23c; line-height: 1.4; }
+.emp-name { font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.emp-sub { font-size: 11px; color: #909399; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.legend { margin-top: 12px; display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+.legend-item { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: #606266; }
+.legend-box { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 3px; font-size: 10px; }
+.rest-legend-box { background: #fef0f0; color: #f56c6c; font-weight: 600; }
+.work-legend-box { background: #ecf5ff; }
+.break-legend-box { background: #fdf6ec; color: #e6a23c; }
+.pt-legend-box { background: #f0f9eb; color: #67c23a; }
+.legend-hint { color: #909399; }
 </style>

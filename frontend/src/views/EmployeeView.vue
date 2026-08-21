@@ -34,6 +34,16 @@
             <el-tag :type="row.status === 1 ? 'success' : 'info'">{{ row.status === 1 ? '启用' : '停用' }}</el-tag>
           </template>
         </el-table-column>
+        <el-table-column label="是否休假" width="230">
+          <template #default="{ row }">
+            <template v-if="leavePeriods(row).length">
+              <el-tag v-if="onLeaveNow(row)" type="danger" size="small" style="margin-bottom: 2px">休假中</el-tag>
+              <div v-for="(p, i) in leavePeriods(row)" :key="i" class="leave-line" :title="p.period">
+                <el-tag v-if="p.earlyReturned" type="warning" size="small" class="early-return-tag">提前返岗</el-tag>{{ p.period }}
+              </div>
+            </template>
+          </template>
+        </el-table-column>
         <el-table-column label="操作" width="200" fixed="right">
           <template #default="{ row }">
             <el-button :link="true" type="primary" @click="openEdit(row)">编辑</el-button>
@@ -109,6 +119,7 @@ import { nextTick, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { createEmployee, deactivateEmployee, getEmployeeSkills, getEmployees, saveEmployeeSkills, updateEmployee } from '../api/employees'
 import { getWorkstations } from '../api/workstations'
+import { getLeaveReviewList } from '../api/leave'
 
 const departments = ['管理', '行政', '工程', '保洁', '楼面', '厨房', '吧台']
 
@@ -135,6 +146,8 @@ let requestSeq = 0
 async function loadData() {
   const seq = ++requestSeq
   loading.value = true
+  // 请假信息与分页无关，后台并行刷新（失败不影响员工列表）
+  loadLeaveMap()
   try {
     const res = await getEmployees({
       page: query.page,
@@ -149,6 +162,46 @@ async function loadData() {
   } finally {
     if (seq === requestSeq) loading.value = false
   }
+}
+
+// 已批准请假：员工工号 → 请假时间段（仅保留今天及以后的休假，历史已结束的休假不显示）
+const leaveMap = ref({})
+async function loadLeaveMap() {
+  try {
+    const list = await getLeaveReviewList('APPROVED')
+    const map = {}
+    for (const l of list || []) {
+      const no = l.employee?.employeeNo
+      if (!no) continue
+      if (!map[no]) map[no] = []
+      map[no].push({ startDate: l.startDate, endDate: l.endDate, earlyReturned: Number(l.earlyReturned) === 1 })
+    }
+    for (const arr of Object.values(map)) {
+      arr.sort((a, b) => (a.startDate < b.startDate ? -1 : 1))
+    }
+    leaveMap.value = map
+  } catch {
+    // 请假信息加载失败不影响员工列表
+  }
+}
+
+function getToday() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+// 该员工的休假时间段（今天及以后），如 "2026-08-20 ~ 2026-08-22"；提前返岗的请假带标记
+function leavePeriods(row) {
+  const today = getToday()
+  return (leaveMap.value[row.employeeNo] || [])
+    .filter(l => l.endDate >= today)
+    .map(l => ({ period: `${l.startDate} ~ ${l.endDate}`, earlyReturned: l.earlyReturned }))
+}
+
+// 今天是否正处于休假中
+function onLeaveNow(row) {
+  const today = getToday()
+  return (leaveMap.value[row.employeeNo] || []).some(l => l.startDate <= today && l.endDate >= today)
 }
 
 function handlePageChange(page) {
@@ -331,3 +384,18 @@ async function handleSaveSkills() {
 
 onMounted(loadData)
 </script>
+
+<style scoped>
+.leave-line {
+  font-size: 12px;
+  line-height: 1.7;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #606266;
+}
+.early-return-tag {
+  margin-right: 4px;
+  vertical-align: middle;
+}
+</style>

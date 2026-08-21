@@ -24,6 +24,9 @@ public sealed class LeaveRequestEntity
 
     public string? ReviewRemark { get; set; }
 
+    /// <summary>是否提前返岗（1=已提前返岗；提前返岗会把 EndDate 缩短）。</summary>
+    public int EarlyReturned { get; set; }
+
     public DateTime CreatedAt { get; set; }
 
     public DateTime UpdatedAt { get; set; }

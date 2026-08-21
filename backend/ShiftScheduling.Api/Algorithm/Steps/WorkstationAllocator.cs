@@ -48,6 +48,9 @@ public sealed class WorkstationAllocator
 
         var lastDate = dates.Count > 0 ? dates[^1].WorkDate : input.EndDate;
 
+        // 提醒类工作站（如工程维修岗）缺口累计器：跨日期汇总，整周期只出一条提醒
+        var warnOnlyGaps = new Dictionary<long, (int TotalSlots, int MaxShortfall, DateOnly FirstDate, DateOnly LastDate)>();
+
         foreach (var date in dates)
         {
             // 即使当天没有新开始的班次，也要做最终缺口报告：
@@ -58,8 +61,21 @@ public sealed class WorkstationAllocator
             // assignments 为全周期共享列表：次日统计缺口/借调时需要看到前一天跨天班次的午夜回绕行
             var dayIssues = AllocateForDate(
                 input, date.WorkDate, dayShifts, skillsByEmployee, shiftById, shiftSlotsCache,
-                requirements, idealBySlot, isLastDate, assignments);
+                requirements, idealBySlot, isLastDate, assignments, warnOnlyGaps);
             issueCollector?.AddRange(dayIssues);
+        }
+
+        // 提醒类工作站（如工程维修岗）：不逐时段记录，整周期只出一条汇总缺口提醒
+        foreach (var (wsId, acc) in warnOnlyGaps)
+        {
+            issueCollector?.Add(new ScheduleIssueOutput(
+                "STAFFING_GAP",
+                "WARN",
+                acc.FirstDate,
+                null,
+                null,
+                wsId,
+                $"工作站「{input.WarnOnlyGapWorkstations[wsId]}」整周期共 {acc.TotalSlots} 个时段存在岗位缺口（{acc.FirstDate:yyyy-MM-dd} 至 {acc.LastDate:yyyy-MM-dd}，单时段峰值缺 {acc.MaxShortfall} 人），请人工安排或调整人数需求"));
         }
 
         return assignments;
@@ -125,7 +141,8 @@ public sealed class WorkstationAllocator
         IReadOnlyDictionary<(DateOnly Date, TimeSpan Slot), Dictionary<long, int>> requirements,
         IReadOnlyDictionary<(DateOnly Date, TimeSpan Slot), Dictionary<long, int>> idealBySlot,
         bool isLastDate,
-        List<WorkstationAssignment> assignments)
+        List<WorkstationAssignment> assignments,
+        Dictionary<long, (int TotalSlots, int MaxShortfall, DateOnly FirstDate, DateOnly LastDate)> warnOnlyGaps)
     {
         var issues = new List<ScheduleIssueOutput>();
 
@@ -407,6 +424,25 @@ public sealed class WorkstationAllocator
                 }
 
                 var shortfall = req.Value - actual;
+
+                // 提醒类工作站（如工程维修岗）：不逐时段记录，累计到整周期汇总提醒
+                if (input.WarnOnlyGapWorkstations.ContainsKey(req.Key))
+                {
+                    if (warnOnlyGaps.TryGetValue(req.Key, out var acc))
+                    {
+                        warnOnlyGaps[req.Key] = (
+                            acc.TotalSlots + 1,
+                            Math.Max(acc.MaxShortfall, shortfall),
+                            acc.FirstDate < slotDate ? acc.FirstDate : slotDate,
+                            acc.LastDate > slotDate ? acc.LastDate : slotDate);
+                    }
+                    else
+                    {
+                        warnOnlyGaps[req.Key] = (1, shortfall, slotDate, slotDate);
+                    }
+                    continue;
+                }
+
                 var isLowSkill = input.LowSkillWorkstationIds.ContainsKey(req.Key);
                 var description = $"{slot:hh\\:mm} 工作站 {req.Key} 缺 {shortfall} 人（需求 {req.Value}，实际 {actual}）";
                 if (isLowSkill)

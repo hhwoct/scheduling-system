@@ -170,15 +170,15 @@ builder.Services
 
 builder.Services.AddRateLimiter(options =>
 {
-    // 2.4 修复：按客户端 IP 分区限流。原来 AddFixedWindowLimiter 是全局单桶
-    // （全店共享配额），任何人 5 次失败即可让全店 1 分钟内无法登录（未认证 DoS）。
-    // 登录端点：每个 IP 每分钟最多 5 次尝试
+    // 按客户端 IP 分区限流（防未认证 DoS/洪水）。账号级失败锁定在
+    // PasswordResetService 中按"用户名"维度处理（一个账号错密码不影响其他账号），
+    // 这里只做洪水防护：登录端点每个 IP 每分钟最多 20 次尝试。
     options.AddPolicy("LoginLimiter", context =>
         RateLimitPartition.GetFixedWindowLimiter(
             partitionKey: context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
             factory: _ => new FixedWindowRateLimiterOptions
             {
-                PermitLimit = 5,
+                PermitLimit = 20,
                 Window = TimeSpan.FromMinutes(1),
                 QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
                 QueueLimit = 0
@@ -246,26 +246,7 @@ api.MapPost("/auth/login", async (LoginRequest request, IAuthService authService
     return ApiResponse.Ok(result, "登录成功");
 }).RequireRateLimiting("LoginLimiter");
 
-// 发送密码重置验证码（防枚举 + 限流）
-api.MapPost("/auth/send-reset-otp", async (
-    SendResetOtpRequest request,
-    IAuthService authService,
-    HttpContext httpContext,
-    CancellationToken cancellationToken) =>
-{
-    if (request is null)
-    {
-        throw new BusinessException("请求参数不能为空", "INVALID_REQUEST");
-    }
-
-    var clientIp = httpContext.Connection.RemoteIpAddress?.ToString();
-    // 验证码只保留在服务层（短信发送/开发日志），严禁进入 HTTP 响应体
-    await authService.SendPasswordResetOtpAsync(request, clientIp, cancellationToken);
-
-    return ApiResponse.Ok(true, "验证码已发送");
-}).RequireRateLimiting("ResetLimiter");
-
-// 忘记密码：验证用户名 + 手机号 + OTP 后重置密码
+// 忘记密码：验证用户名 + 注册手机号后直接重置密码（无需验证码）
 api.MapPost("/auth/forgot-password", async (
     ForgotPasswordRequest request,
     IAuthService authService,
@@ -1118,9 +1099,11 @@ api.MapPost("/schedules/{planId:long}/publish", async (
 }).RequireAuthorization("AdminOnly");
 
 // ============ 站内通知 ============
-// 获取通知列表（管理端按门店，员工端按员工 ID）
+// 获取通知列表（管理端按门店，员工端按员工 ID；分页，每页 20 条）
 api.MapGet("/notifications", async (
     HttpContext httpCtx,
+    int page = 1,
+    int pageSize = 20,
     string? employeeNo = null) =>
 {
     var db = httpCtx.RequestServices.GetRequiredService<ShiftSchedulingDbContext>();
@@ -1153,13 +1136,19 @@ api.MapGet("/notifications", async (
         query = query.Where(x => x.ReceiverEmployeeId == null && (x.ReceiverUserId == null || x.ReceiverUserId == currentUser.UserId));
     }
 
+    // 分页：每页 pageSize（默认 20）条，返回总数供前端翻页
+    if (page < 1) page = 1;
+    if (pageSize is < 1 or > 100) pageSize = 20;
+
+    var total = await query.CountAsync();
     var items = await query.OrderByDescending(x => x.CreatedAt)
-        .Take(100)
+        .Skip((page - 1) * pageSize)
+        .Take(pageSize)
         .Select(x => new { x.Id, x.NotificationType, x.Title, x.Content, x.IsRead, x.CreatedAt })
         .ToListAsync();
 
     httpCtx.Response.StatusCode = 200;
-    await httpCtx.Response.WriteAsJsonAsync(ApiResponse.Ok(items, "获取通知列表成功"));
+    await httpCtx.Response.WriteAsJsonAsync(ApiResponse.Ok(new { items, total, page, pageSize }, "获取通知列表成功"));
 }).RequireAuthorization();
 
 // 获取未读数量
@@ -1629,6 +1618,7 @@ api.MapPut("/leave-requests/{id:long}/early-return", async (
 
     var oldEnd = leave.EndDate;
     leave.EndDate = request.ReturnDate;
+    leave.EarlyReturned = 1;  // 标记提前返岗，供员工管理界面识别
     leave.UpdatedAt = DateTime.UtcNow;
     await db.SaveChangesAsync(ct);
 
@@ -1675,7 +1665,7 @@ api.MapGet("/leave-requests/review", async (
 
     var result = items.Select(x => new
     {
-        x.Id, x.LeaveType, x.StartDate, x.EndDate, x.Reason, x.Status, x.ReviewRemark, x.CreatedAt,
+        x.Id, x.LeaveType, x.StartDate, x.EndDate, x.Reason, x.Status, x.ReviewRemark, x.EarlyReturned, x.CreatedAt,
         Employee = empMap.TryGetValue(x.EmployeeId, out var e) ? e : null
     }).ToList();
 
