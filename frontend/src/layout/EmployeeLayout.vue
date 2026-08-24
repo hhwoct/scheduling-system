@@ -4,7 +4,7 @@
       <div class="logo">排班系统 · 员工端</div>
       <el-menu
         :default-active="$route.path"
-        background-color="#0a2540"
+        background-color="#0f3460"
         text-color="rgba(255,255,255,0.65)"
         active-text-color="#ffffff"
         @select="handleMenuSelect"
@@ -251,7 +251,7 @@ async function handleCommand(command) {
   height: 100%;
 }
 .emp-aside {
-  background-color: #0a2540;
+  background-color: #0f3460;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -277,7 +277,7 @@ async function handleCommand(command) {
   align-items: center;
   gap: 8px;
   padding: 16px 7px;
-  background-color: #0a2540;
+  background-color: #0f3460;
   color: rgba(255, 255, 255, 0.75);
   border: none;
   border-radius: 0 10px 10px 0;
