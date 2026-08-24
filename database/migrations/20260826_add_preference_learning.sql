@@ -56,3 +56,26 @@ SET rule_value = '0.3',
     rule_name = '偏好学习权重',
     remark = '排班偏好学习软约束权重（0=关闭；>0 启用，技能分相同时贴合店长历史习惯）'
 WHERE store_id = 1 AND rule_key = 'preference_weight' AND rule_value = '10';
+
+-- 4) 调整量统计（增强 2）：生成时快照 + 每期调整数
+--    schedule_plans.generated_summary_snapshot：生成时保存日汇总快照（JSON），
+--    发布时 PreferenceService 对比当前汇总计算店长手动调整次数（员工×日期 维度）。
+SET @col_exists := (SELECT COUNT(*) FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'schedule_plans'
+    AND COLUMN_NAME = 'generated_summary_snapshot');
+SET @ddl := IF(@col_exists = 0,
+  'ALTER TABLE schedule_plans ADD COLUMN generated_summary_snapshot LONGTEXT NULL COMMENT ''生成时日汇总快照（JSON，用于计算店长调整量）'' AFTER published_at',
+  'SELECT 1');
+PREPARE stmt FROM @ddl;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @col_exists := (SELECT COUNT(*) FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'preference_trends'
+    AND COLUMN_NAME = 'adjustments');
+SET @ddl := IF(@col_exists = 0,
+  'ALTER TABLE preference_trends ADD COLUMN adjustments INT NOT NULL DEFAULT 0 COMMENT ''店长手动调整条数（员工×日期 维度，发布时计算）'' AFTER sample_days',
+  'SELECT 1');
+PREPARE stmt FROM @ddl;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;

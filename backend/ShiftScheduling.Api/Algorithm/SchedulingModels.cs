@@ -74,6 +74,7 @@ public sealed record SchedulingInput(
     decimal MinDailyWorkHours,
     IReadOnlyDictionary<(long EmployeeId, string DayType), IReadOnlyDictionary<string, int>>? PreferenceShiftScores = null,
     IReadOnlyDictionary<(long EmployeeId, string DayType), IReadOnlyDictionary<long, int>>? PreferenceWsScores = null,
+    IReadOnlyDictionary<(long EmployeeId, string DayType), int>? PreferenceRestScores = null,
     decimal PreferenceWeight = 0m);
 
 public sealed record RestDayAssignment(long EmployeeId, DateOnly WorkDate);
@@ -188,6 +189,17 @@ public static class PreferenceScoring
         }
 
         return Math.Min(scores.GetValueOrDefault(workstationId), 10);
+    }
+
+    /// <summary>休息偏好：店长历史习惯让该员工在某类型日休息的频次（封顶 10）。</summary>
+    public static int ForRest(long employeeId, string dayType, SchedulingInput input)
+    {
+        if (input.PreferenceWeight <= 0m || input.PreferenceRestScores is null)
+        {
+            return 0;
+        }
+
+        return Math.Min(input.PreferenceRestScores.GetValueOrDefault((employeeId, dayType)), 10);
     }
 }
 

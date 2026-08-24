@@ -19,6 +19,9 @@ public sealed class PreferenceTrendEntity
 
     public int SampleDays { get; set; }
 
+    /// <summary>店长手动调整条数（员工×日期 维度，发布时对比生成快照计算）。</summary>
+    public int Adjustments { get; set; }
+
     public DateTime CreatedAt { get; set; }
 
     public DateTime UpdatedAt { get; set; }

@@ -233,6 +233,7 @@ public sealed class ShiftSchedulingDbContext : DbContext
             entity.HasIndex(x => new { x.StoreId, x.Status });
             entity.Property(x => x.CreatedBy).HasColumnName("created_by");
             entity.Property(x => x.PublishedAt).HasColumnName("published_at");
+            entity.Property(x => x.GeneratedSummarySnapshot).HasColumnName("generated_summary_snapshot");
             entity.Property(x => x.CreatedAt).HasColumnName("created_at");
             entity.Property(x => x.UpdatedAt).HasColumnName("updated_at");
         });
@@ -447,6 +448,7 @@ public sealed class ShiftSchedulingDbContext : DbContext
             entity.Property(x => x.AdherencePct).HasColumnName("adherence_pct");
             entity.Property(x => x.CoveragePct).HasColumnName("coverage_pct");
             entity.Property(x => x.SampleDays).HasColumnName("sample_days");
+            entity.Property(x => x.Adjustments).HasColumnName("adjustments");
             entity.Property(x => x.CreatedAt).HasColumnName("created_at");
             entity.Property(x => x.UpdatedAt).HasColumnName("updated_at");
             entity.HasIndex(x => new { x.StoreId, x.PlanId }).IsUnique();

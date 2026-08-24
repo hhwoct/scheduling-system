@@ -25,7 +25,9 @@
         <el-table-column prop="adherencePct" label="贴合率" width="100"><template #default="{ row }">{{ row.adherencePct }}%</template></el-table-column>
         <el-table-column prop="coveragePct" label="覆盖率" width="100"><template #default="{ row }">{{ row.coveragePct }}%</template></el-table-column>
         <el-table-column prop="sampleDays" label="学习样本" width="100" />
+        <el-table-column prop="adjustments" label="店长调整数" width="100"><template #default="{ row }">{{ row.adjustments ?? '-' }}</template></el-table-column>
       </el-table>
+      <div class="weight-tip">店长调整数 = 发布时与生成时「员工×日期」安排不一致的条数；随学习生效应逐步下降。</div>
     </el-card>
 
     <!-- Top 偏好 -->

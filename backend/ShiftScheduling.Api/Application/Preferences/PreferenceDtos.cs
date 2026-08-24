@@ -29,4 +29,5 @@ public sealed record PreferenceTrendItem(
     DateTime PublishedAt,
     decimal AdherencePct,
     decimal CoveragePct,
-    int SampleDays);
+    int SampleDays,
+    int Adjustments);

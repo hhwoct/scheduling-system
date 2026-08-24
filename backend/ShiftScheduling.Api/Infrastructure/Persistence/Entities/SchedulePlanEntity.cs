@@ -18,6 +18,9 @@ public sealed class SchedulePlanEntity
 
     public DateTime? PublishedAt { get; set; }
 
+    /// <summary>生成时日汇总快照（JSON，用于发布时计算店长手动调整量）。</summary>
+    public string? GeneratedSummarySnapshot { get; set; }
+
     public DateTime CreatedAt { get; set; }
 
     public DateTime UpdatedAt { get; set; }

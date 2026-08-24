@@ -162,6 +162,9 @@ public sealed class PreferenceService : IPreferenceService
         var adherence = evalSummaries.Count > 0 ? Math.Round(matchCount * 100m / evalSummaries.Count, 1) : 0m;
         var coverage = await ComputeCoverageAsync(storeId, cancellationToken);
 
+        // ========== 调整量（增强 2）：生成快照 vs 发布最终，员工×日期 维度差异 ==========
+        var adjustments = await ComputeAdjustmentsAsync(evalPlan.Id, storeId, cancellationToken);
+
         // 趋势记录（按 plan 幂等 upsert）
         var trend = await _dbContext.PreferenceTrends
             .FirstOrDefaultAsync(x => x.StoreId == storeId && x.PlanId == evalPlan.Id, cancellationToken);
@@ -175,6 +178,7 @@ public sealed class PreferenceService : IPreferenceService
         trend.AdherencePct = adherence;
         trend.CoveragePct = coverage;
         trend.SampleDays = sampleDays;
+        trend.Adjustments = adjustments;
         trend.UpdatedAt = now;
 
         await _dbContext.SaveChangesAsync(cancellationToken);
@@ -247,9 +251,66 @@ public sealed class PreferenceService : IPreferenceService
         return await _dbContext.PreferenceTrends.AsNoTracking()
             .Where(x => x.StoreId == storeId)
             .OrderBy(x => x.PublishedAt)
-            .Select(x => new PreferenceTrendItem(x.PlanId, x.PlanName, x.PublishedAt, x.AdherencePct, x.CoveragePct, x.SampleDays))
+            .Select(x => new PreferenceTrendItem(x.PlanId, x.PlanName, x.PublishedAt, x.AdherencePct, x.CoveragePct, x.SampleDays, x.Adjustments))
             .ToListAsync(cancellationToken);
     }
+
+    /// <summary>
+    /// 计算店长手动调整量：生成快照（GeneratedSummarySnapshot JSON）vs 发布时最终汇总，
+    /// 员工×日期 维度上「休息/班次」不一致的条数。快照缺失（旧计划）返回 0。
+    /// </summary>
+    private async Task<int> ComputeAdjustmentsAsync(long planId, long storeId, CancellationToken cancellationToken)
+    {
+        var plan = await _dbContext.SchedulePlans.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == planId && x.StoreId == storeId, cancellationToken);
+        if (plan?.GeneratedSummarySnapshot is null)
+        {
+            return 0;
+        }
+
+        List<SnapshotRow>? snapshot;
+        try
+        {
+            snapshot = System.Text.Json.JsonSerializer.Deserialize<List<SnapshotRow>>(plan.GeneratedSummarySnapshot);
+        }
+        catch
+        {
+            return 0;
+        }
+        if (snapshot is null || snapshot.Count == 0)
+        {
+            return 0;
+        }
+
+        var snapshotMap = snapshot
+            .GroupBy(s => (s.EmployeeId, s.WorkDate))
+            .ToDictionary(g => g.Key, g => g.First());
+
+        var finalRows = await _dbContext.ScheduleSummaries.AsNoTracking()
+            .Where(x => x.PlanId == planId && x.StoreId == storeId)
+            .Select(x => new { x.EmployeeId, x.WorkDate, x.IsRestDay, x.ShiftTemplateId })
+            .ToListAsync(cancellationToken);
+
+        var adjustments = 0;
+        foreach (var f in finalRows)
+        {
+            if (!snapshotMap.TryGetValue((f.EmployeeId, f.WorkDate), out var s))
+            {
+                continue; // 快照没有的行（如后期手工新增汇总）不计数
+            }
+
+            var sameRest = (f.IsRestDay == 1) == (s.IsRestDay == 1);
+            var sameShift = (f.ShiftTemplateId ?? 0) == (s.ShiftId ?? 0);
+            if (!sameRest || !sameShift)
+            {
+                adjustments++;
+            }
+        }
+
+        return adjustments;
+    }
+
+    private sealed record SnapshotRow(long EmployeeId, DateOnly WorkDate, int IsRestDay, long? ShiftId);
 
     private async Task<decimal> ComputeCoverageAsync(long storeId, CancellationToken cancellationToken)
     {

@@ -93,7 +93,17 @@ public sealed class ScheduleService : IScheduleService
             Status = "DRAFT",
             CreatedBy = operatorUserId,
             CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow
+            UpdatedAt = DateTime.UtcNow,
+            // 偏好学习（增强 2）：保存生成时日汇总快照（JSON），
+            // 发布时与最终汇总对比计算店长手动调整量。
+            GeneratedSummarySnapshot = System.Text.Json.JsonSerializer.Serialize(
+                output.DaySummaries.Select(s => new
+                {
+                    s.EmployeeId,
+                    s.WorkDate,
+                    s.IsRestDay,
+                    ShiftId = s.ShiftTemplateId > 0 ? s.ShiftTemplateId : (long?)null
+                }))
         };
 
         _dbContext.SchedulePlans.Add(plan);

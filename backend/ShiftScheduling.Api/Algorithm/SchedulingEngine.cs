@@ -314,6 +314,7 @@ public sealed class SchedulingEngine
 
         IReadOnlyDictionary<(long EmployeeId, string DayType), IReadOnlyDictionary<string, int>>? preferenceShiftScores = null;
         IReadOnlyDictionary<(long EmployeeId, string DayType), IReadOnlyDictionary<long, int>>? preferenceWsScores = null;
+        IReadOnlyDictionary<(long EmployeeId, string DayType), int>? preferenceRestScores = null;
         if (preferenceRows is not null)
         {
             preferenceShiftScores = preferenceRows
@@ -329,6 +330,12 @@ public sealed class SchedulingEngine
                 .ToDictionary(
                     g => g.Key,
                     g => (IReadOnlyDictionary<long, int>)g.ToDictionary(x => x.WorkstationId!.Value, x => x.Freq));
+
+            // 休息偏好：shift_code 与 workstation_id 皆 NULL 的样本（店长习惯让该员工某类型日休息）
+            preferenceRestScores = preferenceRows
+                .Where(x => x.ShiftCode == null && x.WorkstationId == null)
+                .GroupBy(x => (x.EmployeeId, x.DayType))
+                .ToDictionary(g => g.Key, g => g.Sum(x => x.Freq));
         }
 
         var lowSkillWorkstationIds = workstations
@@ -361,6 +368,7 @@ public sealed class SchedulingEngine
             minDailyWorkHours,
             preferenceShiftScores,
             preferenceWsScores,
+            preferenceRestScores,
             preferenceWeight);
     }
 

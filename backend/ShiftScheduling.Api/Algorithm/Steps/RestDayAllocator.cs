@@ -80,6 +80,8 @@ public sealed class RestDayAllocator
                 .Where(e => restDayCounts.GetValueOrDefault(e.Id, 0) < restDaysTarget)
                 .Where(e => !isPeakDay || CanRestOnPeakDay(e.Department))
                 .OrderBy(e => restDayCounts.GetValueOrDefault(e.Id, 0))
+                // 偏好学习（feature/schedule-pref-learning）：店长习惯让谁在该类型日休息则优先
+                .ThenByDescending(e => PreferenceScoring.ForRest(e.Id, day.DayType, input))
                 .ThenBy(e => PreferenceRank(e.Department, day))
                 .ThenBy(e => e.Id);
 
@@ -111,6 +113,7 @@ public sealed class RestDayAllocator
             var best = allDays
                 .Where(d => CanRestOnPeakDay(employee.Department) || !IsPeakDay(d))
                 .OrderBy(d => restCountByDate.GetValueOrDefault(d.WorkDate))
+                .ThenByDescending(d => PreferenceScoring.ForRest(employee.Id, d.DayType, input))
                 .ThenBy(d => PreferenceRank(employee.Department, d))
                 .ThenBy(d => d.WorkDate.DayNumber)
                 .FirstOrDefault();
