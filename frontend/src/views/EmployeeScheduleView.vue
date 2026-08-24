@@ -156,11 +156,14 @@ async function loadEmployees() {
     } while (all.length < total)
     // 兼职员工人员不固定、无固定班表，预览查询无意义，只保留全职
     employeeList.value = all.filter(e => !e.isParttime)
-    // 兜底：之前选中的预览员工若是兼职（已不在列表），回退到当前登录账号
-    if (employeeNo.value && !employeeList.value.some(e => e.employeeNo === employeeNo.value)) {
-      employeeNo.value = ''
-      localStorage.removeItem('shift_preview_employee_no')
-      router.replace({ path: route.path, query: {} })
+    // 兜底：无有效预览员工（未选/选了兼职/档案不存在）时自动选第一个全职员工，
+    // 否则后端按当前登录账号查档案（admin 等账号无档案）会报「员工档案不存在」
+    const exists = employeeNo.value && employeeList.value.some(e => e.employeeNo === employeeNo.value)
+    if (!exists && employeeList.value.length > 0) {
+      const first = employeeList.value[0]
+      employeeNo.value = first.employeeNo
+      localStorage.setItem('shift_preview_employee_no', first.employeeNo)
+      router.replace({ path: route.path, query: { employeeNo: first.employeeNo } })
     }
   } catch (e) {
     console.error('加载员工列表失败', e)
