@@ -12,7 +12,6 @@
               placeholder="选择预览员工"
               clearable
               filterable
-              size="small"
               style="width: 160px; margin-right: 8px"
               @update:model-value="onPreviewChange"
             >
