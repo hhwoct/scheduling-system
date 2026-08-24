@@ -1309,8 +1309,8 @@ onBeforeUnmount(() => {
   display: flex;
 }
 .axis-cell {
-  width: 26px;
-  min-width: 26px;
+  width: 32px;
+  min-width: 32px;
   height: 30px;
   line-height: 30px;
   text-align: center;
@@ -1361,8 +1361,8 @@ onBeforeUnmount(() => {
   display: flex;
 }
 .gantt-cell {
-  width: 26px;
-  min-width: 26px;
+  width: 32px;
+  min-width: 32px;
   height: 34px;
   display: flex;
   align-items: center;
