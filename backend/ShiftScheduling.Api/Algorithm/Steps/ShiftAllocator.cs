@@ -111,7 +111,8 @@ public sealed class ShiftAllocator
                     .ThenByDescending(e => PreferenceScoring.EffectiveScore(
                         TotalSkillScore(e.Id, shift, skillsByEmployee),
                         PreferenceScoring.ForShift(e.Id, shift, date.DayType, input),
-                        input.PreferenceWeight))  // 偏好学习连续权重：技能分 + 偏好频次×权重
+                        input.PreferenceWeight,
+                        shift.WorkstationIds.Count * PreferenceScoring.SingleStationSkillMax))  // 0-1 连续权重：技能分×(1−w) + 偏好归一化分×w
                     .ThenBy(e => e.IsParttime == 1 ? 0m : weeklyHours.GetValueOrDefault(e.Id))
                     .ToList();
 

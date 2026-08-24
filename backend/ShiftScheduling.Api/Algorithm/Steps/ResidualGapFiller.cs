@@ -332,7 +332,8 @@ public sealed class ResidualGapFiller
                 .OrderByDescending(e => PreferenceScoring.EffectiveScore(
                     StationSkillScore(e.Id, workstationId, skillsByEmployee),
                     PreferenceScoring.ForWorkstation(e.Id, workstationId, workDateDayType, input),
-                    input.PreferenceWeight))  // 偏好学习连续权重：技能分 + 偏好频次×权重
+                    input.PreferenceWeight,
+                    PreferenceScoring.SingleStationSkillMax))  // 0-1 连续权重：技能分×(1−w) + 偏好归一化分×w
                 .ThenBy(e => weeklyHours.GetValueOrDefault(e.Id))
                 .ThenBy(e => e.Id)
                 .ToList();

@@ -179,7 +179,8 @@ public sealed class WorkstationAllocator
                     .OrderByDescending(s => PreferenceScoring.EffectiveScore(
                         SkillScore(s.EmployeeId, workstation.Key, skillsByEmployee),
                         PreferenceScoring.ForWorkstation(s.EmployeeId, workstation.Key, dayType, input),
-                        input.PreferenceWeight))  // 偏好学习连续权重：技能分 + 偏好频次×权重
+                        input.PreferenceWeight,
+                        PreferenceScoring.SingleStationSkillMax))  // 0-1 连续权重：技能分×(1−w) + 偏好归一化分×w
                     .ThenByDescending(s => s.ShiftCode)
                     .ToList();
 
@@ -234,7 +235,8 @@ public sealed class WorkstationAllocator
                     .OrderByDescending(s => PreferenceScoring.EffectiveScore(
                         SkillScore(s.EmployeeId, workstation.Key, skillsByEmployee),
                         PreferenceScoring.ForWorkstation(s.EmployeeId, workstation.Key, dayType, input),
-                        input.PreferenceWeight))  // 偏好学习连续权重：技能分 + 偏好频次×权重
+                        input.PreferenceWeight,
+                        PreferenceScoring.SingleStationSkillMax))  // 0-1 连续权重：技能分×(1−w) + 偏好归一化分×w
                     .ThenByDescending(s => s.ShiftCode)
                     .ToList();
 

@@ -204,14 +204,33 @@ public static class PreferenceScoring
         return Math.Min(input.PreferenceRestScores.GetValueOrDefault((employeeId, dayType)), 10);
     }
 
+    /// <summary>单个工作站技能分上限（技能配置 1~5 分）。</summary>
+    public const int SingleStationSkillMax = 5;
+
     /// <summary>
-    /// 连续权重综合分（20260829）：技能分 + 偏好频次(封顶 10) × 权重。
-    /// 权重越大，店长历史偏好越能翻盘技能分差（每 1 偏好频次贡献 weight 分，
-    /// 权重 0.3 时最高 +3 分 ≈ 技能 1~2 档）；权重 ≤ 0（默认关闭）时等于技能分，
-    /// 行为与未启用偏好学习完全一致。调用方负责先把偏好评分为 0（权重关闭时）。
+    /// 连续权重综合分（20260829 v2，0-1 语义）：
+    /// 技能分 × (1 − w) + 偏好归一化分 × w。
+    /// 偏好认可频次（封顶 10）先按 skillMax 归一化到技能分标尺，使两者同量纲可比：
+    /// w = 0（默认关闭）→ 纯技能分，与未启用偏好学习完全一致；
+    /// w = 1 → 完全按店长偏好（技能分不再参与）；
+    /// 0 &lt; w &lt; 1 → 线性混合，权重越大偏好越主导。
+    /// 权重 clamp 到 [0,1]（配置超界不产生意外行为）。
+    /// 注：pref 为 0 也参与混合（得 skillScore×(1−w)）——否则 w=1 时无偏好候选
+    /// 仍按技能分排序，"完全按偏好"不成立；w>0 且全员无偏好时所有候选同乘 (1−w)，
+    /// 相对顺序与纯技能分一致，不改变结果。
     /// </summary>
-    public static decimal EffectiveScore(int skillScore, int prefFreq, decimal weight)
-        => skillScore + Math.Max(0m, weight) * Math.Min(Math.Max(0, prefFreq), 10);
+    public static decimal EffectiveScore(int skillScore, int prefFreq, decimal weight, int skillMax)
+    {
+        var w = Math.Clamp(weight, 0m, 1m);
+        if (w <= 0m || skillMax <= 0)
+        {
+            return skillScore;
+        }
+
+        var pref = Math.Min(Math.Max(0, prefFreq), 10);
+        var prefNorm = pref / 10m * skillMax;
+        return skillScore * (1m - w) + prefNorm * w;
+    }
 }
 
 public static class SchedulingTimeHelper

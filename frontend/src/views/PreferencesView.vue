@@ -12,7 +12,7 @@
       <el-col :span="6"><div class="stat-card"><div class="stat-num">{{ stats.coveragePct }}%</div><div class="stat-label">样本覆盖率</div></div></el-col>
       <el-col :span="6"><div class="stat-card" :class="{ 'trend-up': stats.adherencePct > 0 }"><div class="stat-num">{{ stats.adherencePct }}%</div><div class="stat-label">最新贴合率</div></div></el-col>
     </el-row>
-    <div class="weight-tip">偏好权重：<b>{{ stats.weight }}</b>（规则 preference_learning_weight，0 = 关闭；越大越倾向店长历史习惯。排序分 = 技能分 + 偏好认可次数 × 权重，如 0.3 时认可 10 次 ≈ 技能 +3 分）</div>
+    <div class="weight-tip">偏好权重：<b>{{ stats.weight }}</b>（规则 preference_learning_weight，取值范围 0~1：0 = 只看技能，1 = 完全按店长偏好，中间值按比例混合。排序分 = 技能分 × (1 − 权重) + 偏好分 × 权重）</div>
 
     <!-- 未开启引导：权重为 0 时展示 -->
     <el-alert
@@ -21,7 +21,7 @@
       :closable="false"
       show-icon
       title="偏好学习未开启"
-      description="当前排班生成不使用偏好学习（与原有行为完全一致）。如需开启：在「规则配置」中将 preference_learning_weight 设为大于 0（如 0.3），并在发布排班后点击「立即重建学习」积累店长偏好。权重越大，店长历史认可的习惯越能翻盘技能分差；技能门槛、工时上限等硬约束始终不受影响。"
+      description="当前排班生成不使用偏好学习（与原有行为完全一致）。如需开启：在「规则配置」中将 preference_learning_weight 设为 0~1 之间的小数（建议从 0.3 试起，1 = 完全按店长偏好），并在发布排班后点击「立即重建学习」积累店长偏好。技能门槛、工时上限等硬约束始终不受偏好影响。"
       class="section"
     />
 
