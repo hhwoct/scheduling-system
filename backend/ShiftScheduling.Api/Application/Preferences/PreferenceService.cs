@@ -564,7 +564,7 @@ public sealed class PreferenceService : IPreferenceService
             .FirstOrDefaultAsync(x => x.StoreId == storeId && x.RuleKey == RuleKeyWeight, cancellationToken);
         if (rule is null || !decimal.TryParse(rule.RuleValue, out var w) || w < 0m)
         {
-            return 0.3m;
+            return 0m; // 默认关闭（合并后行为与主项目完全一致；开启需将规则设为 > 0）
         }
         return Math.Min(w, 1m);
     }

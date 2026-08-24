@@ -45,17 +45,17 @@ CREATE TABLE IF NOT EXISTS preference_trends (
   CONSTRAINT fk_trend_store FOREIGN KEY (store_id) REFERENCES stores(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- 3) 偏好权重规则：init 已有预留行（值 10），此处统一为 0.3 并更新语义说明；
---    不存在则插入（两种路径幂等）。
+-- 3) 偏好权重规则：init 已有预留行（值 10），此处统一为 0（默认关闭，合并后行为不变，
+--    需开启时在规则配置页将 preference_weight 设为 > 0）。
 INSERT INTO rule_configs (store_id, rule_key, rule_name, rule_value, value_type, remark, status)
-SELECT 1, 'preference_weight', '偏好学习权重', '0.3', 'number', '排班偏好学习软约束权重（0=关闭；>0 启用，技能分相同时贴合店长历史习惯）', 1
+SELECT 1, 'preference_weight', '偏好学习权重', '0', 'number', '排班偏好学习软约束权重（0=关闭；>0 启用，技能分相同时贴合店长历史习惯）', 1
 WHERE NOT EXISTS (SELECT 1 FROM rule_configs WHERE store_id = 1 AND rule_key = 'preference_weight');
 
 UPDATE rule_configs
-SET rule_value = '0.3',
+SET rule_value = '0',
     rule_name = '偏好学习权重',
     remark = '排班偏好学习软约束权重（0=关闭；>0 启用，技能分相同时贴合店长历史习惯）'
-WHERE store_id = 1 AND rule_key = 'preference_weight' AND rule_value = '10';
+WHERE store_id = 1 AND rule_key = 'preference_weight' AND (rule_value = '10' OR rule_value = '0.3');
 
 -- 4) 调整量统计（增强 2）：生成时快照 + 每期调整数
 --    schedule_plans.generated_summary_snapshot：生成时保存日汇总快照（JSON），

@@ -14,6 +14,17 @@
     </el-row>
     <div class="weight-tip">偏好权重：<b>{{ stats.weight }}</b>（规则 preference_weight，0 = 关闭；技能分相同时贴合店长历史习惯）</div>
 
+    <!-- 未开启引导：权重为 0 时展示 -->
+    <el-alert
+      v-if="stats.weight <= 0"
+      type="info"
+      :closable="false"
+      show-icon
+      title="偏好学习未开启"
+      description="当前排班生成不使用偏好学习（与原有行为完全一致）。如需开启：在「规则配置」中将 preference_weight 设为大于 0（如 0.3），并在发布排班后点击「立即重建学习」积累店长偏好。"
+      class="section"
+    />
+
     <!-- 趋势 -->
     <el-card class="section" v-if="trends.length">
       <template #header>贴合率趋势（每期已发布排班）</template>
