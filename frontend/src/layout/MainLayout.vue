@@ -1,10 +1,7 @@
 <template>
   <el-container class="main-layout">
     <el-aside :width="collapsed ? '0px' : '220px'" class="main-aside">
-      <div class="logo">
-        <span>排班系统</span>
-        <el-icon class="aside-collapse-btn" :size="16" title="收起侧边栏" @click="collapsed = true"><Fold /></el-icon>
-      </div>
+      <div class="logo">排班系统</div>
       <el-menu
         :default-active="$route.path"
         background-color="#001529"
@@ -168,26 +165,11 @@ async function handleCommand(command) {
 }
 .logo {
   height: 60px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
+  line-height: 60px;
+  text-align: center;
   color: #fff;
   font-size: 18px;
   font-weight: 600;
-  white-space: nowrap;
-  overflow: hidden;
-}
-.aside-collapse-btn {
-  cursor: pointer;
-  color: rgba(255, 255, 255, 0.65);
-  padding: 4px;
-  border-radius: 4px;
-  transition: color 0.2s, background-color 0.2s;
-}
-.aside-collapse-btn:hover {
-  color: #fff;
-  background-color: rgba(255, 255, 255, 0.15);
 }
 /* 书签样式按钮：常驻左边缘；收起时贴屏幕左缘，展开时贴 sidebar 右缘（内容区左缘） */
 .sidebar-tab {
