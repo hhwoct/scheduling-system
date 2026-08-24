@@ -1,7 +1,10 @@
 <template>
   <el-container class="emp-layout">
     <el-aside :width="collapsed ? '0px' : '220px'" class="emp-aside">
-      <div class="logo">排班系统 · 员工端</div>
+      <div class="logo">
+        <span>排班系统 · 员工端</span>
+        <el-icon class="aside-collapse-btn" :size="16" title="收起侧边栏" @click="collapsed = true"><Fold /></el-icon>
+      </div>
       <el-menu
         :default-active="$route.path"
         background-color="#001529"
@@ -44,9 +47,10 @@
     <el-container>
       <el-header class="emp-header">
         <div class="header-left">
-          <el-button class="collapse-btn" text size="small" :title="collapsed ? '展开侧边栏' : '收起侧边栏'" @click="collapsed = !collapsed">
-            <el-icon><Expand v-if="collapsed" /><Fold v-else /></el-icon>
-            <span>{{ collapsed ? '展开' : '收起' }}</span>
+          <!-- 收起后 sidebar 消失，此处提供展开入口 -->
+          <el-button v-if="collapsed" class="collapse-btn" text size="small" title="展开侧边栏" @click="collapsed = false">
+            <el-icon><Expand /></el-icon>
+            <span>展开</span>
           </el-button>
           <div class="header-title">{{ $route.meta.title }}</div>
         </div>
@@ -258,11 +262,26 @@ async function handleCommand(command) {
 }
 .logo {
   height: 60px;
-  line-height: 60px;
-  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   color: #fff;
   font-size: 15px;
   font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.aside-collapse-btn {
+  cursor: pointer;
+  color: rgba(255, 255, 255, 0.65);
+  padding: 4px;
+  border-radius: 4px;
+  transition: color 0.2s, background-color 0.2s;
+}
+.aside-collapse-btn:hover {
+  color: #fff;
+  background-color: rgba(255, 255, 255, 0.15);
 }
 .emp-aside :deep(.el-menu) {
   border-right: none;
