@@ -275,4 +275,22 @@ public sealed class ScheduleServiceTests
         await Assert.ThrowsAsync<NotFoundException>(() =>
             service.PublishAsync(999, 1, 9, "a", force: false, CancellationToken.None));
     }
+
+    [Fact]
+    public async Task GenerateAsync_NoDateParameters_ThrowsBusinessException()
+    {
+        await SeedStoreDataAsync();
+        var service = CreateService();
+
+        // 种子数据只覆盖 8-03 ~ 8-09，8-10 之后没有任何日期参数 → 应显式报错而非静默产出空计划
+        var ex = await Assert.ThrowsAsync<BusinessException>(() =>
+            service.GenerateAsync(
+                new GenerateScheduleRequest(Start.AddDays(7), Start.AddDays(13)),
+                1, 9, "管理员", CancellationToken.None));
+
+        Assert.Equal("INCOMPLETE_DATE_PARAMETERS", ex.ErrorCode);
+
+        var db = _factory.CreateDbContext();
+        Assert.False(await db.SchedulePlans.AnyAsync());
+    }
 }

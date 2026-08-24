@@ -42,6 +42,18 @@ public sealed class ScheduleService : IScheduleService
             throw new BusinessException("排班周期不能超过 31 天", "INVALID_DATE_RANGE");
         }
 
+        // 日期参数覆盖校验：排班引擎按 date_parameters 过滤日期，未覆盖的日期会被静默跳过，
+        // 导致"生成成功"却产出空排班（如生成超出已配置周期的月份），改为显式报错。
+        var totalDays = request.EndDate.DayNumber - request.StartDate.DayNumber + 1;
+        var coveredDays = await _dbContext.DateParameters.AsNoTracking()
+            .CountAsync(x => x.StoreId == storeId && x.WorkDate >= request.StartDate && x.WorkDate <= request.EndDate, cancellationToken);
+        if (coveredDays < totalDays)
+        {
+            throw new BusinessException(
+                $"所选日期范围（{request.StartDate:yyyy-MM-dd} ~ {request.EndDate:yyyy-MM-dd}）缺少日期参数（节假日/工作日配置），当前仅覆盖 {coveredDays}/{totalDays} 天，请先补全 date_parameters 后再生成排班",
+                "INCOMPLETE_DATE_PARAMETERS");
+        }
+
         // 幂等保护：同门店同一周期已发布的排班不允许重复生成；
         // 若存在 DRAFT 草稿计划，则重新生成时在同一事务内级联替换（使算法更新可重新应用）。
         var existingPlan = await _dbContext.SchedulePlans
