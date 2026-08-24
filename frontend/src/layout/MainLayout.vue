@@ -1,6 +1,6 @@
 <template>
   <el-container class="main-layout">
-    <el-aside width="220px" class="main-aside">
+    <el-aside :width="collapsed ? '0px' : '220px'" class="main-aside">
       <div class="logo">排班系统</div>
       <el-menu
         :default-active="$route.path"
@@ -47,7 +47,13 @@
     </el-aside>
     <el-container>
       <el-header class="main-header">
-        <div class="header-title">{{ $route.meta.title }}</div>
+        <div class="header-left">
+          <el-icon class="collapse-btn" :size="20" @click="collapsed = !collapsed" :title="collapsed ? '展开侧边栏' : '收起侧边栏'">
+            <Expand v-if="collapsed" />
+            <Fold v-else />
+          </el-icon>
+          <div class="header-title">{{ $route.meta.title }}</div>
+        </div>
         <div style="display: flex; align-items: center; gap: 16px">
           <el-badge :value="unreadCount" :hidden="unreadCount === 0" :max="99" style="cursor: pointer" @click="$router.push('/notifications')">
             <el-icon :size="20"><Bell /></el-icon>
@@ -65,7 +71,7 @@
           </el-dropdown>
         </div>
       </el-header>
-      <el-main class="main-content">
+      <el-main class="main-content" :class="{ collapsed }">
         <!-- 只对页面内容加 key，避免整个布局（含 sidebar）重新挂载 -->
         <router-view :key="$route.path" />
       </el-main>
@@ -76,7 +82,7 @@
 <script setup>
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { ArrowDown, Bell, Calendar, DataBoard } from '@element-plus/icons-vue'
+import { ArrowDown, Bell, Calendar, DataBoard, Expand, Fold } from '@element-plus/icons-vue'
 import { ElMessageBox } from 'element-plus'
 import { useAuthStore } from '../stores/auth'
 import { getUnreadCount } from '../api/notifications'
@@ -85,6 +91,10 @@ import { SUPER_ADMIN_USERNAME } from '../constants/config'
 const router = useRouter()
 const authStore = useAuthStore()
 const unreadCount = ref(0)
+
+// 侧边栏收起状态：本地持久化，刷新后保持
+const collapsed = ref(localStorage.getItem('sidebar-collapsed') === '1')
+watch(collapsed, v => localStorage.setItem('sidebar-collapsed', v ? '1' : '0'))
 
 // 未读通知数：传当前用户工号，失败记录日志，focus 与路由变化时重取
 async function refreshUnreadCount() {
@@ -149,6 +159,8 @@ async function handleCommand(command) {
   display: flex;
   flex-direction: column;
   background-color: #001529;
+  overflow: hidden;
+  transition: width 0.25s ease;
 }
 .logo {
   height: 60px;
@@ -185,6 +197,22 @@ async function handleCommand(command) {
   background-color: #fff;
   border-bottom: 1px solid #e4e7ed;
 }
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.collapse-btn {
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 4px;
+  color: #606266;
+  transition: background-color 0.2s, color 0.2s;
+}
+.collapse-btn:hover {
+  background-color: rgba(0, 0, 0, 0.06);
+  color: #409eff;
+}
 .header-title {
   font-size: 16px;
   font-weight: 600;
@@ -197,6 +225,12 @@ async function handleCommand(command) {
 }
 .main-content {
   overflow-y: auto;
+}
+/* 收起侧边栏后页面内容水平居中（1400px 内居中，超出贴边） */
+.main-content.collapsed :deep(> *) {
+  max-width: 1400px;
+  margin: 0 auto;
+  width: 100%;
 }
 .main-content :deep(.el-table__body-wrapper) {
   max-height: calc(100vh - 240px);
