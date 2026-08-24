@@ -79,6 +79,7 @@
           <template #default="{ row }">
             <el-button link type="primary" @click="goView(row.id)">查看排班</el-button>
             <el-button v-if="row.status === 'DRAFT'" link type="success" @click="handlePublish(row)">发布</el-button>
+            <el-button v-if="row.status === 'DRAFT'" link type="primary" @click="handleCopyPrevious(row)">复制上周</el-button>
             <el-button link type="warning" @click="openAdjustments(row)">调整记录</el-button>
             <el-button link type="danger" @click="handleDelete(row)">删除</el-button>
           </template>
@@ -134,7 +135,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { generateSchedule, getSchedules, publishSchedule, deleteSchedule, getScheduleIssues, getAdjustmentSummary, getScheduleAdjustments } from '../api/schedules'
+import { generateSchedule, getSchedules, publishSchedule, deleteSchedule, getScheduleIssues, getAdjustmentSummary, getScheduleAdjustments, copyPreviousWeek } from '../api/schedules'
 import { getStaffingRequirementPreview } from '../api/staffingRequirements'
 import { getDemandInsights } from '../api/schedules'
 
@@ -351,6 +352,22 @@ function openAdjustments(row) {
   adjustDialog.planName = row.planName
   adjustDialog.visible = true
   loadAdjustments(1)
+}
+
+// P2：复制上周（以最近一期已发布排班为起点，按星期几对齐）
+async function handleCopyPrevious(row) {
+  try {
+    await ElMessageBox.confirm('将以最近一期已发布的排班为模板复制到「' + row.planName + '」（覆盖当前草稿内容，按星期几对齐）。确定继续吗？', '复制上周', { type: 'info' })
+  } catch {
+    return
+  }
+  try {
+    await copyPreviousWeek(row.id)
+    ElMessage.success('已复制上周排班，可在排班查看中微调')
+    loadPlans(page.value)
+  } catch (e) {
+    ElMessage.error('复制失败：' + (e.message || '网络错误'))
+  }
 }
 
 async function handlePublish(row) {

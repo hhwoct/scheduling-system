@@ -70,6 +70,14 @@ public interface IScheduleService
         string operatorName,
         CancellationToken cancellationToken);
 
+    /// <summary>复制上周（P2）：最近一期已发布计划按星期几映射复制到目标草稿计划。</summary>
+    Task CopyPreviousAsync(
+        long planId,
+        long storeId,
+        long operatorUserId,
+        string operatorName,
+        CancellationToken cancellationToken);
+
     Task PublishAsync(
         long planId,
         long storeId,

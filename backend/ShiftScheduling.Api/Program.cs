@@ -1108,6 +1108,23 @@ api.MapPost("/schedules/{planId:long}/publish", async (
     return ApiResponse.Ok(true, "排班发布成功");
 }).RequireAuthorization("AdminOnly");
 
+// 复制上周（P2）：以最近一期已发布排班为起点生成草稿
+api.MapPost("/schedules/{planId:long}/copy-previous", async (
+    long planId,
+    IScheduleService scheduleService,
+    ICurrentUser currentUser,
+    CancellationToken ct) =>
+{
+    var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
+    await scheduleService.CopyPreviousAsync(
+        planId,
+        storeId,
+        currentUser.UserId ?? 0,
+        currentUser.Nickname ?? currentUser.Username ?? "匿名",
+        ct);
+    return ApiResponse.Ok(true, "已从上周排班复制（按星期几对齐，可在此基础上微调）");
+}).RequireAuthorization("AdminOnly");
+
 // 发布前调整摘要：对比生成快照（generated_summary_snapshot）与当前日汇总，
 // 返回「员工×日期」维度的调整分类统计（改休 / 换班），供发布确认框展示（P0 交互）。
 api.MapGet("/schedules/{planId:long}/adjustment-summary", async (

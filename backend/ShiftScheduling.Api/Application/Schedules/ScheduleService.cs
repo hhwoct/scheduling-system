@@ -1192,6 +1192,135 @@ public sealed class ScheduleService : IScheduleService
         return new MoveScheduleSegmentResult(segmentRows.Count, request.FromTimeSlot, request.ToTimeSlot, request.ToWorkstationId);
     }
 
+    /// <summary>
+    /// 复制上周（P2）：把最近一期已发布计划的排班按「星期几」映射复制到目标草稿计划，
+    /// 让店长以认可的版本为起点微调。覆盖目标计划的现有明细。
+    /// </summary>
+    public async Task CopyPreviousAsync(
+        long planId,
+        long storeId,
+        long operatorUserId,
+        string operatorName,
+        CancellationToken cancellationToken)
+    {
+        var target = await _dbContext.SchedulePlans
+            .FirstOrDefaultAsync(x => x.Id == planId && x.StoreId == storeId, cancellationToken)
+            ?? throw new NotFoundException("排班计划不存在");
+        if (target.Status != "DRAFT")
+        {
+            throw new BusinessException("仅草稿计划可复制上周", "INVALID_COPY");
+        }
+
+        // 最近一期已发布计划（结束日期早于目标开始日期）
+        var source = await _dbContext.SchedulePlans.AsNoTracking()
+            .Where(x => x.StoreId == storeId && x.Status == "PUBLISHED" && x.PublishedAt != null && x.EndDate < target.StartDate)
+            .OrderByDescending(x => x.EndDate)
+            .Select(x => new { x.Id, x.PlanName })
+            .FirstOrDefaultAsync(cancellationToken)
+            ?? throw new BusinessException("没有可复制的已发布排班（请先发布一期排班）", "NO_PREVIOUS_PLAN");
+
+        // 源日期 → 目标周期内相同星期几的日期
+        var sourceSummaries = await _dbContext.ScheduleSummaries.AsNoTracking()
+            .Where(x => x.PlanId == source.Id && x.StoreId == storeId)
+            .ToListAsync(cancellationToken);
+        var sourceResults = await _dbContext.ScheduleResults.AsNoTracking()
+            .Where(x => x.PlanId == source.Id && x.StoreId == storeId)
+            .ToListAsync(cancellationToken);
+
+        var sourceWeeks = sourceSummaries
+            .Select(x => x.WorkDate)
+            .Distinct()
+            .GroupBy(d => (int)d.DayOfWeek)
+            .ToDictionary(g => g.Key, g => g.Min()); // 每个 weekday 取最早一天作为模板
+
+        var dateMap = new Dictionary<DateOnly, DateOnly>();
+        for (var d = target.StartDate; d <= target.EndDate; d = d.AddDays(1))
+        {
+            if (sourceWeeks.TryGetValue((int)d.DayOfWeek, out var templateDate))
+            {
+                dateMap[templateDate] = d;
+            }
+        }
+
+        await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
+
+        // 清空目标计划现有明细
+        await _dbContext.ScheduleResults.Where(x => x.PlanId == planId).ExecuteDeleteAsync(cancellationToken);
+        await _dbContext.ScheduleSummaries.Where(x => x.PlanId == planId).ExecuteDeleteAsync(cancellationToken);
+
+        var now = DateTime.UtcNow;
+        var copiedDays = 0;
+
+        // 复制汇总（按 weekday 映射；无对应模板的日期留空由店长补充）
+        foreach (var s in sourceSummaries)
+        {
+            if (!dateMap.TryGetValue(s.WorkDate, out var newDate))
+            {
+                continue;
+            }
+            _dbContext.ScheduleSummaries.Add(new ScheduleSummaryEntity
+            {
+                PlanId = planId,
+                StoreId = storeId,
+                EmployeeId = s.EmployeeId,
+                WorkDate = newDate,
+                IsRestDay = s.IsRestDay,
+                ShiftTemplateId = s.ShiftTemplateId,
+                StartTime = s.StartTime,
+                EndTime = s.EndTime,
+                WorkHours = s.WorkHours,
+                CoveredWorkstations = s.CoveredWorkstations,
+                BreakStartTime = s.BreakStartTime,
+                BreakEndTime = s.BreakEndTime,
+                BreakCoverEmployeeId = s.BreakCoverEmployeeId,
+                BreakWorkstationId = s.BreakWorkstationId,
+                CreatedAt = now,
+                UpdatedAt = now
+            });
+            copiedDays++;
+        }
+
+        // 复制明细（时段级）
+        foreach (var r in sourceResults)
+        {
+            if (!dateMap.TryGetValue(r.WorkDate, out var newDate))
+            {
+                continue;
+            }
+            _dbContext.ScheduleResults.Add(new ScheduleResultEntity
+            {
+                PlanId = planId,
+                StoreId = storeId,
+                EmployeeId = r.EmployeeId,
+                WorkDate = newDate,
+                TimeSlot = r.TimeSlot,
+                ShiftTemplateId = r.ShiftTemplateId,
+                WorkstationId = r.WorkstationId,
+                SkillScore = r.SkillScore,
+                Status = "DRAFT",
+                Version = 1,
+                CreatedAt = now,
+                UpdatedAt = now
+            });
+        }
+
+        // 记录复制操作（调整明细，action_type=COPY_PREVIOUS）
+        _dbContext.ScheduleAdjustments.Add(new ScheduleAdjustmentEntity
+        {
+            StoreId = storeId,
+            PlanId = planId,
+            ActionType = "COPY_PREVIOUS",
+            BeforeJson = null,
+            AfterJson = JsonSerializer.Serialize(new { SourcePlanId = source.Id, SourcePlanName = source.PlanName, CopiedDays = copiedDays }),
+            OperatorUserId = operatorUserId,
+            OperatorName = operatorName,
+            CreatedAt = now
+        });
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+    }
+
     public async Task PublishAsync(
         long planId,
         long storeId,

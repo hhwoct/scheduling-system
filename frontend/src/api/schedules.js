@@ -80,4 +80,9 @@ export function getDemandInsights(planId) {
   return request.get(`/schedules/${planId}/demand-insights`).then(res => res.data)
 }
 
+// 复制上周（P2）：以最近一期已发布排班为起点
+export function copyPreviousWeek(planId) {
+  return request.post(`/schedules/${planId}/copy-previous`).then(res => res.data)
+}
+
 export { getSchedules as fetchSchedules }

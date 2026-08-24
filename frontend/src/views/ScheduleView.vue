@@ -118,9 +118,15 @@
         </div>
         <div v-if="selectedDate" style="margin-top: 24px">
           <el-divider content-position="left">{{ selectedDate }}</el-divider>
-          <div v-loading="dailyLoading" class="matrix-wrap"><div class="matrix" :class="{ 'has-chip-highlight': highlightedEmpId }" @click="highlightedEmpId = null">
+          <div class="batch-bar">
+            <el-switch v-model="batchMode" size="small" />
+            <span class="batch-label">批量模式（框选多格→批量改为休息；拖拽/双击在批量模式下禁用）</span>
+            <el-button v-if="batchMode && batchSelect.active" size="small" type="danger" link @click="commitBatchRest">将选中区域改为休息（{{ batchTargetCount }} 格）</el-button>
+            <el-button v-if="batchMode" size="small" link @click="clearBatchSelect">清除选区</el-button>
+          </div>
+          <div v-loading="dailyLoading" class="matrix-wrap"><div class="matrix" :class="{ 'has-chip-highlight': highlightedEmpId, 'batch-mode': batchMode }" @click="highlightedEmpId = null" @mousedown.capture="onBatchMouseDown" @mouseup.capture="onBatchMouseUp">
             <div class="m-row m-header"><div class="m-ws-col">工作站</div><div v-for="slot in slots" :key="slot.key" class="m-slot-col" :title="slot.display"><span v-if="isHour(slot)">{{ slot.display }}</span></div></div>
-            <div v-for="ws in dailyWorkstations" :key="ws" class="m-row"><div class="m-ws-col">{{ ws }}<el-tag v-if="wsLowSkill(ws)" type="success" size="small" style="margin-left:4px">兼</el-tag></div><div v-for="(slot, si) in slots" :key="slot.key" class="m-slot-col" :class="[cellClass(ws, slot), snapTarget.ws === ws && snapTarget.slotIdx === si ? 'snap-target' : '']"><div v-if="dailySlotIssues(ws, slot).length" class="gap-flag" :class="{ 'gap-flag-low': lowSkillGapIssues(ws, slot).length > 0 }" :title="gapTooltip(ws, slot)">{{ lowSkillGapIssues(ws, slot).length > 0 ? '兼' : '缺' }}</div><div v-for="emp in dailyCellUsers(ws, slot)" :key="emp.employeeId" class="emp-chip" :class="{ 'is-parttime': emp.isParttime === 1, 'pt-first': isFirstPartTimeChip(emp, ws, slot), 'is-break': inBreak(emp, slot), 'is-highlighted': highlightedEmpId === emp.employeeId }" :title="'单击高亮该员工当天全部色块；双击切换休息/上班；按住拖动可移动半小时'" @mousedown.prevent.stop="onChipMouseDown($event, emp, ws, slot)" @click.stop="onChipClick(emp, slot)" @dblclick.stop="onChipDblClick(emp, slot)"><div class="emp-name">{{ emp.employeeName }}<span v-if="inBreak(emp, slot)" class="break-flag" :title="breakTip(emp)">休</span></div><div v-if="!inBreak(emp, slot)" class="emp-shift">{{ emp.shiftCode || '--' }}</div><div v-else class="emp-shift break-info" :title="breakTip(emp)">休息</div></div></div></div>
+            <div v-for="ws in dailyWorkstations" :key="ws" class="m-row"><div class="m-ws-col">{{ ws }}<el-tag v-if="wsLowSkill(ws)" type="success" size="small" style="margin-left:4px">兼</el-tag></div><div v-for="(slot, si) in slots" :key="slot.key" class="m-slot-col" :class="[cellClass(ws, slot), snapTarget.ws === ws && snapTarget.slotIdx === si ? 'snap-target' : '', batchSelected(ws, si) ? 'batch-selected' : '']" :data-slot="slot.key"><div v-if="dailySlotIssues(ws, slot).length" class="gap-flag" :class="{ 'gap-flag-low': lowSkillGapIssues(ws, slot).length > 0 }" :title="gapTooltip(ws, slot)">{{ lowSkillGapIssues(ws, slot).length > 0 ? '兼' : '缺' }}</div><div v-for="emp in dailyCellUsers(ws, slot)" :key="emp.employeeId" class="emp-chip" :class="{ 'is-parttime': emp.isParttime === 1, 'pt-first': isFirstPartTimeChip(emp, ws, slot), 'is-break': inBreak(emp, slot), 'is-highlighted': highlightedEmpId === emp.employeeId }" :title="'单击高亮该员工当天全部色块；双击切换休息/上班；按住拖动可移动半小时'" @mousedown.prevent.stop="onChipMouseDown($event, emp, ws, slot)" @click.stop="onChipClick(emp, slot)" @dblclick.stop="onChipDblClick(emp, slot)"><div class="emp-name">{{ emp.employeeName }}<span v-if="prefMatch(emp, ws)" class="pref-dot" title="与店长历史偏好一致" /> <span v-if="inBreak(emp, slot)" class="break-flag" :title="breakTip(emp)">休</span></div><div v-if="!inBreak(emp, slot)" class="emp-shift">{{ emp.shiftCode || '--' }}</div><div v-else class="emp-shift break-info" :title="breakTip(emp)">休息</div></div></div></div>
           </div></div>
         </div>
       </div>
@@ -129,7 +135,7 @@
         <el-date-picker v-model="dayDate" type="date" value-format="YYYY-MM-DD" style="width: 150px; margin-bottom: 12px" placeholder="选择日期" :disabled-date="disabledDate" @change="loadDay" />
         <div v-if="dayDate" class="matrix-wrap"><div class="matrix" :class="{ 'has-chip-highlight': highlightedEmpId }" @click="highlightedEmpId = null">
           <div class="m-row m-header"><div class="m-ws-col">工作站</div><div v-for="slot in slots" :key="slot.key" class="m-slot-col" :title="slot.display"><span v-if="isHour(slot)">{{ slot.display }}</span></div></div>
-          <div v-for="ws in dailyWorkstations" :key="ws" class="m-row"><div class="m-ws-col">{{ ws }}<el-tag v-if="wsLowSkill(ws)" type="success" size="small" style="margin-left:4px">兼</el-tag></div><div v-for="(slot, si) in slots" :key="slot.key" class="m-slot-col" :class="[cellClass(ws, slot), snapTarget.ws === ws && snapTarget.slotIdx === si ? 'snap-target' : '']"><div v-if="dailySlotIssues(ws, slot).length" class="gap-flag" :class="{ 'gap-flag-low': lowSkillGapIssues(ws, slot).length > 0 }" :title="gapTooltip(ws, slot)">{{ lowSkillGapIssues(ws, slot).length > 0 ? '兼' : '缺' }}</div><div v-for="emp in dailyCellUsers(ws, slot)" :key="emp.employeeId" class="emp-chip" :class="{ 'is-parttime': emp.isParttime === 1, 'pt-first': isFirstPartTimeChip(emp, ws, slot), 'is-break': inBreak(emp, slot), 'is-highlighted': highlightedEmpId === emp.employeeId }" :title="'单击高亮该员工当天全部色块；双击切换休息/上班；按住拖动可移动半小时'" @mousedown.prevent.stop="onChipMouseDown($event, emp, ws, slot)" @click.stop="onChipClick(emp, slot)" @dblclick.stop="onChipDblClick(emp, slot)"><div class="emp-name">{{ emp.employeeName }}<span v-if="inBreak(emp, slot)" class="break-flag" :title="breakTip(emp)">休</span></div><div v-if="!inBreak(emp, slot)" class="emp-shift">{{ emp.shiftCode || '--' }}</div><div v-else class="emp-shift break-info" :title="breakTip(emp)">休息</div></div></div></div>
+          <div v-for="ws in dailyWorkstations" :key="ws" class="m-row"><div class="m-ws-col">{{ ws }}<el-tag v-if="wsLowSkill(ws)" type="success" size="small" style="margin-left:4px">兼</el-tag></div><div v-for="(slot, si) in slots" :key="slot.key" class="m-slot-col" :class="[cellClass(ws, slot), snapTarget.ws === ws && snapTarget.slotIdx === si ? 'snap-target' : '', batchSelected(ws, si) ? 'batch-selected' : '']" :data-slot="slot.key"><div v-if="dailySlotIssues(ws, slot).length" class="gap-flag" :class="{ 'gap-flag-low': lowSkillGapIssues(ws, slot).length > 0 }" :title="gapTooltip(ws, slot)">{{ lowSkillGapIssues(ws, slot).length > 0 ? '兼' : '缺' }}</div><div v-for="emp in dailyCellUsers(ws, slot)" :key="emp.employeeId" class="emp-chip" :class="{ 'is-parttime': emp.isParttime === 1, 'pt-first': isFirstPartTimeChip(emp, ws, slot), 'is-break': inBreak(emp, slot), 'is-highlighted': highlightedEmpId === emp.employeeId }" :title="'单击高亮该员工当天全部色块；双击切换休息/上班；按住拖动可移动半小时'" @mousedown.prevent.stop="onChipMouseDown($event, emp, ws, slot)" @click.stop="onChipClick(emp, slot)" @dblclick.stop="onChipDblClick(emp, slot)"><div class="emp-name">{{ emp.employeeName }}<span v-if="prefMatch(emp, ws)" class="pref-dot" title="与店长历史偏好一致" /> <span v-if="inBreak(emp, slot)" class="break-flag" :title="breakTip(emp)">休</span></div><div v-if="!inBreak(emp, slot)" class="emp-shift">{{ emp.shiftCode || '--' }}</div><div v-else class="emp-shift break-info" :title="breakTip(emp)">休息</div></div></div></div>
         </div></div>
       </div>
 
@@ -227,6 +233,7 @@ import * as echarts from 'echarts'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { getMonthView, getWeekView, getDailyView, getScheduleIssues, getScheduleRationality, getSchedules, setSlotStatus, moveScheduleSegment } from '../api/schedules'
+import { getPreferenceMatrix } from '../api/preferences'
 
 const route = useRoute()
 const planId = ref(route.query.planId || '')
@@ -245,6 +252,28 @@ const monthRows = ref([])
 const weeks = ref([])
 const selectedDate = ref('')
 const dailyRows = ref([])
+// P2 交互：偏好匹配角标（与店长历史偏好一致的色块显示绿点）
+const prefMap = ref(new Map()) // key: employeeNo|workstationCode -> freq
+let prefLoaded = false
+
+async function loadPreferenceMap() {
+  if (prefLoaded) return
+  prefLoaded = true
+  try {
+    const items = await getPreferenceMatrix('')
+    const map = new Map()
+    for (const it of items || []) {
+      if (it.freq >= 3) map.set(it.employeeNo + '|' + it.workstationCode, it.freq)
+    }
+    prefMap.value = map
+  } catch (e) {
+    // 偏好矩阵加载失败不影响排班查看（角标静默缺失）
+  }
+}
+
+function prefMatch(emp, ws) {
+  return prefMap.value.has((emp.employeeNo || '') + '|' + (emp.workstationName || ws))
+}
 const dailyIssues = ref([])
 const dailyLoading = ref(false)
 const dayDate = ref('')
@@ -548,11 +577,120 @@ async function handleUndo() {
           isRest: entry.payload.isRest === 1 ? 0 : 1
         }]
       })
+    } else if (entry.type === 'slot-batch') {
+      // 批量撤销：全部反向恢复为上班
+      const reverseItems = (entry.payload.items || []).map(it => ({
+        employeeId: it.employeeId,
+        workDate: it.workDate,
+        timeSlot: it.timeSlot,
+        isRest: 0
+      }))
+      await setSlotStatus(planId.value, { items: reverseItems })
     }
     ElMessage.success('已撤销')
     await loadDay(selectedDate.value || dayDate.value)
   } catch {
     // 撤销失败：拦截器已提示，保留后续撤销机会
+  }
+}
+
+// ===== P2 交互：批量模式（框选多格 → 批量改为休息） =====
+const batchMode = ref(false)
+const batchSelect = reactive({ active: false, startWsIdx: -1, startSi: -1, endWsIdx: -1, endSi: -1 })
+
+function clearBatchSelect() {
+  batchSelect.active = false
+  batchSelect.startWsIdx = -1
+  batchSelect.startSi = -1
+  batchSelect.endWsIdx = -1
+  batchSelect.endSi = -1
+}
+
+function onBatchMouseDown(e) {
+  if (!batchMode.value) return
+  const cell = batchCellFromEvent(e)
+  if (!cell) return
+  e.preventDefault()
+  batchSelect.active = true
+  batchSelect.startWsIdx = cell.wsIdx
+  batchSelect.startSi = cell.si
+  batchSelect.endWsIdx = cell.wsIdx
+  batchSelect.endSi = cell.si
+}
+
+function onBatchMouseUp(e) {
+  if (!batchMode.value || !batchSelect.active) return
+  const cell = batchCellFromEvent(e)
+  if (cell) {
+    batchSelect.endWsIdx = cell.wsIdx
+    batchSelect.endSi = cell.si
+  }
+}
+
+function batchCellFromEvent(e) {
+  const col = e.target?.closest?.('.m-slot-col')
+  const row = e.target?.closest?.('.m-row')
+  if (!col || !row) return null
+  const wsIdx = dailyWorkstations.value.indexOf(row.querySelector('.m-ws-col')?.textContent?.trim())
+  const si = slots.value.findIndex(s => s.key === (col.getAttribute('data-slot') || ''))
+  return wsIdx >= 0 && si >= 0 ? { wsIdx, si } : null
+}
+
+function batchSelected(ws, si) {
+  if (!batchSelect.active) return false
+  const wsIdx = dailyWorkstations.value.indexOf(ws)
+  const minWs = Math.min(batchSelect.startWsIdx, batchSelect.endWsIdx)
+  const maxWs = Math.max(batchSelect.startWsIdx, batchSelect.endWsIdx)
+  const minSi = Math.min(batchSelect.startSi, batchSelect.endSi)
+  const maxSi = Math.max(batchSelect.startSi, batchSelect.endSi)
+  return wsIdx >= minWs && wsIdx <= maxWs && si >= minSi && si <= maxSi
+}
+
+const batchTargetCount = computed(() => {
+  if (!batchSelect.active) return 0
+  let count = 0
+  dailyWorkstations.value.forEach((ws, wsIdx) => {
+    slots.value.forEach((slot, si) => {
+      if (!batchSelected(ws, si)) return
+      count += dailyCellUsers(ws, slot).filter(u => !inBreak(u, slot) && u.employeeId != null).length
+    })
+  })
+  return count
+})
+
+async function commitBatchRest() {
+  const date = selectedDate.value || dayDate.value
+  if (!planId.value || !date) {
+    ElMessage.warning('请先选择排班计划与日期')
+    return
+  }
+  const items = []
+  dailyWorkstations.value.forEach((ws, wsIdx) => {
+    slots.value.forEach((slot, si) => {
+      if (!batchSelected(ws, si)) return
+      for (const u of dailyCellUsers(ws, slot)) {
+        if (inBreak(u, slot) || u.employeeId == null) continue
+        items.push({ employeeId: u.employeeId, workDate: date, timeSlot: slot.key + ':00', isRest: 1 })
+      }
+    })
+  })
+  if (items.length === 0) {
+    ElMessage.info('选中区域内没有可改为休息的排班格')
+    return
+  }
+
+  try {
+    await setSlotStatus(planId.value, { items })
+    ElMessage.success('已批量改为休息 ' + items.length + ' 格')
+    pushUndo({
+      type: 'slot-batch',
+      text: '批量改为休息 ' + items.length + ' 格',
+      payload: { items }
+    })
+    clearBatchSelect()
+    await loadDay(date)
+  } catch {
+    // 拦截器已提示
   }
 }
 
@@ -1038,6 +1176,7 @@ watch(rationalityData, () => {
 
 onMounted(() => {
   loadPlans()
+  loadPreferenceMap() // P2：偏好匹配角标数据
   if (planId.value) loadAll()
   nextTick(() => renderRationalityChart())
   window.addEventListener('mousemove', onDragMove)
@@ -1106,6 +1245,8 @@ onBeforeUnmount(() => {
 .gap-flag-low { background: #67c23a; }
 .emp-chip { background: #409eff; color: #fff; border-radius: 3px; padding: 2px 4px; margin-bottom: 2px; font-size: 11px; }
 .emp-chip .emp-name { font-weight: 600; }
+/* P2：偏好匹配角标——与店长历史偏好一致的色块显示绿点 */
+.pref-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #67c23a; margin-left: 3px; vertical-align: middle; box-shadow: 0 0 0 1px #fff; }
 .emp-chip .emp-shift { opacity: 0.85; font-size: 10px; }
 /* 兼职色块：绿色，且与前面的全职色块用虚线间隔隔开 */
 .emp-chip.is-parttime { background: #67c23a; }
@@ -1184,6 +1325,11 @@ onBeforeUnmount(() => {
 .parttime-day-col.active { background: #67c23a; }
 .parttime-legend { margin-top: 8px; display: flex; align-items: center; gap: 6px; font-size: 12px; color: #606266; }
 .parttime-legend-box { background: #67c23a; }
+/* P2 交互：批量模式 */
+.batch-bar { display: flex; align-items: center; gap: 8px; margin: 8px 0; font-size: 12px; color: #606266; }
+.batch-label { color: #909399; }
+.matrix.batch-mode .m-slot-col { cursor: crosshair; }
+.m-slot-col.batch-selected { outline: 2px solid #e6a23c; outline-offset: -2px; background: rgba(230, 162, 60, 0.15); }
 /* P0 交互：调整撤销条 */
 .undo-bar {
   position: fixed;
