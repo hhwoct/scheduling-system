@@ -48,6 +48,11 @@
         <span>员工端（我的班表）</span>
       </div>
     </el-aside>
+    <!-- 书签样式按钮：sidebar 收起时悬浮在左边缘，点击展开 -->
+    <button v-if="collapsed" class="sidebar-tab" title="展开侧边栏" @click="collapsed = false">
+      <el-icon :size="16"><Expand /></el-icon>
+      <span>展开</span>
+    </button>
     <el-container>
       <el-header class="main-header">
         <div class="header-left">
@@ -188,6 +193,36 @@ async function handleCommand(command) {
 .aside-collapse-btn:hover {
   color: #fff;
   background-color: rgba(255, 255, 255, 0.15);
+}
+/* 书签样式展开按钮：收起后悬浮于屏幕左边缘垂直居中 */
+.sidebar-tab {
+  position: fixed;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 7px;
+  background-color: #001529;
+  color: rgba(255, 255, 255, 0.75);
+  border: none;
+  border-radius: 0 10px 10px 0;
+  cursor: pointer;
+  font-size: 12px;
+  box-shadow: 2px 0 8px rgba(0, 0, 0, 0.25);
+  transition: color 0.2s, background-color 0.2s;
+  user-select: none;
+}
+.sidebar-tab span {
+  writing-mode: vertical-lr;
+  letter-spacing: 2px;
+}
+.sidebar-tab:hover {
+  color: #fff;
+  background-color: #0a2740;
 }
 .main-aside :deep(.el-menu) {
   flex: 1;
