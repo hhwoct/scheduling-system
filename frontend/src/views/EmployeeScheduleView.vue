@@ -154,7 +154,14 @@ async function loadEmployees() {
       page++
       if (items.length === 0) break
     } while (all.length < total)
-    employeeList.value = all
+    // 兼职员工人员不固定、无固定班表，预览查询无意义，只保留全职
+    employeeList.value = all.filter(e => !e.isParttime)
+    // 兜底：之前选中的预览员工若是兼职（已不在列表），回退到当前登录账号
+    if (employeeNo.value && !employeeList.value.some(e => e.employeeNo === employeeNo.value)) {
+      employeeNo.value = ''
+      localStorage.removeItem('shift_preview_employee_no')
+      router.replace({ path: route.path, query: {} })
+    }
   } catch (e) {
     console.error('加载员工列表失败', e)
   }
