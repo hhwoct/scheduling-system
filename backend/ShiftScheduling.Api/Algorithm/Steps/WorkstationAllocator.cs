@@ -146,6 +146,9 @@ public sealed class WorkstationAllocator
     {
         var issues = new List<ScheduleIssueOutput>();
 
+        // 偏好学习（feature/schedule-pref-learning）：当天 day_type（营业日口径由调用方保证）
+        var dayType = input.DateParameters.FirstOrDefault(d => d.WorkDate == dayDate)?.DayType ?? "WORKDAY";
+
         // 需求键带日历日期；分配记录 WorkDate 仍按班次开始日期存储（持久化约定），
         // 比较时通过 AssignmentCalendarDate 换算实际日历日期。
         // ========== 2A：逐段贪心参考分配 ==========
@@ -174,6 +177,7 @@ public sealed class WorkstationAllocator
                     .Where(s => !assignedEmployeesThisSlot.Contains(s.EmployeeId))
                     .Where(s => HasSkill(s.EmployeeId, workstation.Key, skillsByEmployee))
                     .OrderByDescending(s => SkillScore(s.EmployeeId, workstation.Key, skillsByEmployee))
+                    .ThenByDescending(s => PreferenceScoring.ForWorkstation(s.EmployeeId, workstation.Key, dayType, input))  // 偏好学习次级键
                     .ThenByDescending(s => s.ShiftCode)
                     .ToList();
 
@@ -226,6 +230,7 @@ public sealed class WorkstationAllocator
                     .Where(s => !assignedEmployeesThisSlot.Contains(s.EmployeeId))
                     .Where(s => HasSkill(s.EmployeeId, workstation.Key, skillsByEmployee))
                     .OrderByDescending(s => SkillScore(s.EmployeeId, workstation.Key, skillsByEmployee))
+                    .ThenByDescending(s => PreferenceScoring.ForWorkstation(s.EmployeeId, workstation.Key, dayType, input))  // 偏好学习次级键
                     .ThenByDescending(s => s.ShiftCode)
                     .ToList();
 

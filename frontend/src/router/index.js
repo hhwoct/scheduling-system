@@ -118,6 +118,12 @@ const routes = [
         meta: { title: '审计日志', adminOnly: true }
       },
       {
+        path: 'preferences',
+        name: 'Preferences',
+        component: () => import('../views/PreferencesView.vue'),
+        meta: { title: '偏好学习' }
+      },
+      {
         path: 'leave-review',
         name: 'LeaveReview',
         component: () => import('../views/LeaveReviewView.vue'),

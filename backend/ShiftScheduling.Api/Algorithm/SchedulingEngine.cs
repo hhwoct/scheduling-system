@@ -302,6 +302,35 @@ public sealed class SchedulingEngine
         // 正式员工每日最低工时：上班当天工时不得低于该值（0 表示不限制）
         var minDailyWorkHours = GetRuleDecimal(rules, "min_daily_work_hours", 6.5m);
 
+        // 偏好学习（feature/schedule-pref-learning）：软排序因子。
+        // 权重 0 = 关闭；>0 时在技能分排序中作为次级键（技能分相同/接近时贴合店长历史习惯）。
+        // 班次偏好：shift_code 维度；工作站偏好：workstation 维度；休息样本两列皆 NULL 不参与分配排序。
+        var preferenceWeight = GetRuleDecimal(rules, "preference_weight", 0m);
+        var preferenceRows = preferenceWeight > 0m
+            ? await _dbContext.EmployeePreferences.AsNoTracking()
+                .Where(x => x.StoreId == storeId && x.Freq > 0)
+                .ToListAsync(cancellationToken)
+            : null;
+
+        IReadOnlyDictionary<(long EmployeeId, string DayType), IReadOnlyDictionary<string, int>>? preferenceShiftScores = null;
+        IReadOnlyDictionary<(long EmployeeId, string DayType), IReadOnlyDictionary<long, int>>? preferenceWsScores = null;
+        if (preferenceRows is not null)
+        {
+            preferenceShiftScores = preferenceRows
+                .Where(x => x.ShiftCode != null)
+                .GroupBy(x => (x.EmployeeId, x.DayType))
+                .ToDictionary(
+                    g => g.Key,
+                    g => (IReadOnlyDictionary<string, int>)g.ToDictionary(x => x.ShiftCode!, x => x.Freq));
+
+            preferenceWsScores = preferenceRows
+                .Where(x => x.WorkstationId != null)
+                .GroupBy(x => (x.EmployeeId, x.DayType))
+                .ToDictionary(
+                    g => g.Key,
+                    g => (IReadOnlyDictionary<long, int>)g.ToDictionary(x => x.WorkstationId!.Value, x => x.Freq));
+        }
+
         var lowSkillWorkstationIds = workstations
             .Where(x => x.IsLowSkill == 1)
             .ToDictionary(x => x.Id, _ => true);
@@ -329,7 +358,10 @@ public sealed class SchedulingEngine
             maxWeeklyHours,
             maxConsecutiveWorkDays,
             minRestHoursAfterNightShift,
-            minDailyWorkHours);
+            minDailyWorkHours,
+            preferenceShiftScores,
+            preferenceWsScores,
+            preferenceWeight);
     }
 
     /// <summary>

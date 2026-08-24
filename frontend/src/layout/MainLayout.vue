@@ -29,6 +29,7 @@
           <el-menu-item index="/schedules/view">排班查看</el-menu-item>
           <el-menu-item index="/reports">排班报表</el-menu-item>
           <el-menu-item v-if="authStore.username === SUPER_ADMIN_USERNAME" index="/audit-logs">审计日志</el-menu-item>
+          <el-menu-item index="/preferences">偏好学习</el-menu-item>
           <el-menu-item index="/leave-review">请假审批</el-menu-item>
           <el-menu-item index="/swap-review">换班审批</el-menu-item>
           <el-menu-item index="/notifications">通知消息</el-menu-item>

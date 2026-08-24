@@ -109,6 +109,7 @@ public sealed class ShiftAllocator
                     .OrderBy(e => e.IsParttime)  // 全职优先，兼职靠后
                     .ThenByDescending(e => e.IsParttime == 1 ? periodHours.GetValueOrDefault(e.Id) : 0m)
                     .ThenByDescending(e => TotalSkillScore(e.Id, shift, skillsByEmployee))
+                    .ThenByDescending(e => PreferenceScoring.ForShift(e.Id, shift, date.DayType, input))  // 偏好学习次级键
                     .ThenBy(e => e.IsParttime == 1 ? 0m : weeklyHours.GetValueOrDefault(e.Id))
                     .ToList();
 

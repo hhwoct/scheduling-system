@@ -13,6 +13,7 @@ using ShiftScheduling.Api.Application.Common;
 using ShiftScheduling.Api.Application.Employees;
 using ShiftScheduling.Api.Application.EmployeeSkills;
 using ShiftScheduling.Api.Application.PeakHours;
+using ShiftScheduling.Api.Application.Preferences;
 using ShiftScheduling.Api.Application.RuleConfigs;
 using ShiftScheduling.Api.Application.Schedules;
 using ShiftScheduling.Api.Application.Security;
@@ -46,6 +47,7 @@ builder.Services.AddScoped<IPeakHourService, PeakHourService>();
 builder.Services.AddScoped<IStaffingRequirementService, StaffingRequirementService>();
 builder.Services.AddScoped<IAiConfigService, AiConfigService>();
 builder.Services.AddScoped<IDocumentAiService, DocumentAiService>();
+builder.Services.AddScoped<IPreferenceService, PreferenceService>();
 builder.Services.AddHttpClient();
 
 var connectionString = builder.Configuration.GetConnectionString("ShiftMvp");
@@ -1104,6 +1106,60 @@ api.MapPost("/schedules/{planId:long}/publish", async (
     // 3.9 修复：员工发布通知已在 ScheduleService.PublishAsync 事务内生成，
     // 此处不再重复发送（原实现位于事务外，失败会 500 但排班已发布）
     return ApiResponse.Ok(true, "排班发布成功");
+}).RequireAuthorization("AdminOnly");
+
+// ============ 偏好学习（feature/schedule-pref-learning） ============
+api.MapGet("/preferences/stats", async (
+    IPreferenceService preferenceService,
+    ICurrentUser currentUser,
+    CancellationToken ct) =>
+{
+    var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
+    var result = await preferenceService.GetStatsAsync(storeId, ct);
+    return ApiResponse.Ok(result, "获取偏好学习统计成功");
+}).RequireAuthorization("AdminOnly");
+
+api.MapGet("/preferences/matrix", async (
+    IPreferenceService preferenceService,
+    ICurrentUser currentUser,
+    string? dayType = null,
+    CancellationToken ct = default) =>
+{
+    var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
+    var result = await preferenceService.GetMatrixAsync(storeId, dayType, ct);
+    return ApiResponse.Ok(result, "获取偏好矩阵成功");
+}).RequireAuthorization("AdminOnly");
+
+api.MapGet("/preferences/top", async (
+    IPreferenceService preferenceService,
+    ICurrentUser currentUser,
+    int limit = 20,
+    CancellationToken ct = default) =>
+{
+    var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
+    var result = await preferenceService.GetTopAsync(storeId, limit, ct);
+    return ApiResponse.Ok(result, "获取偏好排行成功");
+}).RequireAuthorization("AdminOnly");
+
+api.MapGet("/preferences/trends", async (
+    IPreferenceService preferenceService,
+    ICurrentUser currentUser,
+    CancellationToken ct) =>
+{
+    var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
+    var result = await preferenceService.GetTrendsAsync(storeId, ct);
+    return ApiResponse.Ok(result, "获取偏好趋势成功");
+}).RequireAuthorization("AdminOnly");
+
+// 手动触发学习重建（调试/导入历史样本用；发布排班时也会自动重建）
+api.MapPost("/preferences/rebuild", async (
+    IPreferenceService preferenceService,
+    ICurrentUser currentUser,
+    CancellationToken ct) =>
+{
+    var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
+    var result = await preferenceService.RebuildAsync(storeId, ct);
+    return ApiResponse.Ok(result, "偏好学习重建成功");
 }).RequireAuthorization("AdminOnly");
 
 // ============ 站内通知 ============

@@ -310,6 +310,11 @@ public sealed class ResidualGapFiller
     {
         var blockHours = SchedulingTimeHelper.GetShiftHours(template.StartTime, template.EndTime, template.IsCrossDay);
         var usedThisBlock = 0;
+        // 偏好学习（feature/schedule-pref-learning）：按当天 day_type 取偏好分
+        var workDateDayType = input.DateParameters
+            .Where(d => d.WorkDate == workDate)
+            .Select(d => d.DayType)
+            .FirstOrDefault() ?? "WORKDAY";
 
         while (BlockHasDemand(block.Start, block.EndExclusive, workstationId, workDate, residual) && usedThisBlock < maxHeadcount)
         {
@@ -325,6 +330,7 @@ public sealed class ResidualGapFiller
                             || assignedToday.Contains(e.Id)
                             || blockHours >= input.MinDailyWorkHours)
                 .OrderByDescending(e => StationSkillScore(e.Id, workstationId, skillsByEmployee))
+                .ThenByDescending(e => PreferenceScoring.ForWorkstation(e.Id, workstationId, workDateDayType, input))  // 偏好学习次级键
                 .ThenBy(e => weeklyHours.GetValueOrDefault(e.Id))
                 .ThenBy(e => e.Id)
                 .ToList();

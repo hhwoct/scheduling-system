@@ -71,7 +71,10 @@ public sealed record SchedulingInput(
     decimal MaxWeeklyHours,
     int MaxConsecutiveWorkDays,
     int MinRestHoursAfterNightShift,
-    decimal MinDailyWorkHours);
+    decimal MinDailyWorkHours,
+    IReadOnlyDictionary<(long EmployeeId, string DayType), IReadOnlyDictionary<string, int>>? PreferenceShiftScores = null,
+    IReadOnlyDictionary<(long EmployeeId, string DayType), IReadOnlyDictionary<long, int>>? PreferenceWsScores = null,
+    decimal PreferenceWeight = 0m);
 
 public sealed record RestDayAssignment(long EmployeeId, DateOnly WorkDate);
 
@@ -144,6 +147,49 @@ public sealed record SchedulingOutput(
     IReadOnlyList<DaySummaryOutput> DaySummaries,
     IReadOnlyList<ScheduleIssueOutput> Issues,
     DemandCoverageStats DemandCoverage);
+
+/// <summary>
+/// 偏好学习评分（feature/schedule-pref-learning）。
+/// 两个维度：班次偏好（店长习惯让员工上哪个班次）与工作站偏好（习惯在哪站）。
+/// 权重 ≤ 0（规则 preference_weight=0）或未加载偏好时返回 0 = 关闭。
+/// 作为分配排序的次级键：仅技能分相同/接近时贴合店长历史习惯，不改变硬约束。
+/// </summary>
+public static class PreferenceScoring
+{
+    public static int ForShift(
+        long employeeId,
+        ShiftTemplateInput shift,
+        string dayType,
+        SchedulingInput input)
+    {
+        if (input.PreferenceWeight <= 0m || input.PreferenceShiftScores is null)
+        {
+            return 0;
+        }
+
+        if (!input.PreferenceShiftScores.TryGetValue((employeeId, dayType), out var scores))
+        {
+            return 0;
+        }
+
+        return Math.Min(scores.GetValueOrDefault(shift.Code), 10);
+    }
+
+    public static int ForWorkstation(long employeeId, long workstationId, string dayType, SchedulingInput input)
+    {
+        if (input.PreferenceWeight <= 0m || input.PreferenceWsScores is null)
+        {
+            return 0;
+        }
+
+        if (!input.PreferenceWsScores.TryGetValue((employeeId, dayType), out var scores))
+        {
+            return 0;
+        }
+
+        return Math.Min(scores.GetValueOrDefault(workstationId), 10);
+    }
+}
 
 public static class SchedulingTimeHelper
 {

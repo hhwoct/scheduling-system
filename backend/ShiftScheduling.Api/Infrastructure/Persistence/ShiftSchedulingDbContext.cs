@@ -49,6 +49,10 @@ public sealed class ShiftSchedulingDbContext : DbContext
 
     public DbSet<AiConfigEntity> AiConfigs => Set<AiConfigEntity>();
 
+    public DbSet<EmployeePreferenceEntity> EmployeePreferences => Set<EmployeePreferenceEntity>();
+
+    public DbSet<PreferenceTrendEntity> PreferenceTrends => Set<PreferenceTrendEntity>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<StoreEntity>(entity =>
@@ -414,6 +418,38 @@ public sealed class ShiftSchedulingDbContext : DbContext
             entity.Property(x => x.Status).HasColumnName("status");
             entity.Property(x => x.CreatedAt).HasColumnName("created_at");
             entity.Property(x => x.UpdatedAt).HasColumnName("updated_at");
+        });
+
+        modelBuilder.Entity<EmployeePreferenceEntity>(entity =>
+        {
+            entity.ToTable("employee_preferences");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Id).HasColumnName("id");
+            entity.Property(x => x.StoreId).HasColumnName("store_id");
+            entity.Property(x => x.EmployeeId).HasColumnName("employee_id");
+            entity.Property(x => x.DayType).HasColumnName("day_type").HasMaxLength(20);
+            entity.Property(x => x.ShiftCode).HasColumnName("shift_code").HasMaxLength(20);
+            entity.Property(x => x.WorkstationId).HasColumnName("workstation_id");
+            entity.Property(x => x.Freq).HasColumnName("freq");
+            entity.Property(x => x.LastSeenAt).HasColumnName("last_seen_at");
+            entity.HasIndex(x => new { x.StoreId, x.EmployeeId, x.DayType, x.ShiftCode, x.WorkstationId }).IsUnique();
+        });
+
+        modelBuilder.Entity<PreferenceTrendEntity>(entity =>
+        {
+            entity.ToTable("preference_trends");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Id).HasColumnName("id");
+            entity.Property(x => x.StoreId).HasColumnName("store_id");
+            entity.Property(x => x.PlanId).HasColumnName("plan_id");
+            entity.Property(x => x.PlanName).HasColumnName("plan_name").HasMaxLength(200);
+            entity.Property(x => x.PublishedAt).HasColumnName("published_at");
+            entity.Property(x => x.AdherencePct).HasColumnName("adherence_pct");
+            entity.Property(x => x.CoveragePct).HasColumnName("coverage_pct");
+            entity.Property(x => x.SampleDays).HasColumnName("sample_days");
+            entity.Property(x => x.CreatedAt).HasColumnName("created_at");
+            entity.Property(x => x.UpdatedAt).HasColumnName("updated_at");
+            entity.HasIndex(x => new { x.StoreId, x.PlanId }).IsUnique();
         });
     }
 }
