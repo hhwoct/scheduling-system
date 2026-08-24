@@ -265,7 +265,7 @@ async function handleCommand(command) {
   font-size: 15px;
   font-weight: 600;
 }
-/* 书签样式按钮：常驻左边缘；收起时贴屏幕左缘，展开时贴 sidebar 右缘（内容区左缘） */
+/* 书签样式按钮：常驻左边缘；收起时贴屏幕左缘，展开时贴 sidebar 右边界内侧（translate 保证贴边） */
 .sidebar-tab {
   position: fixed;
   left: 0;
@@ -284,7 +284,7 @@ async function handleCommand(command) {
   cursor: pointer;
   font-size: 12px;
   box-shadow: 2px 0 8px rgba(0, 0, 0, 0.25);
-  transition: color 0.2s, background-color 0.2s, left 0.25s ease;
+  transition: color 0.2s, background-color 0.2s, left 0.25s ease, transform 0.25s ease;
   user-select: none;
 }
 .sidebar-tab span {
@@ -293,6 +293,7 @@ async function handleCommand(command) {
 }
 .sidebar-tab.expanded {
   left: 220px;
+  transform: translate(-100%, -50%);
 }
 .sidebar-tab:hover {
   color: #fff;
