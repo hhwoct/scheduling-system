@@ -15,4 +15,8 @@ public interface IPreferenceService
     Task<IReadOnlyList<PreferenceTopItem>> GetTopAsync(long storeId, int limit, CancellationToken cancellationToken);
 
     Task<IReadOnlyList<PreferenceTrendItem>> GetTrendsAsync(long storeId, CancellationToken cancellationToken);
+
+    /// <summary>需求联动分析：聚合计划内调整明细（SET_WORK/MOVE_SEGMENT），
+    /// 找出店长反复手动补人的 (日期类型, 时段, 工作站) 并给出需求配置建议。</summary>
+    Task<IReadOnlyList<DemandInsightItem>> GetDemandInsightsAsync(long planId, long storeId, CancellationToken cancellationToken);
 }

@@ -1233,6 +1233,18 @@ api.MapGet("/schedules/{planId:long}/adjustments", async (
     return ApiResponse.Ok(PagedResult<object>.Create(page, pageSize, total, items), "获取调整明细成功");
 }).RequireAuthorization("AdminOnly");
 
+// 需求联动建议：店长反复手动补人的时段 → 提示调整人数需求（P1 交互）
+api.MapGet("/schedules/{planId:long}/demand-insights", async (
+    long planId,
+    IPreferenceService preferenceService,
+    ICurrentUser currentUser,
+    CancellationToken ct) =>
+{
+    var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
+    var result = await preferenceService.GetDemandInsightsAsync(planId, storeId, ct);
+    return ApiResponse.Ok(result, "获取需求联动建议成功");
+}).RequireAuthorization("AdminOnly");
+
 // ============ 偏好学习（feature/schedule-pref-learning） ============
 api.MapGet("/preferences/stats", async (
     IPreferenceService preferenceService,

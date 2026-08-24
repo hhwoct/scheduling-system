@@ -31,3 +31,13 @@ public sealed record PreferenceTrendItem(
     decimal CoveragePct,
     int SampleDays,
     int Adjustments);
+
+/// <summary>需求联动建议：店长反复在某时段手动补人/移入 → 人数需求配置可能不足。</summary>
+public sealed record DemandInsightItem(
+    string DayType,
+    string TimeSlot,
+    string WorkstationCode,
+    int CurrentRequired,
+    int SuggestedRequired,
+    int SignalCount,
+    IReadOnlyList<string> Samples);

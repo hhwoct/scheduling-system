@@ -417,6 +417,127 @@ public sealed class PreferenceService : IPreferenceService
         }
     }
 
+    public async Task<IReadOnlyList<DemandInsightItem>> GetDemandInsightsAsync(long planId, long storeId, CancellationToken cancellationToken)
+    {
+        // 需求联动分析：店长反复在某时段「恢复上班」（SET_WORK）或「移入」（MOVE_SEGMENT）
+        // → 该 (日期类型, 时段, 工作站) 的需求配置可能不足。
+        const int SignalThreshold = 2;
+
+        var adjustments = await _dbContext.ScheduleAdjustments.AsNoTracking()
+            .Where(x => x.PlanId == planId && x.StoreId == storeId
+                && (x.ActionType == "SET_WORK" || x.ActionType == "MOVE_SEGMENT"))
+            .Select(x => new { x.Id, x.EmployeeId, x.WorkDate, x.TimeSlot, x.ActionType, x.AfterJson })
+            .ToListAsync(cancellationToken);
+
+        if (adjustments.Count == 0)
+        {
+            return Array.Empty<DemandInsightItem>();
+        }
+
+        var dayTypeByDate = await _dbContext.DateParameters.AsNoTracking()
+            .Where(x => x.StoreId == storeId)
+            .ToDictionaryAsync(x => x.WorkDate, x => x.DayType, cancellationToken);
+
+        // SET_WORK：从 results 反查该员工该时段所在工作站
+        var empDateSlots = adjustments
+            .Where(a => a.ActionType == "SET_WORK" && a.EmployeeId != null && a.WorkDate != null && a.TimeSlot != null)
+            .Select(a => new { a.EmployeeId, a.WorkDate, a.TimeSlot })
+            .ToList();
+
+        var wsByKey = new Dictionary<(long EmpId, DateOnly Date, TimeSpan Slot), long>();
+        if (empDateSlots.Count > 0)
+        {
+            var rows = await _dbContext.ScheduleResults.AsNoTracking()
+                .Where(x => x.PlanId == planId && x.StoreId == storeId && x.WorkstationId != null)
+                .Select(x => new { x.EmployeeId, x.WorkDate, x.TimeSlot, x.WorkstationId })
+                .ToListAsync(cancellationToken);
+            foreach (var r in rows)
+            {
+                wsByKey.TryAdd((r.EmployeeId, r.WorkDate, r.TimeSlot), r.WorkstationId!.Value);
+            }
+        }
+
+        // 聚合信号：(dayType, timeSlot, workstationId) → (count, samples)
+        var signals = new Dictionary<(string DayType, TimeSpan Slot, long WsId), (int Count, List<string> Samples)>();
+        void AddSignal(string dayType, TimeSpan slot, long wsId, string sample)
+        {
+            var key = (dayType, slot, wsId);
+            if (!signals.TryGetValue(key, out var cur))
+            {
+                cur = (0, new List<string>());
+                signals[key] = cur;
+            }
+            cur.Count++;
+            if (cur.Samples.Count < 3) cur.Samples.Add(sample);
+            signals[key] = cur;
+        }
+
+        foreach (var adj in adjustments)
+        {
+            var dayType = adj.WorkDate is null ? "WORKDAY" : dayTypeByDate.GetValueOrDefault(adj.WorkDate.Value, "WORKDAY");
+            if (adj.ActionType == "MOVE_SEGMENT")
+            {
+                var after = TryParseJson(adj.AfterJson);
+                if (after?.WorkstationId is not null && adj.TimeSlot is not null)
+                {
+                    AddSignal(dayType, adj.TimeSlot.Value, after.WorkstationId.Value,
+                        $"移入站{after.WorkstationId.Value} {adj.WorkDate:yyyy-MM-dd} {adj.TimeSlot.Value.ToString(@"hh\:mm")}");
+                }
+            }
+            else if (adj.ActionType == "SET_WORK" && adj.EmployeeId != null && adj.WorkDate != null && adj.TimeSlot != null)
+            {
+                if (wsByKey.TryGetValue((adj.EmployeeId.Value, adj.WorkDate.Value, adj.TimeSlot.Value), out var wsId))
+                {
+                    AddSignal(dayType, adj.TimeSlot.Value, wsId,
+                        $"恢复上班 员工{adj.EmployeeId.Value} {adj.WorkDate:yyyy-MM-dd} {adj.TimeSlot.Value.ToString(@"hh\:mm")}");
+                }
+            }
+        }
+
+        if (signals.Count == 0)
+        {
+            return Array.Empty<DemandInsightItem>();
+        }
+
+        // 与人数需求对比，生成建议（信号 ≥ 阈值）
+        var wsCodes = await _dbContext.Workstations.AsNoTracking()
+            .Where(x => x.StoreId == storeId)
+            .ToDictionaryAsync(x => x.Id, x => x.Code, cancellationToken);
+
+        var demands = await _dbContext.StaffingRequirements.AsNoTracking()
+            .Where(x => x.StoreId == storeId)
+            .Select(x => new { x.DayType, x.WorkstationId, x.TimeSlot, x.RequiredCount })
+            .ToListAsync(cancellationToken);
+        var demandByKey = demands
+            .GroupBy(d => (d.DayType, d.TimeSlot, d.WorkstationId))
+            .ToDictionary(g => g.Key, g => g.First().RequiredCount);
+
+        var insights = new List<DemandInsightItem>();
+        foreach (var (key, sig) in signals)
+        {
+            if (sig.Count < SignalThreshold)
+            {
+                continue;
+            }
+
+            var current = demandByKey.GetValueOrDefault((key.DayType, key.Slot, key.WsId), 0);
+            insights.Add(new DemandInsightItem(
+                key.DayType,
+                key.Slot.ToString(@"hh\:mm"),
+                wsCodes.GetValueOrDefault(key.WsId, key.WsId.ToString()),
+                current,
+                current + 1,
+                sig.Count,
+                sig.Samples));
+        }
+
+        return insights
+            .OrderByDescending(x => x.SignalCount)
+            .ThenBy(x => x.DayType)
+            .ThenBy(x => x.TimeSlot)
+            .ToList();
+    }
+
     private async Task<decimal> ComputeCoverageAsync(long storeId, CancellationToken cancellationToken)
     {
         // 覆盖率 = 有足够样本（freq ≥ 3）的全职员工比例（兼职按需排班、样本波动大，不计入）

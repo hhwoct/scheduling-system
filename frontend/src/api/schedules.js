@@ -75,4 +75,9 @@ export function getScheduleAdjustments(planId, page = 1, pageSize = 50) {
   return request.get(`/schedules/${planId}/adjustments`, { params: { page, pageSize } }).then(res => res.data)
 }
 
+// 需求联动建议（店长反复手动补人的时段）
+export function getDemandInsights(planId) {
+  return request.get(`/schedules/${planId}/demand-insights`).then(res => res.data)
+}
+
 export { getSchedules as fetchSchedules }

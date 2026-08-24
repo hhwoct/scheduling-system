@@ -136,6 +136,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { generateSchedule, getSchedules, publishSchedule, deleteSchedule, getScheduleIssues, getAdjustmentSummary, getScheduleAdjustments } from '../api/schedules'
 import { getStaffingRequirementPreview } from '../api/staffingRequirements'
+import { getDemandInsights } from '../api/schedules'
 
 function getToday() {
   const d = new Date()
@@ -364,8 +365,23 @@ async function handlePublish(row) {
     // 摘要获取失败不阻断发布（旧计划无快照时摘要为 0）
   }
 
+  // P1 交互：需求联动建议（店长反复手动补人的时段 → 提示调整人数需求）
+  let insightText = ''
   try {
-    await ElMessageBox.confirm('确定发布排班 ' + row.planName + ' 吗？' + summaryText, '提示', { type: 'warning' })
+    const insights = await getDemandInsights(row.id)
+    if (Array.isArray(insights) && insights.length > 0) {
+      insightText = '\n\n需求联动建议（该时段被多次手动补人，可能人数需求配置不足）：\n' +
+        insights.slice(0, 3).map(i =>
+          '  · ' + dayTypeLabel(i.dayType) + ' ' + i.timeSlot + ' ' + i.workstationCode +
+          '（补人 ' + i.signalCount + ' 次，当前需求 ' + i.currentRequired + '，建议 ' + i.suggestedRequired + '）'
+        ).join('\n')
+    }
+  } catch (e) {
+    // 建议获取失败不阻断发布
+  }
+
+  try {
+    await ElMessageBox.confirm('确定发布排班 ' + row.planName + ' 吗？' + summaryText + insightText, '提示', { type: 'warning' })
   } catch {
     return
   }
