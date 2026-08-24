@@ -1297,9 +1297,9 @@ onBeforeUnmount(() => {
   z-index: 3;
 }
 .gantt-corner {
-  width: 100px;
-  min-width: 100px;
-  padding: 8px 10px;
+  width: 80px;
+  min-width: 80px;
+  padding: 8px 6px;
   font-weight: 600;
   font-size: 12px;
   color: #606266;
@@ -1341,9 +1341,9 @@ onBeforeUnmount(() => {
   border-bottom: none;
 }
 .gantt-label {
-  width: 100px;
-  min-width: 100px;
-  padding: 0 10px;
+  width: 80px;
+  min-width: 80px;
+  padding: 0 6px;
   display: flex;
   align-items: center;
   font-size: 12px;
