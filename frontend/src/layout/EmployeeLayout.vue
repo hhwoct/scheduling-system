@@ -44,19 +44,14 @@
         <span>返回管理端</span>
       </div>
     </el-aside>
-    <!-- 书签样式按钮：sidebar 收起时悬浮在左边缘，点击展开 -->
-    <button v-if="collapsed" class="sidebar-tab" title="展开侧边栏" @click="collapsed = false">
-      <el-icon :size="16"><Expand /></el-icon>
-      <span>展开</span>
+    <!-- 书签样式按钮：常驻左边缘；展开时显示「收起」，收起时显示「展开」 -->
+    <button class="sidebar-tab" :class="{ expanded: !collapsed }" :title="collapsed ? '展开侧边栏' : '收起侧边栏'" @click="collapsed = !collapsed">
+      <el-icon :size="16"><Expand v-if="collapsed" /><Fold v-else /></el-icon>
+      <span>{{ collapsed ? '展开' : '收起' }}</span>
     </button>
     <el-container>
       <el-header class="emp-header">
         <div class="header-left">
-          <!-- 收起后 sidebar 消失，此处提供展开入口 -->
-          <el-button v-if="collapsed" class="collapse-btn" text size="small" title="展开侧边栏" @click="collapsed = false">
-            <el-icon><Expand /></el-icon>
-            <span>展开</span>
-          </el-button>
           <div class="header-title">{{ $route.meta.title }}</div>
         </div>
         <div style="display: flex; align-items: center; gap: 16px">
@@ -288,7 +283,7 @@ async function handleCommand(command) {
   color: #fff;
   background-color: rgba(255, 255, 255, 0.15);
 }
-/* 书签样式展开按钮：收起后悬浮于屏幕左边缘垂直居中 */
+/* 书签样式按钮：常驻左边缘；收起时贴屏幕左缘，展开时贴 sidebar 右缘（内容区左缘） */
 .sidebar-tab {
   position: fixed;
   left: 0;
@@ -307,12 +302,15 @@ async function handleCommand(command) {
   cursor: pointer;
   font-size: 12px;
   box-shadow: 2px 0 8px rgba(0, 0, 0, 0.25);
-  transition: color 0.2s, background-color 0.2s;
+  transition: color 0.2s, background-color 0.2s, left 0.25s ease;
   user-select: none;
 }
 .sidebar-tab span {
   writing-mode: vertical-lr;
   letter-spacing: 2px;
+}
+.sidebar-tab.expanded {
+  left: 220px;
 }
 .sidebar-tab:hover {
   color: #fff;
