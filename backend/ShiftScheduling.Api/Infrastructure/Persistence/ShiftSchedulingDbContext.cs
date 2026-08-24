@@ -53,6 +53,8 @@ public sealed class ShiftSchedulingDbContext : DbContext
 
     public DbSet<PreferenceTrendEntity> PreferenceTrends => Set<PreferenceTrendEntity>();
 
+    public DbSet<ScheduleAdjustmentEntity> ScheduleAdjustments => Set<ScheduleAdjustmentEntity>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<StoreEntity>(entity =>
@@ -452,6 +454,25 @@ public sealed class ShiftSchedulingDbContext : DbContext
             entity.Property(x => x.CreatedAt).HasColumnName("created_at");
             entity.Property(x => x.UpdatedAt).HasColumnName("updated_at");
             entity.HasIndex(x => new { x.StoreId, x.PlanId }).IsUnique();
+        });
+
+        modelBuilder.Entity<ScheduleAdjustmentEntity>(entity =>
+        {
+            entity.ToTable("schedule_adjustments");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Id).HasColumnName("id");
+            entity.Property(x => x.StoreId).HasColumnName("store_id");
+            entity.Property(x => x.PlanId).HasColumnName("plan_id");
+            entity.Property(x => x.EmployeeId).HasColumnName("employee_id");
+            entity.Property(x => x.WorkDate).HasColumnName("work_date");
+            entity.Property(x => x.TimeSlot).HasColumnName("time_slot");
+            entity.Property(x => x.ActionType).HasColumnName("action_type").HasMaxLength(30);
+            entity.Property(x => x.BeforeJson).HasColumnName("before_json").HasMaxLength(1000);
+            entity.Property(x => x.AfterJson).HasColumnName("after_json").HasMaxLength(1000);
+            entity.Property(x => x.OperatorUserId).HasColumnName("operator_user_id");
+            entity.Property(x => x.OperatorName).HasColumnName("operator_name").HasMaxLength(50);
+            entity.Property(x => x.CreatedAt).HasColumnName("created_at");
+            entity.HasIndex(x => new { x.PlanId, x.CreatedAt });
         });
     }
 }

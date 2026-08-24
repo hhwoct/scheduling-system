@@ -1179,6 +1179,54 @@ api.MapGet("/schedules/{planId:long}/adjustment-summary", async (
     }, "获取调整摘要成功");
 }).RequireAuthorization("AdminOnly");
 
+// 调整明细列表（店长修改全程记录，按计划查询，倒序分页）
+api.MapGet("/schedules/{planId:long}/adjustments", async (
+    long planId,
+    ICurrentUser currentUser,
+    ShiftSchedulingDbContext db,
+    int page = 1,
+    int pageSize = 50,
+    CancellationToken ct = default) =>
+{
+    var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
+    if (page < 1 || pageSize is < 1 or > 200)
+    {
+        throw new BusinessException("分页参数不正确", "INVALID_PAGINATION");
+    }
+
+    var planExists = await db.SchedulePlans.AsNoTracking()
+        .AnyAsync(x => x.Id == planId && x.StoreId == storeId, ct);
+    if (!planExists)
+    {
+        throw new NotFoundException("排班计划不存在");
+    }
+
+    var query = db.ScheduleAdjustments.AsNoTracking()
+        .Where(x => x.PlanId == planId && x.StoreId == storeId);
+
+    var total = await query.CountAsync(ct);
+    var items = await query
+        .OrderByDescending(x => x.CreatedAt)
+        .ThenByDescending(x => x.Id)
+        .Skip((page - 1) * pageSize)
+        .Take(pageSize)
+        .Select(x => new
+        {
+            x.Id,
+            x.ActionType,
+            x.WorkDate,
+            x.TimeSlot,
+            x.EmployeeId,
+            x.BeforeJson,
+            x.AfterJson,
+            x.OperatorName,
+            x.CreatedAt
+        })
+        .ToListAsync(ct);
+
+    return ApiResponse.Ok(PagedResult<object>.Create(page, pageSize, total, items), "获取调整明细成功");
+}).RequireAuthorization("AdminOnly");
+
 // ============ 偏好学习（feature/schedule-pref-learning） ============
 api.MapGet("/preferences/stats", async (
     IPreferenceService preferenceService,

@@ -70,4 +70,9 @@ export function getAdjustmentSummary(planId) {
   return request.get(`/schedules/${planId}/adjustment-summary`).then(res => res.data)
 }
 
+// 调整明细（店长修改全程记录）
+export function getScheduleAdjustments(planId, page = 1, pageSize = 50) {
+  return request.get(`/schedules/${planId}/adjustments`, { params: { page, pageSize } }).then(res => res.data)
+}
+
 export { getSchedules as fetchSchedules }

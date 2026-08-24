@@ -692,6 +692,24 @@ public sealed class ScheduleService : IScheduleService
             $"手动调整排班 {plan.PlanName}，共 {request.Items.Count} 项",
             DateTime.UtcNow);
 
+        // 调整明细（纠错信号）：逐项记录 before/after
+        foreach (var item in request.Items)
+        {
+            _dbContext.ScheduleAdjustments.Add(new ScheduleAdjustmentEntity
+            {
+                StoreId = storeId,
+                PlanId = planId,
+                EmployeeId = item.EmployeeId,
+                WorkDate = item.WorkDate,
+                ActionType = "ADJUST",
+                BeforeJson = null,
+                AfterJson = JsonSerializer.Serialize(item),
+                OperatorUserId = operatorUserId,
+                OperatorName = operatorName,
+                CreatedAt = DateTime.UtcNow
+            });
+        }
+
         await _dbContext.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
     }
@@ -904,6 +922,24 @@ public sealed class ScheduleService : IScheduleService
             $"手动设置员工休息/上班状态 {plan.PlanName}，共 {request.Items.Count} 项",
             DateTime.UtcNow);
 
+        // 调整明细（纠错信号）：记录每项 休息/上班 切换
+        foreach (var item in request.Items)
+        {
+            _dbContext.ScheduleAdjustments.Add(new ScheduleAdjustmentEntity
+            {
+                StoreId = storeId,
+                PlanId = planId,
+                EmployeeId = item.EmployeeId,
+                WorkDate = item.WorkDate,
+                ActionType = item.IsRestDay == 1 ? "SET_REST" : "SET_WORK",
+                BeforeJson = null,
+                AfterJson = JsonSerializer.Serialize(item),
+                OperatorUserId = operatorUserId,
+                OperatorName = operatorName,
+                CreatedAt = DateTime.UtcNow
+            });
+        }
+
         await _dbContext.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
     }
@@ -964,6 +1000,22 @@ public sealed class ScheduleService : IScheduleService
             }
 
             summary.UpdatedAt = DateTime.UtcNow;
+
+            // 调整明细（纠错信号）：记录每项 休息/上班 切换（与业务同事务）
+            _dbContext.ScheduleAdjustments.Add(new ScheduleAdjustmentEntity
+            {
+                StoreId = storeId,
+                PlanId = planId,
+                EmployeeId = item.EmployeeId,
+                WorkDate = item.WorkDate,
+                TimeSlot = item.TimeSlot,
+                ActionType = item.IsRest == 1 ? "SET_REST" : "SET_WORK",
+                BeforeJson = null,
+                AfterJson = JsonSerializer.Serialize(item),
+                OperatorUserId = operatorUserId,
+                OperatorName = operatorName,
+                CreatedAt = DateTime.UtcNow
+            });
         }
 
         await _dbContext.SaveChangesAsync(cancellationToken);
@@ -1115,6 +1167,22 @@ public sealed class ScheduleService : IScheduleService
             $"{request.ToWorkstationId}|{request.ToTimeSlot}",
             $"拖动移动员工 {request.EmployeeId} 的半小时（平移 {deltaMinutes} 分钟，工作站 {request.FromWorkstationId}→{request.ToWorkstationId}）",
             DateTime.UtcNow);
+
+        // 调整明细（纠错信号）：与业务同事务记录 before/after
+        _dbContext.ScheduleAdjustments.Add(new ScheduleAdjustmentEntity
+        {
+            StoreId = storeId,
+            PlanId = planId,
+            EmployeeId = request.EmployeeId,
+            WorkDate = request.WorkDate,
+            TimeSlot = fromSlot,
+            ActionType = "MOVE_SEGMENT",
+            BeforeJson = JsonSerializer.Serialize(new { WorkstationId = request.FromWorkstationId, TimeSlot = request.FromTimeSlot }),
+            AfterJson = JsonSerializer.Serialize(new { WorkstationId = request.ToWorkstationId, TimeSlot = request.ToTimeSlot }),
+            OperatorUserId = operatorUserId,
+            OperatorName = operatorName,
+            CreatedAt = DateTime.UtcNow
+        });
 
         // 审计实体须在 SaveChanges 之前加入，否则不会被持久化
         await _dbContext.SaveChangesAsync(cancellationToken);
