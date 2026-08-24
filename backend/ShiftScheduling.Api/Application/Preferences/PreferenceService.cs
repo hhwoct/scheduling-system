@@ -21,6 +21,9 @@ public sealed class PreferenceService : IPreferenceService
     private const int MinSamplesForCoverage = 3;
     private const string RuleKeyWeight = "preference_weight";
 
+    /// <summary>纠错信号权重：店长手动调整 1 次 = 认可样本的 2 倍（主动纠错比被动认可信号更强）。</summary>
+    private const int CorrectionWeight = 2;
+
     private readonly ShiftSchedulingDbContext _dbContext;
     private readonly IConfiguration _configuration;
 
@@ -115,6 +118,64 @@ public sealed class PreferenceService : IPreferenceService
                 var dayType = dayTypeByDate.GetValueOrDefault(a.WorkDate) ?? "WORKDAY";
                 var wsKey = (a.EmployeeId, dayType, (string?)null, a.WorkstationId);
                 agg[wsKey] = agg.GetValueOrDefault(wsKey) + 1;
+            }
+
+            // ===== 纠错方向学习（增强）：调整明细 =====
+            // 店长的每次手动调整都是主动纠错信号，权重 = 认可样本的 2 倍。
+            // MOVE_SEGMENT → 目标工作站偏好；SET_REST → 休息偏好（兼职排除）；
+            // ADJUST → 班次/工作站偏好；SET_WORK（恢复上班）为需求信号，不学。
+            var corrections = await _dbContext.ScheduleAdjustments.AsNoTracking()
+                .Where(x => x.PlanId == plan.Id && x.StoreId == storeId)
+                .Select(x => new { x.EmployeeId, x.WorkDate, x.ActionType, x.BeforeJson, x.AfterJson })
+                .ToListAsync(cancellationToken);
+
+            foreach (var adj in corrections)
+            {
+                var dayType = dayTypeByDate.GetValueOrDefault(adj.WorkDate ?? default) ?? "WORKDAY";
+                if (adj.WorkDate is null || adj.EmployeeId is null)
+                {
+                    continue;
+                }
+
+                switch (adj.ActionType)
+                {
+                    case "MOVE_SEGMENT":
+                        {
+                            var after = TryParseJson(adj.AfterJson);
+                            if (after?.WorkstationId is not null)
+                            {
+                                var key = (adj.EmployeeId.Value, dayType, (string?)null, (long?)after.WorkstationId);
+                                agg[key] = agg.GetValueOrDefault(key) + CorrectionWeight;
+                            }
+                            break;
+                        }
+                    case "SET_REST":
+                        {
+                            // 兼职休息纠错同为伪信号（空闲日），排除
+                            if (!partTimeEmployeeIds.Contains(adj.EmployeeId.Value))
+                            {
+                                var key = (adj.EmployeeId.Value, dayType, (string?)null, (long?)null);
+                                agg[key] = agg.GetValueOrDefault(key) + CorrectionWeight;
+                            }
+                            break;
+                        }
+                    case "ADJUST":
+                        {
+                            var after = TryParseJson(adj.AfterJson);
+                            if (after?.ShiftTemplateId is not null &&
+                                shiftCodes.TryGetValue(after.ShiftTemplateId.Value, out var code))
+                            {
+                                var shiftKey = (adj.EmployeeId.Value, dayType, code, (long?)null);
+                                agg[shiftKey] = agg.GetValueOrDefault(shiftKey) + CorrectionWeight;
+                            }
+                            if (after?.WorkstationId is not null)
+                            {
+                                var wsKey = (adj.EmployeeId.Value, dayType, (string?)null, (long?)after.WorkstationId);
+                                agg[wsKey] = agg.GetValueOrDefault(wsKey) + CorrectionWeight;
+                            }
+                            break;
+                        }
+                }
             }
 
             sampleDays += summaries.Count;
@@ -323,6 +384,38 @@ public sealed class PreferenceService : IPreferenceService
     }
 
     private sealed record SnapshotRow(long EmployeeId, DateOnly WorkDate, int IsRestDay, long? ShiftId);
+
+    /// <summary>调整明细 JSON 解析（MOVE_SEGMENT 的 after 含 WorkstationId；ADJUST 的 after 含 ShiftTemplateId/WorkstationId）。</summary>
+    private sealed record AdjustmentPayload(long? WorkstationId, long? ShiftTemplateId);
+
+    private static AdjustmentPayload? TryParseJson(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            long? ws = null;
+            long? shift = null;
+            if (root.TryGetProperty("WorkstationId", out var wsEl) && wsEl.ValueKind == System.Text.Json.JsonValueKind.Number)
+            {
+                ws = wsEl.GetInt64();
+            }
+            if (root.TryGetProperty("ShiftTemplateId", out var shiftEl) && shiftEl.ValueKind == System.Text.Json.JsonValueKind.Number)
+            {
+                shift = shiftEl.GetInt64();
+            }
+            return new AdjustmentPayload(ws, shift);
+        }
+        catch
+        {
+            return null;
+        }
+    }
 
     private async Task<decimal> ComputeCoverageAsync(long storeId, CancellationToken cancellationToken)
     {

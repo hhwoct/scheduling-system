@@ -196,4 +196,65 @@ public sealed class PreferenceServiceTests
         var stats = await service.GetStatsAsync(1, CancellationToken.None);
         Assert.Equal(0m, stats.CoveragePct);
     }
+
+    [Fact]
+    public async Task RebuildAsync_AppliesCorrectionWeightFromAdjustments()
+    {
+        // 纠错方向学习：店长调整（MOVE_SEGMENT）是主动纠错信号，权重 = 认可样本的 2 倍。
+        var db = _factory.CreateDbContext();
+
+        db.Stores.Add(new StoreEntity { Id = 1, Code = "KM", Name = "门店", Status = 1, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow });
+        db.Workstations.Add(new WorkstationEntity { Id = 1, StoreId = 1, Code = "SVC", Name = "服务岗", Status = 1, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow });
+        db.Workstations.Add(new WorkstationEntity { Id = 2, StoreId = 1, Code = "KIT", Name = "厨房岗", Status = 1, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow });
+        db.Employees.Add(new EmployeeEntity { Id = 1, StoreId = 1, EmployeeNo = "E001", Name = "甲", Department = "楼面", Status = 1, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow });
+        db.ShiftTemplates.Add(new ShiftTemplateEntity { Id = 1, StoreId = 1, Code = "S4", Name = "楼面A班", Status = 1, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow });
+        await db.SaveChangesAsync();
+
+        db.SchedulePlans.Add(new SchedulePlanEntity
+        {
+            Id = 1, StoreId = 1, PlanName = "第一期", StartDate = new DateOnly(2026, 9, 1), EndDate = new DateOnly(2026, 9, 7),
+            Status = "PUBLISHED", PublishedAt = new DateTime(2026, 9, 8, 0, 0, 0, DateTimeKind.Utc),
+            CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
+        });
+        db.SchedulePlans.Add(new SchedulePlanEntity
+        {
+            Id = 2, StoreId = 1, PlanName = "第二期", StartDate = new DateOnly(2026, 9, 8), EndDate = new DateOnly(2026, 9, 14),
+            Status = "PUBLISHED", PublishedAt = new DateTime(2026, 9, 15, 0, 0, 0, DateTimeKind.Utc),
+            CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        // 学习期（P1）：E001 上 S4 一天（认可样本 freq=1）
+        db.ScheduleSummaries.Add(new ScheduleSummaryEntity
+        {
+            StoreId = 1, PlanId = 1, EmployeeId = 1, WorkDate = new DateOnly(2026, 9, 1),
+            IsRestDay = 0, ShiftTemplateId = 1, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
+        });
+
+        // 学习期（P1）：店长调整——把 E001 移到厨房岗（MOVE_SEGMENT，纠错信号）
+        db.ScheduleAdjustments.Add(new ScheduleAdjustmentEntity
+        {
+            StoreId = 1, PlanId = 1, EmployeeId = 1, WorkDate = new DateOnly(2026, 9, 1),
+            TimeSlot = new TimeSpan(19, 0, 0), ActionType = "MOVE_SEGMENT",
+            BeforeJson = "{\"WorkstationId\":1,\"TimeSlot\":\"18:30\"}",
+            AfterJson = "{\"WorkstationId\":2,\"TimeSlot\":\"19:00\"}",
+            OperatorName = "店长", CreatedAt = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var service = CreateService();
+        await service.RebuildAsync(1, CancellationToken.None);
+
+        // 认可样本 freq=1（S4 班次）
+        var shiftSample = await db.EmployeePreferences.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.EmployeeId == 1 && x.ShiftCode == "S4");
+        Assert.NotNull(shiftSample);
+        Assert.Equal(1, shiftSample.Freq);
+
+        // 纠错信号 freq=2（厨房岗，2 倍权重）
+        var wsSample = await db.EmployeePreferences.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.EmployeeId == 1 && x.WorkstationId == 2);
+        Assert.NotNull(wsSample);
+        Assert.Equal(2, wsSample.Freq);
+    }
 }
