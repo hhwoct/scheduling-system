@@ -19,7 +19,7 @@ public sealed class PreferenceService : IPreferenceService
 {
     private const int MaxLearningPeriods = 12;
     private const int MinSamplesForCoverage = 3;
-    private const string RuleKeyWeight = "preference_weight";
+    private const string RuleKeyWeight = "preference_learning_weight";
 
     /// <summary>纠错信号权重：店长手动调整 1 次 = 认可样本的 2 倍（主动纠错比被动认可信号更强）。</summary>
     private const int CorrectionWeight = 2;

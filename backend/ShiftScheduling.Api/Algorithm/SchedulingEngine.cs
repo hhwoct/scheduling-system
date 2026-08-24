@@ -305,7 +305,7 @@ public sealed class SchedulingEngine
         // 偏好学习（feature/schedule-pref-learning）：软排序因子。
         // 权重 0 = 关闭；>0 时在技能分排序中作为次级键（技能分相同/接近时贴合店长历史习惯）。
         // 班次偏好：shift_code 维度；工作站偏好：workstation 维度；休息样本两列皆 NULL 不参与分配排序。
-        var preferenceWeight = GetRuleDecimal(rules, "preference_weight", 0m);
+        var preferenceWeight = GetRuleDecimal(rules, "preference_learning_weight", 0m);
         var preferenceRows = preferenceWeight > 0m
             ? await _dbContext.EmployeePreferences.AsNoTracking()
                 .Where(x => x.StoreId == storeId && x.Freq > 0)
