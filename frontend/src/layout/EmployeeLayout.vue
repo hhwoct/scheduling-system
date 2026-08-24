@@ -52,26 +52,6 @@
           <div class="header-title">{{ $route.meta.title }}</div>
         </div>
         <div style="display: flex; align-items: center; gap: 16px">
-          <!-- 管理员预览员工选择器 -->
-          <el-select
-            v-if="authStore.role !== 'EMPLOYEE'"
-            class="preview-select"
-            :model-value="previewEmployeeNo"
-            placeholder="选择预览员工"
-            clearable
-            filterable
-            size="small"
-            style="width: 180px"
-            @update:model-value="onPreviewChange"
-            @clear="onPreviewClear"
-          >
-            <el-option
-              v-for="emp in employeeList"
-              :key="emp.employeeNo"
-              :label="`${emp.employeeNo} ${emp.name}`"
-              :value="emp.employeeNo"
-            />
-          </el-select>
           <el-badge v-if="authStore.role === 'EMPLOYEE'" :value="unreadCount" :hidden="unreadCount === 0" :max="99" style="cursor: pointer" @click="$router.push('/employee/notifications')">
             <el-icon :size="20"><Bell /></el-icon>
           </el-badge>
@@ -102,9 +82,6 @@ import { ElMessageBox } from 'element-plus'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { getUnreadCount } from '../api/notifications'
-import { getEmployees } from '../api/employees'
-
-const PREVIEW_KEY = 'shift_preview_employee_no'
 
 const router = useRouter()
 const route = useRoute()
@@ -113,86 +90,22 @@ const unreadCount = ref(0)
 // 侧边栏收起状态：与员工端独立持久化，刷新后保持
 const collapsed = ref(localStorage.getItem('emp-sidebar-collapsed') === '1')
 watch(collapsed, v => localStorage.setItem('emp-sidebar-collapsed', v ? '1' : '0'))
-const employeeList = ref([])
-const previewEmployeeNo = ref(route.query.employeeNo || localStorage.getItem(PREVIEW_KEY) || '')
 let refreshTimer = null
 
-// 管理员加载员工列表用于选择
-async function loadEmployeeList() {
-  const role = authStore.role || localStorage.getItem('shift_role') || ''
-  if (role === 'EMPLOYEE') return
-  try {
-    // 后端单页上限 100，逐页拉取全量员工供预览选择
-    const pageSize = 100
-    let page = 1
-    let all = []
-    let total = 0
-    do {
-      const res = await getEmployees({ page, pageSize, status: 1 })
-      const items = res.items || []
-      all = all.concat(items)
-      total = res.total || 0
-      page++
-      // total>0 但本页无数据时终止，避免死循环
-      if (items.length === 0) break
-    } while (all.length < total)
-    employeeList.value = all
-
-    if (employeeList.value.length === 0) return
-
-    // 校验当前预览员工是否存在于列表；无效（含空）回退第一个员工并同步 localStorage/query
-    const exists = employeeList.value.some(e => e.employeeNo === previewEmployeeNo.value)
-    if (!exists) {
-      const first = employeeList.value[0]
-      previewEmployeeNo.value = first.employeeNo
-      localStorage.setItem(PREVIEW_KEY, first.employeeNo)
-      router.replace({ path: route.path, query: { employeeNo: first.employeeNo } })
-    }
-  } catch (e) {
-    console.error('加载员工列表失败', e)
-  }
-}
-
-// 切换预览员工：保存到 localStorage 并跳转
-function onPreviewChange(val) {
-  previewEmployeeNo.value = val || ''
-  if (val) localStorage.setItem(PREVIEW_KEY, val)
-  else localStorage.removeItem(PREVIEW_KEY)
-  const query = val ? { employeeNo: val } : {}
-  router.push({ path: route.path, query })
-}
-
-function onPreviewClear() {
-  previewEmployeeNo.value = ''
-  localStorage.removeItem(PREVIEW_KEY)
-  router.push({ path: route.path, query: {} })
-}
-
-// 菜单切换时保留预览员工参数
+// 菜单切换（预览员工参数由「我的班表」页面自行管理）
 function handleMenuSelect(index) {
-  const query = previewEmployeeNo.value ? { employeeNo: previewEmployeeNo.value } : {}
-  router.push({ path: index, query })
+  router.push(index)
 }
 
 // P3-15: 未读计数定时刷新
 async function refreshUnreadCount() {
   try {
-    const targetNo = previewEmployeeNo.value || route.query.employeeNo || localStorage.getItem(PREVIEW_KEY) || undefined
-    const data = await getUnreadCount(targetNo || undefined)
+    const data = await getUnreadCount(undefined)
     unreadCount.value = data?.count ?? 0
   } catch (e) {
     console.error('获取未读通知数失败', e)
   }
 }
-
-// 路由参数变化时同步
-watch(() => route.query.employeeNo, (val) => {
-  if (val) {
-    previewEmployeeNo.value = val
-    localStorage.setItem(PREVIEW_KEY, val)
-  }
-  refreshUnreadCount()
-})
 
 onMounted(async () => {
   const role = authStore.role || localStorage.getItem('shift_role') || ''
@@ -200,12 +113,10 @@ onMounted(async () => {
   if (role !== 'EMPLOYEE' && !['/employee/schedule'].includes(route.path)) {
     router.replace({ path: '/employee/schedule', query: route.query })
   }
-  loadEmployeeList()
   if (authStore.isAuthenticated && !authStore.user) {
     try {
       // P3-26: 用户加载失败跳转登录
       await authStore.fetchCurrentUser()
-      loadEmployeeList()
     } catch (e) {
       console.error('获取当前用户失败', e)
       // 仅会话失效（401）才登出并跳登录；网络错误保留会话

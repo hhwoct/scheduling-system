@@ -5,6 +5,24 @@
         <div style="display: flex; align-items: center; justify-content: space-between">
           <span>我的班表</span>
           <div>
+            <!-- 管理员/店长预览：选择员工（放时间选择器旁边） -->
+            <el-select
+              v-if="authStore.role && authStore.role !== 'EMPLOYEE'"
+              :model-value="employeeNo || undefined"
+              placeholder="选择预览员工"
+              clearable
+              filterable
+              size="small"
+              style="width: 160px; margin-right: 8px"
+              @update:model-value="onPreviewChange"
+            >
+              <el-option
+                v-for="emp in employeeList"
+                :key="emp.employeeNo"
+                :label="`${emp.employeeNo} ${emp.name}`"
+                :value="emp.employeeNo"
+              />
+            </el-select>
             <el-date-picker
               v-model="month"
               type="month"
@@ -87,16 +105,21 @@ function formatWorkHours(hours) {
   return num.toFixed(1)
 }
 import { onMounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
+import { useAuthStore } from '../stores/auth'
 import { getMySchedule } from '../api/employee'
+import { getEmployees } from '../api/employees'
 
 const route = useRoute()
+const router = useRouter()
+const authStore = useAuthStore()
 const employeeNo = ref(Array.isArray(route.query.employeeNo) ? route.query.employeeNo[0] : (route.query.employeeNo || localStorage.getItem('shift_preview_employee_no') || ''))
 const loading = ref(false)
 const employee = ref(null)
 const plans = ref([])
 const covers = ref([])
 const errorMsg = ref('')
+const employeeList = ref([])
 const now = new Date()
 const month = ref(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`)
 
@@ -113,6 +136,37 @@ function fmtTime(t) {
     }
   } catch {}
   return '--'
+}
+
+// 管理员/店长加载员工列表（分页拉全量）供预览选择
+async function loadEmployees() {
+  const role = authStore.role || localStorage.getItem('shift_role') || ''
+  if (role === 'EMPLOYEE') return
+  try {
+    const pageSize = 100
+    let page = 1
+    let all = []
+    let total = 0
+    do {
+      const res = await getEmployees({ page, pageSize, status: 1 })
+      const items = res.items || []
+      all = all.concat(items)
+      total = res.total || 0
+      page++
+      if (items.length === 0) break
+    } while (all.length < total)
+    employeeList.value = all
+  } catch (e) {
+    console.error('加载员工列表失败', e)
+  }
+}
+
+// 切换预览员工：保存到 localStorage 并更新路由（watch 路由自动重载）
+function onPreviewChange(val) {
+  const v = val || ''
+  if (v) localStorage.setItem('shift_preview_employee_no', v)
+  else localStorage.removeItem('shift_preview_employee_no')
+  router.push({ path: route.path, query: v ? { employeeNo: v } : {} })
 }
 
 async function loadData() {
@@ -148,7 +202,10 @@ watch(month, () => {
   loadData()
 })
 
-onMounted(loadData)
+onMounted(() => {
+  loadEmployees()
+  loadData()
+})
 </script>
 
 <style scoped>
