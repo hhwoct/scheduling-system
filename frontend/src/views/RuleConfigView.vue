@@ -4,9 +4,9 @@
       <el-table :data="list" v-loading="loading" border stripe>
         <el-table-column prop="ruleName" label="规则名称" width="260" show-overflow-tooltip />
         <el-table-column prop="ruleKey" label="规则 Key" width="320" show-overflow-tooltip />
-        <el-table-column label="值" width="60">
+        <el-table-column label="值" width="75">
           <template #default="{ row }">
-            <el-input v-model="row.ruleValue" size="small" style="width: 36px" :disabled="!isSystemAdmin" />
+            <el-input v-model="row.ruleValue" size="small" style="width: 50px" :disabled="!isSystemAdmin" />
           </template>
         </el-table-column>
         <el-table-column prop="remark" label="说明" />
