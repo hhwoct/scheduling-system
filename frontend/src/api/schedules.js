@@ -65,4 +65,9 @@ export function publishSchedule(planId, force = false) {
   return request.post(API_ROUTES.SCHEDULES.PUBLISH(planId), null, { params: { force } }).then(res => res.data)
 }
 
+// 发布前调整摘要（P0 交互）：对比生成快照返回改休/换班统计
+export function getAdjustmentSummary(planId) {
+  return request.get(`/schedules/${planId}/adjustment-summary`).then(res => res.data)
+}
+
 export { getSchedules as fetchSchedules }

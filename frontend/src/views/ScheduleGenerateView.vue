@@ -99,7 +99,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { generateSchedule, getSchedules, publishSchedule, deleteSchedule, getScheduleIssues } from '../api/schedules'
+import { generateSchedule, getSchedules, publishSchedule, deleteSchedule, getScheduleIssues, getAdjustmentSummary } from '../api/schedules'
 import { getStaffingRequirementPreview } from '../api/staffingRequirements'
 
 function getToday() {
@@ -252,8 +252,19 @@ async function loadPlans(current = 1) {
 }
 
 async function handlePublish(row) {
+  // P0 交互：发布前拉取调整摘要（生成快照 vs 当前），让店长知道系统将学习什么
+  let summaryText = ''
   try {
-    await ElMessageBox.confirm('确定发布排班 ' + row.planName + ' 吗？', '提示', { type: 'warning' })
+    const summary = await getAdjustmentSummary(row.id)
+    if (summary?.totalAdjustments > 0) {
+      summaryText = '\n\n本期手动调整 ' + summary.totalAdjustments + ' 处（改休 ' + summary.restChanges + ' / 换班 ' + summary.shiftChanges + '），发布后系统将学习这些调整。'
+    }
+  } catch (e) {
+    // 摘要获取失败不阻断发布（旧计划无快照时摘要为 0）
+  }
+
+  try {
+    await ElMessageBox.confirm('确定发布排班 ' + row.planName + ' 吗？' + summaryText, '提示', { type: 'warning' })
   } catch {
     return
   }

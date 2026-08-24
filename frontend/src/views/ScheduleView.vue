@@ -210,6 +210,14 @@
         <el-button type="primary" :loading="slotStatusDialog.saving" @click="submitSlotStatus">确定</el-button>
       </template>
     </el-dialog>
+
+    <!-- P0 交互：调整撤销条（5 秒窗口，误操作可回退） -->
+    <transition name="el-fade-in">
+      <div v-if="undoBar.visible" class="undo-bar">
+        <span>{{ undoBar.text }}</span>
+        <el-button size="small" type="primary" link @click="handleUndo">撤销</el-button>
+      </div>
+    </transition>
   </div>
 </template>
 
@@ -483,7 +491,7 @@ async function onDragEnd() {
   }
 
   try {
-    await moveScheduleSegment({
+    const movePayload = {
       planId: planId.value,
       employeeId: dragMove.empId,
       workDate: selectedDate.value || dayDate.value,
@@ -491,11 +499,60 @@ async function onDragEnd() {
       fromTimeSlot: fromSlotKey,
       toTimeSlot: toSlotKey,
       toWorkstationId: dragMove.targetWorkstationId
-    })
+    }
+    await moveScheduleSegment(movePayload)
     ElMessage.success('已移动 ' + dragMove.empName + ' 的半小时 → ' + dragMove.targetWs + ' ' + toSlotKey)
+    pushUndo({ type: 'move', text: '已移动 ' + dragMove.empName + ' → ' + dragMove.targetWs + ' ' + toSlotKey, payload: movePayload })
     await loadDay(selectedDate.value || dayDate.value)
   } catch (err) {
     // request 拦截器已提示错误
+  }
+}
+
+// ===== P0 交互：调整撤销栈（误操作可回退，避免污染偏好学习信号） =====
+const undoStack = ref([])
+const undoBar = reactive({ visible: false, text: '' })
+let undoBarTimer = null
+
+function pushUndo(entry) {
+  undoStack.value.push(entry)
+  undoBar.text = entry.text
+  undoBar.visible = true
+  clearTimeout(undoBarTimer)
+  undoBarTimer = setTimeout(() => { undoBar.visible = false }, 5000)
+}
+
+async function handleUndo() {
+  const entry = undoStack.value.pop()
+  if (!entry) return
+  undoBar.visible = false
+  try {
+    if (entry.type === 'move') {
+      // 反向移动：from/to 互换
+      await moveScheduleSegment({
+        planId: planId.value,
+        employeeId: entry.payload.employeeId,
+        workDate: entry.payload.workDate,
+        fromWorkstationId: entry.payload.toWorkstationId,
+        fromTimeSlot: entry.payload.toTimeSlot,
+        toTimeSlot: entry.payload.fromTimeSlot,
+        toWorkstationId: entry.payload.fromWorkstationId
+      })
+    } else if (entry.type === 'slot') {
+      // 反向恢复 休息/上班
+      await setSlotStatus(planId.value, {
+        items: [{
+          employeeId: entry.payload.employeeId,
+          workDate: entry.payload.workDate,
+          timeSlot: entry.payload.timeSlot,
+          isRest: entry.payload.isRest === 1 ? 0 : 1
+        }]
+      })
+    }
+    ElMessage.success('已撤销')
+    await loadDay(selectedDate.value || dayDate.value)
+  } catch {
+    // 撤销失败：拦截器已提示，保留后续撤销机会
   }
 }
 
@@ -554,6 +611,11 @@ async function submitSlotStatus() {
     ElMessage.success(isRest
       ? `已改为休息（${d.timeSlot} - ${d.timeSlotEnd}）`
       : `已恢复上班（${d.timeSlot} - ${d.timeSlotEnd}）`)
+    pushUndo({
+      type: 'slot',
+      text: (isRest ? '已改为休息 ' : '已恢复上班 ') + d.employeeName + ' ' + d.timeSlot,
+      payload: { employeeId: d.employeeId, workDate: d.date, timeSlot: d.timeSlot + ':00', isRest: isRest ? 1 : 0 }
+    })
     d.visible = false
     // 刷新日明细与月视图（休息计数）
     const date = selectedDate.value || dayDate.value
@@ -1122,4 +1184,21 @@ onBeforeUnmount(() => {
 .parttime-day-col.active { background: #67c23a; }
 .parttime-legend { margin-top: 8px; display: flex; align-items: center; gap: 6px; font-size: 12px; color: #606266; }
 .parttime-legend-box { background: #67c23a; }
+/* P0 交互：调整撤销条 */
+.undo-bar {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 3000;
+  background: #303133;
+  color: #fff;
+  border-radius: 6px;
+  padding: 8px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
 </style>

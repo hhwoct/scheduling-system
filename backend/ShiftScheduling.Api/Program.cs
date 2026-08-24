@@ -1108,6 +1108,77 @@ api.MapPost("/schedules/{planId:long}/publish", async (
     return ApiResponse.Ok(true, "排班发布成功");
 }).RequireAuthorization("AdminOnly");
 
+// 发布前调整摘要：对比生成快照（generated_summary_snapshot）与当前日汇总，
+// 返回「员工×日期」维度的调整分类统计（改休 / 换班），供发布确认框展示（P0 交互）。
+api.MapGet("/schedules/{planId:long}/adjustment-summary", async (
+    long planId,
+    ICurrentUser currentUser,
+    ShiftSchedulingDbContext db,
+    CancellationToken ct) =>
+{
+    var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
+
+    var plan = await db.SchedulePlans.AsNoTracking()
+        .FirstOrDefaultAsync(x => x.Id == planId && x.StoreId == storeId, ct)
+        ?? throw new NotFoundException("排班计划不存在");
+
+    var restChanges = 0;
+    var shiftChanges = 0;
+    var hasSnapshot = !string.IsNullOrWhiteSpace(plan.GeneratedSummarySnapshot);
+
+    if (hasSnapshot)
+    {
+        List<SummarySnapshotRow>? snapshot = null;
+        try
+        {
+            snapshot = System.Text.Json.JsonSerializer.Deserialize<List<SummarySnapshotRow>>(plan.GeneratedSummarySnapshot!);
+        }
+        catch
+        {
+            snapshot = null;
+        }
+
+        if (snapshot is not null && snapshot.Count > 0)
+        {
+            var snapshotMap = snapshot
+                .GroupBy(s => (s.EmployeeId, s.WorkDate))
+                .ToDictionary(g => g.Key, g => g.First());
+
+            var finalRows = await db.ScheduleSummaries.AsNoTracking()
+                .Where(x => x.PlanId == planId && x.StoreId == storeId)
+                .Select(x => new { x.EmployeeId, x.WorkDate, x.IsRestDay, x.ShiftTemplateId })
+                .ToListAsync(ct);
+
+            foreach (var f in finalRows)
+            {
+                if (!snapshotMap.TryGetValue((f.EmployeeId, f.WorkDate), out var s))
+                {
+                    continue;
+                }
+
+                if ((f.IsRestDay == 1) != (s.IsRestDay == 1))
+                {
+                    restChanges++;
+                }
+                else if (f.IsRestDay == 0 && (f.ShiftTemplateId ?? 0) != (s.ShiftId ?? 0))
+                {
+                    shiftChanges++;
+                }
+            }
+        }
+    }
+
+    return ApiResponse.Ok(new
+    {
+        planId,
+        planName = plan.PlanName,
+        totalAdjustments = restChanges + shiftChanges,
+        restChanges,
+        shiftChanges,
+        hasSnapshot
+    }, "获取调整摘要成功");
+}).RequireAuthorization("AdminOnly");
+
 // ============ 偏好学习（feature/schedule-pref-learning） ============
 api.MapGet("/preferences/stats", async (
     IPreferenceService preferenceService,
@@ -2338,5 +2409,8 @@ public sealed record LeaveReviewRequest(bool Approved, string? Remark);
 public sealed record ShiftSwapCreate(long PlanId, long TargetEmployeeId, DateOnly SwapDate, string? Reason);
 public sealed record ShiftSwapCandidatesRequest(long PlanId, string SwapDate);
 public sealed record ShiftSwapReviewRequest(bool Approved, string? Remark);
+
+/// <summary>生成快照行（与 PreferenceService.ComputeAdjustmentsAsync 口径一致）。</summary>
+internal sealed record SummarySnapshotRow(long EmployeeId, DateOnly WorkDate, int IsRestDay, long? ShiftId);
 
 public partial class Program;
