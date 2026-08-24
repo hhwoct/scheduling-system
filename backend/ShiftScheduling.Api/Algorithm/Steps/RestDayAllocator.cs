@@ -30,14 +30,18 @@ public sealed class RestDayAllocator
             return assignments;
         }
 
+        // 兼职（IsParttime=1）按需排班、无固定休息概念：不参与休息日分配
+        // （其空闲日由排班结果自然留空，而非被分配「休息」）
+        var schedulableEmployees = input.Employees.Where(e => e.IsParttime == 0).ToList();
+
         // 全部日期作为候选（含周五周六，行政可休）
         var allDays = dates.OrderBy(d => d.WorkDate).ToList();
 
-        // 总休息日 = 员工数 × 每人休息天数
-        var totalRestDays = input.Employees.Count * restDaysTarget;
+        // 总休息日 = 员工数 × 每人休息天数（仅全职）
+        var totalRestDays = schedulableEmployees.Count * restDaysTarget;
 
         // 行政员工数（决定高峰日配额上限）
-        var adminCount = input.Employees.Count(e => CanRestOnPeakDay(e.Department));
+        var adminCount = schedulableEmployees.Count(e => CanRestOnPeakDay(e.Department));
 
         // 每天配额：平均分配，余数给靠前的天；周五/周六为高峰日，配额不超过行政人数
         var baseQuota = totalRestDays / allDays.Count;
@@ -76,7 +80,7 @@ public sealed class RestDayAllocator
             var restrictedDepts = restedDeptsByDate[day.WorkDate];
 
             // 候选：未达到休息天数上限；高峰日仅行政员工可休；当天每部门不超1人
-            var orderedEmployees = input.Employees
+            var orderedEmployees = schedulableEmployees
                 .Where(e => restDayCounts.GetValueOrDefault(e.Id, 0) < restDaysTarget)
                 .Where(e => !isPeakDay || CanRestOnPeakDay(e.Department))
                 .OrderBy(e => restDayCounts.GetValueOrDefault(e.Id, 0))
@@ -106,7 +110,7 @@ public sealed class RestDayAllocator
             .GroupBy(x => x.WorkDate)
             .ToDictionary(g => g.Key, g => g.Count());
 
-        foreach (var employee in input.Employees.Where(e => restDayCounts.GetValueOrDefault(e.Id, 0) < restDaysTarget))
+        foreach (var employee in schedulableEmployees.Where(e => restDayCounts.GetValueOrDefault(e.Id, 0) < restDaysTarget))
         {
             var isAdministrative = IsAdministrativeDepartment(employee.Department);
 
@@ -139,7 +143,7 @@ public sealed class RestDayAllocator
                 .GroupBy(x => x.EmployeeId)
                 .ToDictionary(g => g.Key, g => g.Select(x => x.WorkDate).ToHashSet());
 
-            foreach (var employee in input.Employees)
+            foreach (var employee in schedulableEmployees)
             {
                 if (!restSetByEmp.TryGetValue(employee.Id, out var restSet))
                 {

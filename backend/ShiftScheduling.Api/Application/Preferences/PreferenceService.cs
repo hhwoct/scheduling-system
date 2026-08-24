@@ -61,6 +61,14 @@ public sealed class PreferenceService : IPreferenceService
             .ToDictionaryAsync(x => x.Id, x => x.Code, cancellationToken);
 
         // ========== 聚合学习期 ==========
+        // 兼职（is_parttime=1）无「休息」语义：空闲日 ≠ 店长安排休息，
+        // 其休息样本为伪信号（会把「没排班」学成「店长习惯让他休」），
+        // 故兼职的休息样本不统计；班次/工作站偏好保留（店长对兼职的使用习惯仍有价值）。
+        var partTimeEmployeeIds = (await _dbContext.Employees.AsNoTracking()
+            .Where(x => x.StoreId == storeId && x.IsParttime == 1)
+            .Select(x => x.Id)
+            .ToListAsync(cancellationToken)).ToHashSet();
+
         var agg = new Dictionary<(long EmpId, string DayType, string? ShiftCode, long? WsId), int>();
         var sampleDays = 0;
 
@@ -77,7 +85,11 @@ public sealed class PreferenceService : IPreferenceService
                 var dayType = dayTypeByDate.GetValueOrDefault(s.WorkDate) ?? "WORKDAY";
                 if (s.IsRestDay == 1)
                 {
-                    // 休息样本
+                    // 休息样本（兼职排除：其空闲日非店长安排，属伪信号）
+                    if (partTimeEmployeeIds.Contains(s.EmployeeId))
+                    {
+                        continue;
+                    }
                     var restKey = (s.EmployeeId, dayType, (string?)null, (long?)null);
                     agg[restKey] = agg.GetValueOrDefault(restKey) + 1;
                 }
@@ -314,13 +326,18 @@ public sealed class PreferenceService : IPreferenceService
 
     private async Task<decimal> ComputeCoverageAsync(long storeId, CancellationToken cancellationToken)
     {
-        // 覆盖率 = 有足够样本（freq ≥ 3）的员工比例
-        var totalEmployees = await _dbContext.Employees.CountAsync(x => x.StoreId == storeId && x.Status == 1, cancellationToken);
+        // 覆盖率 = 有足够样本（freq ≥ 3）的全职员工比例（兼职按需排班、样本波动大，不计入）
+        var totalEmployees = await _dbContext.Employees.CountAsync(
+            x => x.StoreId == storeId && x.Status == 1 && x.IsParttime == 0, cancellationToken);
         if (totalEmployees == 0) return 0m;
 
         var coveredEmployees = await _dbContext.EmployeePreferences.AsNoTracking()
             .Where(x => x.StoreId == storeId && x.Freq >= MinSamplesForCoverage)
-            .Select(x => x.EmployeeId)
+            .Join(
+                _dbContext.Employees.Where(e => e.IsParttime == 0),
+                p => p.EmployeeId,
+                e => e.Id,
+                (p, _) => p.EmployeeId)
             .Distinct()
             .CountAsync(cancellationToken);
 
