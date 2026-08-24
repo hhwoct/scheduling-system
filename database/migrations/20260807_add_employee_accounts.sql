@@ -1,5 +1,9 @@
 -- 为 22 名员工创建员工登录账号
--- 用户名 = 工号（E001...E022），密码 = 工号（如 E001），角色 EMPLOYEE，关联对应 employee_id
+-- 用户名 = 工号（E001...E022），角色 EMPLOYEE。
+-- ⚠️ 注意（审查修复 M5 口径说明）：本迁移所有员工账号共用同一个开发期占位哈希
+-- （即 bcrypt("admin123")，与当时 admin/manager 相同），并非注释历史所称"密码=工号"；
+-- 后续 20260811_fix_password_hashes.sql 会为每个账号替换为工号对应的独立哈希。
+-- 若迁移链在 20260811 之前中断，全部账号密码为 admin123，请勿按"密码=工号"排查。
 USE shift_mvp;
 
 INSERT INTO users (store_id, username, password_hash, nickname, role, status, created_at, updated_at)

@@ -11,6 +11,7 @@ const IDLE_CHECK_INTERVAL_MS = 10 * 1000
 
 const STORAGE_KEY_TOKEN = 'shift_token'
 const STORAGE_KEY_ROLE = 'shift_role'
+const STORAGE_KEY_USERNAME = 'shift_username'
 // 旧版本遗留的「固定 30 分钟绝对过期」键，改为无操作超时后不再使用
 const LEGACY_STORAGE_KEY_EXPIRES = 'shift_token_expires_at'
 
@@ -79,9 +80,10 @@ function stopIdleWatcher() {
  * 安全说明：localStorage 存在 XSS 窃取风险；根治方案需后端配合改用
  * HttpOnly + SameSite Cookie 并引入 CSRF 防护，前端现有流程保持不变。
  */
-function persistToken(token, role) {
+function persistToken(token, role, username) {
   localStorage.setItem(STORAGE_KEY_TOKEN, token)
   localStorage.setItem(STORAGE_KEY_ROLE, role || '')
+  localStorage.setItem(STORAGE_KEY_USERNAME, username || '')
   localStorage.removeItem(LEGACY_STORAGE_KEY_EXPIRES)
   touchActivity()
 }
@@ -100,6 +102,7 @@ function loadToken() {
 function clearStoredAuth() {
   localStorage.removeItem(STORAGE_KEY_TOKEN)
   localStorage.removeItem(STORAGE_KEY_ROLE)
+  localStorage.removeItem(STORAGE_KEY_USERNAME)
   localStorage.removeItem(LEGACY_STORAGE_KEY_EXPIRES)
 }
 
@@ -108,7 +111,8 @@ export const useAuthStore = defineStore('auth', {
     token: loadToken(),
     user: null,
     store: null,
-    role: localStorage.getItem(STORAGE_KEY_ROLE) || ''
+    role: localStorage.getItem(STORAGE_KEY_ROLE) || '',
+    username: localStorage.getItem(STORAGE_KEY_USERNAME) || ''
   }),
   getters: {
     isAuthenticated: (state) => !!state.token
@@ -124,7 +128,8 @@ export const useAuthStore = defineStore('auth', {
       this.token = res.token
       this.user = res.user
       this.role = res.user.role
-      persistToken(res.token, res.user.role || '')
+      this.username = res.user.username || ''
+      persistToken(res.token, res.user.role || '', res.user.username || '')
       startIdleWatcher()
       return res
     },
@@ -135,6 +140,7 @@ export const useAuthStore = defineStore('auth', {
           throw new Error('用户信息无效')
         }
         this.role = this.user.role
+        this.username = this.user.username || ''
         return this.user
       } catch (e) {
         // 仅明确会话失效（401）才登出；瞬时网络错误/5xx 保留会话
@@ -149,6 +155,7 @@ export const useAuthStore = defineStore('auth', {
       this.user = null
       this.store = null
       this.role = ''
+      this.username = ''
       clearStoredAuth()
       stopIdleWatcher()
     }

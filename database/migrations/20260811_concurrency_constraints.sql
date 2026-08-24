@@ -7,6 +7,17 @@ USE shift_mvp;
 -- 注意：MySQL DDL 隐式提交，不使用事务包装
 -- 每个语句独立执行
 
+-- 审查修复（H9）：employee_skills 去重必须先于唯一约束执行。
+-- 本文件按文件名序先于 20260811_fix_p2_data_model.sql（其内也有同款去重）执行；
+-- 若先加唯一键再去重，存在重复技能行的老库会在下方 ALTER 处报 Duplicate entry
+-- 中断整条迁移链，去重逻辑永远执行不到。
+-- P2-7: 清理 employee_skills 重复数据（保留最小 id 的记录）
+DELETE e1 FROM employee_skills e1
+INNER JOIN employee_skills e2
+  ON e1.employee_id = e2.employee_id
+  AND e1.workstation_id = e2.workstation_id
+  AND e1.id > e2.id;
+
 -- 员工技能唯一
 ALTER TABLE employee_skills
   ADD CONSTRAINT ux_employee_skills_employee_workstation UNIQUE (employee_id, workstation_id);

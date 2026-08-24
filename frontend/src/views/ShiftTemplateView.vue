@@ -81,7 +81,10 @@
           <el-switch v-model="form.isCrossDay" :active-value="1" :inactive-value="0" active-text="是" inactive-text="否" />
         </el-form-item>
         <el-form-item label="优先级">
-          <el-input-number v-model="form.priority" :min="1" :max="100" />
+          <!-- S10 店长班优先级由算法 ShiftPriorityMap 固定（先于行政班分配，保证副手顶班），
+               界面修改不生效，故禁用 -->
+          <el-input-number v-model="form.priority" :min="1" :max="100" :disabled="form.code === 'S10'" />
+          <div v-if="form.code === 'S10'" class="form-tip">店长班优先级由算法固定，不可修改</div>
         </el-form-item>
         <el-form-item label="状态">
           <el-switch v-model="form.status" :active-value="1" :inactive-value="0" active-text="启用" inactive-text="停用" />
@@ -224,6 +227,12 @@ onMounted(loadData)
 </script>
 
 <style scoped>
+.form-tip {
+  font-size: 12px;
+  color: #909399;
+  line-height: 1.4;
+  margin-top: 2px;
+}
 .gantt-wrap {
   overflow-x: auto;
   padding-bottom: 8px;

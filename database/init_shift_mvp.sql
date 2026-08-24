@@ -1,9 +1,10 @@
 -- ================================================================
 -- 排班系统数据库全量基线（建库建表 + 模拟数据）
--- 本脚本已吸收 20260822 及之前全部迁移的结构变更与数据（见文件末尾「已吸收迁移清单」）。
--- 新部署：直接执行本脚本即可，无需再跑被吸收的旧迁移。
--- 老库升级：不要执行本脚本，按序执行 database/migrations/ 下的迁移。
--- 20260823 起的迁移在两种路径下都仍须执行。
+-- 本脚本已吸收 20260824 及之前全部迁移的结构变更与数据（见文件末尾「已吸收迁移清单」）。
+-- 新部署：直接执行本脚本即可，无需再跑被吸收的旧迁移（20260823/24 迁移均已内置且幂等，
+--         重跑亦无副作用）。
+-- 老库升级：不要执行本脚本，按序执行 database/migrations/ 下的全部迁移（含 20260823/24）。
+-- 20260825 起的迁移在两种路径下都仍须执行（均已幂等）。
 -- ⚠️ 安全：所有账号密码哈希均为占位符（见 users 种子数据处说明），部署前必须替换。
 -- ================================================================
 CREATE DATABASE IF NOT EXISTS shift_mvp DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
@@ -667,4 +668,11 @@ CREATE TABLE ai_configs (
 --   20260820_add_ai_config.sql                  → ai_configs 表
 --   20260821_add_staffing_remark.sql            → staffing_requirements.remark 列
 --   20260822_add_employee_generalist.sql        → employees.is_generalist 列
+--   20260823_add_schedule_period_unique.sql     → ux_schedule_plans_period 唯一约束（并入建表语句）
+--   20260823_add_shift_swaps_target_index.sql   → shift_swaps.target_employee_id 索引（并入建表语句）
+--   20260823_fix_holiday_mark_20260927.sql      → 09-27 补班日口径（已并入 09 月日期种子）
+--   20260824_add_cleaning_shift.sql             → S9 保洁班 + 岗位映射（已并入班次/映射种子）
+--   20260824_add_leave_early_return.sql         → leave_requests.early_returned 列（并入建表语句）
+--   20260824_add_min_daily_work_hours.sql       → min_daily_work_hours 规则（已并入规则种子）
+--   20260824_fix_s5_cleaning_mapping.sql        → S5 不再覆盖保洁岗（映射种子已按此口径）
 -- ================================================================

@@ -1,5 +1,4 @@
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using ShiftScheduling.Api.Application.Auth;
 using ShiftScheduling.Api.Application.Common;
@@ -33,9 +32,7 @@ public sealed class AuthServiceTests
             new BcryptPasswordService(),
             currentUser ?? new FakeCurrentUser(),
             _audit,
-            _passwordReset,
-            new FakeWebHostEnvironment { EnvironmentName = "Test" },
-            NullLoggerFactory.Instance);
+            _passwordReset);
     }
 
     private static UserEntity NewUser(string username = "admin", string role = "STORE_MANAGER", int status = 1, long? storeId = 1)
@@ -145,10 +142,9 @@ public sealed class AuthServiceTests
                 service.LoginAsync(new LoginRequest("admin", "bad-password"), "127.0.0.1", CancellationToken.None));
         }
 
-        // 第 6 次触发锁定
-        var ex = await Assert.ThrowsAsync<BusinessException>(() =>
+        // 第 6 次触发锁定：静默抛 InvalidCredentialsException（锁定不泄露账号状态）
+        await Assert.ThrowsAsync<InvalidCredentialsException>(() =>
             service.LoginAsync(new LoginRequest("admin", "Passw0rd!"), "127.0.0.1", CancellationToken.None));
-        Assert.Equal("ACCOUNT_LOCKED", ex.ErrorCode);
     }
 
     [Fact]
@@ -174,28 +170,6 @@ public sealed class AuthServiceTests
     }
 
     [Fact]
-    public async Task SendPasswordResetOtpAsync_UnknownUser_ThrowsAndDoesNotLeak()
-    {
-        var service = CreateService();
-        await Assert.ThrowsAsync<InvalidCredentialsException>(() =>
-            service.SendPasswordResetOtpAsync(new SendResetOtpRequest("nobody", "13800000001"), "127.0.0.1", CancellationToken.None));
-    }
-
-    [Fact]
-    public async Task SendPasswordResetOtpAsync_EmployeeWithoutPhone_Throws()
-    {
-        var db = _factory.CreateDbContext();
-        var user = NewUser(username: "E001", role: "EMPLOYEE");
-        db.Users.Add(user);
-        await db.SaveChangesAsync();
-        await SeedEmployeeAsync(_factory, "E001", phone: null!);
-
-        var service = CreateService();
-        await Assert.ThrowsAsync<InvalidCredentialsException>(() =>
-            service.SendPasswordResetOtpAsync(new SendResetOtpRequest("E001", "13800000001"), "127.0.0.1", CancellationToken.None));
-    }
-
-    [Fact]
     public async Task ForgotPasswordAsync_WeakPassword_Throws()
     {
         var db = _factory.CreateDbContext();
@@ -206,7 +180,7 @@ public sealed class AuthServiceTests
         var service = CreateService();
         var ex = await Assert.ThrowsAsync<BusinessException>(() =>
             service.ForgotPasswordAsync(
-                new ForgotPasswordRequest("E001", "short", "short", "13800000000", "123456"),
+                new ForgotPasswordRequest("E001", "short", "short", "13800000000"),
                 "127.0.0.1",
                 CancellationToken.None));
         Assert.Equal("WEAK_PASSWORD", ex.ErrorCode);
@@ -218,27 +192,27 @@ public sealed class AuthServiceTests
         var service = CreateService();
         var ex = await Assert.ThrowsAsync<BusinessException>(() =>
             service.ForgotPasswordAsync(
-                new ForgotPasswordRequest("E001", "NewPassw0rd", "Different0!", "13800000000", "123456"),
+                new ForgotPasswordRequest("E001", "NewPassw0rd", "Different0!", "13800000000"),
                 "127.0.0.1",
                 CancellationToken.None));
         Assert.Equal("PASSWORD_MISMATCH", ex.ErrorCode);
     }
 
     [Fact]
-    public async Task ForgotPasswordAsync_InvalidOtp_Throws()
+    public async Task ForgotPasswordAsync_SystemAdminRole_Throws()
     {
+        // 忘记密码仅支持 EMPLOYEE/STORE_MANAGER；SYSTEM_ADMIN 账号必须走人工改密
         var db = _factory.CreateDbContext();
-        db.Users.Add(NewUser(username: "E001", role: "EMPLOYEE"));
+        db.Users.Add(NewUser(username: "admin", role: "SYSTEM_ADMIN"));
         await db.SaveChangesAsync();
-        await SeedEmployeeAsync(_factory);
 
         var service = CreateService();
-        var ex = await Assert.ThrowsAsync<BusinessException>(() =>
+        var ex = await Assert.ThrowsAsync<InvalidCredentialsException>(() =>
             service.ForgotPasswordAsync(
-                new ForgotPasswordRequest("E001", "NewPassw0rd", "NewPassw0rd", "13800000000", "000000"),
+                new ForgotPasswordRequest("admin", "NewPassw0rd", "NewPassw0rd", "13800000000"),
                 "127.0.0.1",
                 CancellationToken.None));
-        Assert.Equal("INVALID_OTP", ex.ErrorCode);
+        Assert.Equal("INVALID_CREDENTIALS", ex.ErrorCode);
     }
 
     [Fact]
@@ -252,7 +226,7 @@ public sealed class AuthServiceTests
         var service = CreateService();
         await Assert.ThrowsAsync<InvalidCredentialsException>(() =>
             service.ForgotPasswordAsync(
-                new ForgotPasswordRequest("E001", "NewPassw0rd", "NewPassw0rd", "13999999999", "000000"),
+                new ForgotPasswordRequest("E001", "NewPassw0rd", "NewPassw0rd", "13999999999"),
                 "127.0.0.1",
                 CancellationToken.None));
     }
@@ -269,10 +243,8 @@ public sealed class AuthServiceTests
         await SeedEmployeeAsync(_factory);
 
         var service = CreateService();
-        var otp = _passwordReset.GenerateOtp("E001", "13800000000");
-
         await service.ForgotPasswordAsync(
-            new ForgotPasswordRequest("E001", "NewPassw0rd", "NewPassw0rd", "13800000000", otp),
+            new ForgotPasswordRequest("E001", "NewPassw0rd", "NewPassw0rd", "13800000000"),
             "127.0.0.1",
             CancellationToken.None);
 

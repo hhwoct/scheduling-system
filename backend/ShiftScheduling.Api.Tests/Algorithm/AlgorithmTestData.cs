@@ -12,7 +12,10 @@ public static class AlgorithmTestData
         => new(employeeId, workstationId, score, isPrimary);
 
     public static DateParameterInput Day(DateOnly date, string dayType = "WORKDAY", int isLegalHoliday = 0, int isHolidayEve = 0)
-        => new(date, ((int)date.DayOfWeek + 6) % 7 + 1, dayType, isLegalHoliday, isHolidayEve);
+        // 审查修复：WeekDay 必须与生产口径一致（MySQL DAYOFWEEK：1=周日 … 7=周六）。
+        // 原实现 ((int)DayOfWeek + 6) % 7 + 1 产生反向映射（周日=7），导致周工时
+        // 周一重置（WeekDay==2）与高峰日判断（6/7=周五/六）在测试数据中落在错误日期。
+        => new(date, (int)date.DayOfWeek + 1, dayType, isLegalHoliday, isHolidayEve);
 
     public static List<DateParameterInput> Days(DateOnly start, int count, string dayType = "WORKDAY")
     {
@@ -60,7 +63,8 @@ public static class AlgorithmTestData
         int defaultMonthlyRestDays = 4,
         decimal maxWeeklyHours = 48,
         int maxConsecutiveWorkDays = 6,
-        int minRestHoursAfterNightShift = 10)
+        int minRestHoursAfterNightShift = 10,
+        decimal minDailyWorkHours = 0m)
         => new(
             1,
             dates.Count == 0 ? new DateOnly(2026, 1, 1) : dates.Min(d => d.WorkDate),
@@ -73,8 +77,10 @@ public static class AlgorithmTestData
             new List<ApprovedLeaveInput>(),
             new List<PeakRestrictedHourInput>(),
             new Dictionary<long, bool>(),
+            new Dictionary<long, string>(),
             defaultMonthlyRestDays,
             maxWeeklyHours,
             maxConsecutiveWorkDays,
-            minRestHoursAfterNightShift);
+            minRestHoursAfterNightShift,
+            minDailyWorkHours);
 }

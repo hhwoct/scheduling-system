@@ -38,6 +38,7 @@ request.interceptors.response.use(
     if (status === 401) {
       localStorage.removeItem('shift_token')
       localStorage.removeItem('shift_role')
+      localStorage.removeItem('shift_username')
       localStorage.removeItem('shift_token_expires_at')
       window.dispatchEvent(new CustomEvent('auth:unauthorized'))
       // 避免并发请求重复跳转

@@ -278,14 +278,23 @@ const dailyWorkstations = computed(() => {
   dailyRows.value.forEach(r => {
     if (r.workstationName) set.add(r.workstationName)
   })
+  const currentDate = selectedDate.value || dayDate.value
+  const nextDay = addDays(currentDate, 1)
   dailyIssues.value
-    .filter(i => i.issueType === 'STAFFING_GAP' && i.workDate === (selectedDate.value || dayDate.value))
+    .filter(i => i.issueType === 'STAFFING_GAP' && (i.workDate === currentDate || i.workDate === nextDay))
     .forEach(i => {
       if (i.workstationName) set.add(i.workstationName)
     })
   return Array.from(set)
 })
 function isHour(s) { return s.key.endsWith(':00') }
+// 日期字符串加天数（返回 yyyy-MM-dd；与 DailyScheduleView/MonthScheduleView 工具口径一致）
+function addDays(dateStr, days) {
+  if (!dateStr) return ''
+  const d = new Date(dateStr + 'T00:00:00')
+  d.setDate(d.getDate() + days)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
 // 单元格内员工：全职在前、兼职在后，兼职色块用绿色 + 虚线间隔与全职隔开
 function dailyCellUsers(ws, slot) {
   return dailyRows.value
@@ -299,10 +308,12 @@ function isFirstPartTimeChip(emp, ws, slot) {
   const firstPt = users.findIndex(u => Number(u.isParttime) === 1)
   return firstPt === idx && users.some(u => Number(u.isParttime) === 0)
 }
-// P3-12: 缺口按日期过滤
+// P3-12: 缺口按日期过滤；次日格（00:00-05:30）的缺口归属次日日历日
+// （审查修复 M10：与 DailyScheduleView/MonthScheduleView 的 isNextDay+1 口径统一，否则次日缺口漏标）
 function dailySlotIssues(ws, slot) {
   const currentDate = selectedDate.value || dayDate.value
-  return dailyIssues.value.filter(i => i.issueType === 'STAFFING_GAP' && i.workDate === currentDate && i.workstationName === ws && i.timeSlot && String(i.timeSlot).substring(0,5) === slot.key)
+  const date = slot.isNextDay ? addDays(currentDate, 1) : currentDate
+  return dailyIssues.value.filter(i => i.issueType === 'STAFFING_GAP' && i.workDate === date && i.workstationName === ws && i.timeSlot && String(i.timeSlot).substring(0,5) === slot.key)
 }
 // 该员工在该时段是否处于班中休息（含跨午夜回绕）
 function inBreak(row, slot) {

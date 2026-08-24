@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { SUPER_ADMIN_USERNAME } from '../constants/config'
 
 const routes = [
   {
@@ -114,7 +115,7 @@ const routes = [
         path: 'audit-logs',
         name: 'AuditLogs',
         component: () => import('../views/AuditLogView.vue'),
-        meta: { title: '审计日志' }
+        meta: { title: '审计日志', adminOnly: true }
       },
       {
         path: 'leave-review',
@@ -178,6 +179,16 @@ router.beforeEach((to) => {
   // 管理/店长可同时访问员工端与管理端（通过 /employee/ 前缀进入员工端）
   if (token && (role === 'STORE_MANAGER' || role === 'SYSTEM_ADMIN') && to.path === '/employee') {
     return { path: '/employee/schedule' }
+  }
+
+  // 仅超管账号可访问的页面（如审计日志）：E001 等系统管理员角色也不放行。
+  // 注意：localStorage 可被用户篡改，此处仅为 UX 层拦截，真正鉴权由后端强制；
+  // shift_username 由 auth store 在登录/登出时维护，与 MainLayout 菜单口径一致。
+  if (to.meta?.adminOnly) {
+    const username = localStorage.getItem('shift_username') || ''
+    if (username !== SUPER_ADMIN_USERNAME) {
+      return { path: '/dashboard' }
+    }
   }
 
   document.title = to.meta.title ? `${to.meta.title} - 排班系统` : '排班系统'

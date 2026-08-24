@@ -67,7 +67,8 @@ public sealed class OverStaffingCeilingTests
             new List<ApprovedLeaveInput>(),
             new List<PeakRestrictedHourInput>(),
             new Dictionary<long, bool>(),
-            4, 48m, 6, 10);
+            new Dictionary<long, string>(),
+            4, 48m, 6, 10, 0m);
     }
 
     [Fact]

@@ -28,7 +28,7 @@
           <el-menu-item index="/schedules/generate">一键排班</el-menu-item>
           <el-menu-item index="/schedules/view">排班查看</el-menu-item>
           <el-menu-item index="/reports">排班报表</el-menu-item>
-          <el-menu-item index="/audit-logs">审计日志</el-menu-item>
+          <el-menu-item v-if="authStore.username === SUPER_ADMIN_USERNAME" index="/audit-logs">审计日志</el-menu-item>
           <el-menu-item index="/leave-review">请假审批</el-menu-item>
           <el-menu-item index="/swap-review">换班审批</el-menu-item>
           <el-menu-item index="/notifications">通知消息</el-menu-item>
@@ -79,6 +79,7 @@ import { ArrowDown, Bell, Calendar, DataBoard } from '@element-plus/icons-vue'
 import { ElMessageBox } from 'element-plus'
 import { useAuthStore } from '../stores/auth'
 import { getUnreadCount } from '../api/notifications'
+import { SUPER_ADMIN_USERNAME } from '../constants/config'
 
 const router = useRouter()
 const authStore = useAuthStore()

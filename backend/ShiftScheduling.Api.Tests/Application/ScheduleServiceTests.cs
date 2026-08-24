@@ -72,10 +72,21 @@ public sealed class ScheduleServiceTests
             var date = Start.AddDays(i);
             db.DateParameters.Add(new DateParameterEntity
             {
-                StoreId = 1, WorkDate = date, WeekDay = ((int)date.DayOfWeek + 6) % 7 + 1,
+                // WeekDay 与生产一致（MySQL DAYOFWEEK：1=周日 … 7=周六）
+                StoreId = 1, WorkDate = date, WeekDay = (int)date.DayOfWeek + 1,
                 DayType = "WORKDAY", CreatedAt = DateTime.UtcNow
             });
         }
+        await db.SaveChangesAsync();
+
+        // 审查同步（60d4c6c 起默认 6.5h）：测试班次仅 3 小时（19:00-22:00），
+        // 显式配置 min_daily_work_hours=0（不限制），否则正式员工因每日最低工时被整体拒排。
+        db.RuleConfigs.Add(new RuleConfigEntity
+        {
+            StoreId = 1, RuleKey = "min_daily_work_hours", RuleName = "正式员工每日最低工时",
+            RuleValue = "0", ValueType = "number", Remark = "测试：不限制每日最低工时",
+            Status = 1, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
+        });
         await db.SaveChangesAsync();
 
         foreach (var slot in SchedulingTimeHelper.GetShiftSlots(shift.StartTime, shift.EndTime, shift.IsCrossDay))

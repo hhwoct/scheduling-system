@@ -38,7 +38,10 @@ public sealed class ApiExceptionMiddleware
         }
         catch (BusinessException ex)
         {
-            await ApiResponseWriter.WriteErrorAsync(context, HttpStatusCode.BadRequest, ex.Message, ex.ErrorCode);
+            // FORBIDDEN 错误码映射为 403（如审计日志等仅超管可访问的接口），
+            // 其余业务错误保持 400，便于客户端区分「无权限」与「参数/业务错误」。
+            var status = ex.ErrorCode == "FORBIDDEN" ? HttpStatusCode.Forbidden : HttpStatusCode.BadRequest;
+            await ApiResponseWriter.WriteErrorAsync(context, status, ex.Message, ex.ErrorCode);
         }
         catch (Exception ex)
         {

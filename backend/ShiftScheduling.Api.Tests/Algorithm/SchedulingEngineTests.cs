@@ -67,10 +67,12 @@ public sealed class SchedulingEngineTests
             new List<ApprovedLeaveInput>(),
             new List<PeakRestrictedHourInput>(),
             new Dictionary<long, bool>(),
+            new Dictionary<long, string>(),
             4,
             48m,
             6,
-            10);
+            10,
+            0m);
     }
 
     [Fact]

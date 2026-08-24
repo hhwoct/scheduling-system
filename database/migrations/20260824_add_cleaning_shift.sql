@@ -4,7 +4,10 @@ INSERT INTO shift_templates (store_id, code, name, start_time, end_time, is_cros
 SELECT 1, 'S9', '保洁班', '16:00:00', '04:00:00', 1, 9, 1
 WHERE NOT EXISTS (SELECT 1 FROM shift_templates WHERE store_id = 1 AND code = 'S9');
 
+-- 审查修复（M7）：改用自然键（workstations.code='CLEANING'）替代硬编码 workstation_id=6，
+-- 避免工作站种子重排/换库后 S9 被绑定到错误岗位。
 INSERT INTO shift_workstations (shift_template_id, workstation_id)
-SELECT t.id, 6 FROM shift_templates t
+SELECT t.id, w.id FROM shift_templates t
+JOIN workstations w ON w.store_id = t.store_id AND w.code = 'CLEANING'
 WHERE t.store_id = 1 AND t.code = 'S9'
-  AND NOT EXISTS (SELECT 1 FROM shift_workstations sw WHERE sw.shift_template_id = t.id AND sw.workstation_id = 6);
+  AND NOT EXISTS (SELECT 1 FROM shift_workstations sw WHERE sw.shift_template_id = t.id AND sw.workstation_id = w.id);

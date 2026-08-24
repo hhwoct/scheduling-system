@@ -55,10 +55,12 @@ public sealed class ShiftAllocatorPartTimeTests
             new List<ApprovedLeaveInput>(),
             new List<PeakRestrictedHourInput>(),
             new Dictionary<long, bool> { [workstationId] = true },
+            new Dictionary<long, string>(),
             4,
             70m, // 周工时上限足够高，不阻碍兼职集中排班
             14,
-            10);
+            10,
+            0m);
 
         var assignments = new ShiftAllocator().Allocate(input, new List<RestDayAssignment>());
 

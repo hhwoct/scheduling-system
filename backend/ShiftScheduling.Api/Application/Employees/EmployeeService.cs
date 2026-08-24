@@ -156,11 +156,7 @@ public sealed class EmployeeService : IEmployeeService
         string operatorName,
         CancellationToken cancellationToken)
     {
-        Validate(request);
-
-        // 查重前先 Trim，避免"E001"与"E001 "被当作不同值
-        var normalizedEmployeeNo = request.EmployeeNo.Trim();
-
+        // 先取现有档案：手机号脱敏回环保护需要原值
         var employee = await _dbContext.Employees
             .FirstOrDefaultAsync(x => x.Id == id && x.StoreId == storeId, cancellationToken);
 
@@ -168,6 +164,19 @@ public sealed class EmployeeService : IEmployeeService
         {
             throw new NotFoundException("员工不存在");
         }
+
+        // 手机号脱敏回环保护：列表/详情接口返回脱敏值（如 138****0001），前端编辑表单
+        // 回填后原样提交。提交值含脱敏标记（****）视为"未修改"，保留库中原手机号，
+        // 避免脱敏值覆盖真实号码（此前会导致校验失败，编辑功能不可用）。
+        if (IsMaskedPhone(request.Phone))
+        {
+            request = request with { Phone = employee.Phone };
+        }
+
+        Validate(request);
+
+        // 查重前先 Trim，避免"E001"与"E001 "被当作不同值
+        var normalizedEmployeeNo = request.EmployeeNo.Trim();
 
         var duplicate = await _dbContext.Employees
             .AnyAsync(x => x.StoreId == storeId && x.EmployeeNo == normalizedEmployeeNo && x.Id != id, cancellationToken);
@@ -301,6 +310,13 @@ public sealed class EmployeeService : IEmployeeService
             employee.Status,
             employee.CreatedAt,
             employee.UpdatedAt);
+
+    /// <summary>
+    /// 判断手机号是否为脱敏值（MaskPhone 的输出含 ****）。
+    /// 真实手机号经格式校验不可能含 *，故可作为"未修改"标记。
+    /// </summary>
+    private static bool IsMaskedPhone(string? phone)
+        => !string.IsNullOrWhiteSpace(phone) && phone.Contains("****", StringComparison.Ordinal);
 
     /// <summary>
     /// 手机号脱敏：保留前 3 位与后 4 位，中间以 **** 代替（如 138****1234）。

@@ -129,6 +129,57 @@ public sealed class EmployeeServiceTests
     }
 
     [Fact]
+    public async Task UpdateAsync_MaskedPhone_KeepsOriginalPhone()
+    {
+        // 审查修复（H1）：列表/详情返回脱敏手机号（138****5678），前端编辑回填后原样提交，
+        // 后端应识别脱敏值并保留原手机号，而不是校验失败或覆盖真实号码。
+        var db = _factory.CreateDbContext();
+        var emp = new EmployeeEntity
+        {
+            StoreId = 1, EmployeeNo = "E001", Name = "张三", Department = "楼面",
+            Phone = "13812345678", Status = 1,
+            CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
+        };
+        db.Employees.Add(emp);
+        await db.SaveChangesAsync();
+
+        var service = CreateService();
+        var result = await service.UpdateAsync(
+            emp.Id,
+            new EmployeeUpsertRequest("E001", "新名", "138****5678", "厨房", null, null, 40),
+            1, 9, "管理员", CancellationToken.None);
+
+        Assert.Equal("新名", result.Name);
+        Assert.Equal("厨房", result.Department);
+
+        var reloaded = await db.Employees.AsNoTracking().FirstAsync(x => x.Id == emp.Id);
+        Assert.Equal("13812345678", reloaded.Phone); // 原手机号未被脱敏值覆盖
+    }
+
+    [Fact]
+    public async Task UpdateAsync_RealPhone_IsUpdated()
+    {
+        var db = _factory.CreateDbContext();
+        var emp = new EmployeeEntity
+        {
+            StoreId = 1, EmployeeNo = "E001", Name = "张三", Department = "楼面",
+            Phone = "13812345678", Status = 1,
+            CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
+        };
+        db.Employees.Add(emp);
+        await db.SaveChangesAsync();
+
+        var service = CreateService();
+        var result = await service.UpdateAsync(
+            emp.Id,
+            new EmployeeUpsertRequest("E001", "张三", "13900001111", "楼面", null, null, 48),
+            1, 9, "管理员", CancellationToken.None);
+
+        var reloaded = await db.Employees.AsNoTracking().FirstAsync(x => x.Id == emp.Id);
+        Assert.Equal("13900001111", reloaded.Phone); // 真实新号码正常更新
+    }
+
+    [Fact]
     public async Task UpdateAsync_NotFound_Throws()
     {
         var service = CreateService();

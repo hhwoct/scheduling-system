@@ -58,8 +58,9 @@ public sealed class PasswordResetServiceTests
         }
 
         Assert.True(service.IsLocked("alice", "1.2.3.4"));
-        var ex = Assert.Throws<BusinessException>(() => service.CheckRateLimit("alice", "1.2.3.4"));
-        Assert.Equal("ACCOUNT_LOCKED", ex.ErrorCode);
+        // 审查同步（60d4c6c 起）：锁定后统一抛 InvalidCredentialsException（静默，不泄露账号状态）
+        var ex = Assert.Throws<InvalidCredentialsException>(() => service.CheckRateLimit("alice", "1.2.3.4"));
+        Assert.Equal("INVALID_CREDENTIALS", ex.ErrorCode);
     }
 
     [Fact]
@@ -76,9 +77,9 @@ public sealed class PasswordResetServiceTests
         service.RecordFailure("alice", "1.2.3.4");
         Assert.True(service.IsLocked("alice", "1.2.3.4"));
 
-        // 锁定后 CheckRateLimit 抛 ACCOUNT_LOCKED
-        var ex = Assert.Throws<BusinessException>(() => service.CheckRateLimit("alice", "1.2.3.4"));
-        Assert.Equal("ACCOUNT_LOCKED", ex.ErrorCode);
+        // 锁定后 CheckRateLimit 静默抛 InvalidCredentialsException（不泄露账号状态）
+        var ex = Assert.Throws<InvalidCredentialsException>(() => service.CheckRateLimit("alice", "1.2.3.4"));
+        Assert.Equal("INVALID_CREDENTIALS", ex.ErrorCode);
     }
 
     [Fact]
@@ -122,8 +123,8 @@ public sealed class PasswordResetServiceTests
             service.RecordFailure("alice", "1.2.3.4");
         }
 
-        // IP 维度故意共享（防锁定绕过）：bob 从同一 IP 访问同样被锁
-        Assert.True(service.IsLocked("bob", "1.2.3.4"));
+        // 审查同步（60d4c6c 起）：锁定按用户名维度，同 IP 的其他账号不受影响
+        Assert.False(service.IsLocked("bob", "1.2.3.4"));
 
         // 用户名维度隔离：bob 从别的 IP 使用自己的用户名不受影响
         Assert.False(service.IsLocked("bob", "9.9.9.9"));

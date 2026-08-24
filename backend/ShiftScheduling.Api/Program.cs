@@ -80,6 +80,14 @@ if (jwtOptions.ExpireMinutes is < 5 or > 1440)
     throw new InvalidOperationException("Jwt:ExpireMinutes 必须在 5 到 1440 分钟之间");
 }
 
+// 超管账号用户名（仅该账号可查看审计日志等敏感数据）：
+// 通过配置 SuperAdminUsername 注入，避免硬编码 "admin" 导致超管改名后功能失效。
+var superAdminUsername = builder.Configuration["SuperAdminUsername"]?.Trim();
+if (string.IsNullOrWhiteSpace(superAdminUsername))
+{
+    superAdminUsername = "admin";
+}
+
 var signingKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtOptions.SigningKey));
 
 builder.Services
@@ -1255,6 +1263,7 @@ api.MapPut("/notifications/read-all", async (
 }).RequireAuthorization();
 
 // ============ 审计日志 ============
+// 仅超管账号可查看（E001 等 SYSTEM_ADMIN 角色也不放行；用户名由 SuperAdminUsername 配置）
 api.MapGet("/audit-logs", async (
     ICurrentUser currentUser,
     ShiftSchedulingDbContext dbContext,
@@ -1265,6 +1274,12 @@ api.MapGet("/audit-logs", async (
     string? endDate = null,
     CancellationToken cancellationToken = default) =>
 {
+    // 审计日志仅超管账号可查看（即使 SYSTEM_ADMIN 角色的其他账号也无权限）
+    if (currentUser.Username != superAdminUsername)
+    {
+        throw new BusinessException("没有权限执行此操作", "FORBIDDEN");
+    }
+
     var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
     if (page < 1 || page > 100000 || pageSize is < 1 or > 100)
     {
@@ -1311,7 +1326,7 @@ api.MapGet("/audit-logs", async (
         .ToListAsync(cancellationToken);
 
     return ApiResponse.Ok(PagedResult<object>.Create(page, pageSize, total, items), "获取审计日志成功");
-}).RequireAuthorization("AdminOnly");
+}).RequireAuthorization("SystemAdminOnly");
 
 // ============ 员工端：我的班表 ============
 // 允许 EMPLOYEE 及绑定了员工档案的 STORE_MANAGER/SYSTEM_ADMIN 访问（通过工号关联）

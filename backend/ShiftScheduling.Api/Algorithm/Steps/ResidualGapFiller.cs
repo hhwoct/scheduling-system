@@ -177,14 +177,18 @@ public sealed class ResidualGapFiller
                     residualTemplates.Add(template);
 
                     // ========== 第一轮：全职员工优先 ==========
-                    // 全职只接整块 ≥ 每日最低工时的缺口（或当天已在上班可追加）；
-                    // 碎片块（不足最低工时）全职不接，留给兼职。
+                    // 全职只接整块 ≥ 每日最低工时的缺口（或当天已在上班可追加）。
+                    // ⚠️ 权衡记录（20260825 审查，B2 已回退）：曾尝试无条件执行全职轮让
+                    // 「已上班可追加」豁免对碎片块生效（管理岗缺口 27→9），但实测副手顶班日
+                    // 单日工时 12h→15h（13:00 补班 + 19:00 店长班连轴转），与「16h 太长」的
+                    // 业务诉求冲突，故恢复外层 if：碎片块由兼职承接，全职只接整块或已上班追加。
                     if (blockHours >= input.MinDailyWorkHours)
                     {
                         FillBlock(
                             input, workDate, workstationId, template, block,
                             residual, skillsByEmployee, lowSkill, restSet, busySlots,
                             weeklyHours, assignedToday, shiftAssignments, workstationAssignments,
+                            residualTemplates,
                             fullTimeOnly: true, maxHeadcount: MaxHeadcountPerBlock);
                     }
 
@@ -193,6 +197,7 @@ public sealed class ResidualGapFiller
                         input, workDate, workstationId, template, block,
                         residual, skillsByEmployee, lowSkill, restSet, busySlots,
                         weeklyHours, assignedToday, shiftAssignments, workstationAssignments,
+                        residualTemplates,
                         fullTimeOnly: false, maxHeadcount: MaxHeadcountPerBlock);
                 }
             }
@@ -299,6 +304,7 @@ public sealed class ResidualGapFiller
         HashSet<long> assignedToday,
         List<ShiftAssignment> shiftAssignments,
         List<WorkstationAssignment> workstationAssignments,
+        List<ShiftTemplateInput> residualTemplates,
         bool fullTimeOnly,
         int maxHeadcount)
     {
@@ -310,7 +316,9 @@ public sealed class ResidualGapFiller
             var candidates = input.Employees
                 .Where(e => fullTimeOnly ? e.IsParttime == 0 : e.IsParttime == 1)
                 .Where(e => !restSet.Contains(new RestDayAssignment(e.Id, workDate)))
-                .Where(e => !HasOverlap(busySlots, e.Id, template, workDate))
+                // 审查修复（B）：不再因「块与员工已有班次部分重叠」整块拒绝——
+                // 只要求块内存在至少一个可接槽位，重叠部分在分配时裁剪。
+                .Where(e => HasAnyAvailableSlot(busySlots, e.Id, template, workDate))
                 .Where(e => weeklyHours.GetValueOrDefault(e.Id) + blockHours <= e.MaxWeeklyHours)
                 .Where(e => HasStationSkill(e.Id, workstationId, skillsByEmployee, lowSkill))
                 .Where(e => e.IsParttime == 1
@@ -321,39 +329,53 @@ public sealed class ResidualGapFiller
                 .ThenBy(e => e.Id)
                 .ToList();
 
-            EmployeeInput? candidate = null;
-            foreach (var e in candidates)
-            {
-                if (!HasOverlap(busySlots, e.Id, template, workDate))
-                {
-                    candidate = e;
-                    break;
-                }
-            }
-
+            var candidate = candidates.FirstOrDefault();
             if (candidate is null)
             {
                 break;
             }
 
-            // 补充班次分配 + 工作站时段分配
-            var slotList = SchedulingTimeHelper.GetShiftSlots(template.StartTime, template.EndTime, template.IsCrossDay);
-            shiftAssignments.Add(new ShiftAssignment(candidate.Id, workDate, template.Id, template.Code, workstationId));
-            MarkBusy(busySlots, candidate.Id, template.StartTime, template.EndTime, template.IsCrossDay, workDate);
+            // 计算该候选在块内的最长可接连续段（跳过与已有班次重叠的槽），
+            // 只补不重叠部分；剩余缺口由后续循环继续尝试其他人/段。
+            var segment = LongestAvailableSegment(busySlots, candidate.Id, template, workDate);
+            if (segment is null)
+            {
+                break; // 理论上不可达（HasAnyAvailableSlot 已保证至少一个可接槽），防御性退出
+            }
+
+            var segIsCrossDay = segment.Value.EndExclusive <= segment.Value.Start ? 1 : 0;
+            var segHours = SchedulingTimeHelper.GetShiftHours(segment.Value.Start, segment.Value.EndExclusive, segIsCrossDay);
+
+            var segIndex = residualTemplates.Count + 1;
+            var segTemplate = new ShiftTemplateInput(
+                -3000 - segIndex,
+                "R" + segIndex,
+                "剩余缺口补班",
+                segment.Value.Start,
+                segment.Value.EndExclusive,
+                segIsCrossDay,
+                1,
+                template.WorkstationIds);
+            residualTemplates.Add(segTemplate);
+
+            // 补充班次分配 + 工作站时段分配（仅可接子段）
+            var slotList = SchedulingTimeHelper.GetShiftSlots(segTemplate.StartTime, segTemplate.EndTime, segTemplate.IsCrossDay);
+            shiftAssignments.Add(new ShiftAssignment(candidate.Id, workDate, segTemplate.Id, segTemplate.Code, workstationId));
+            MarkBusy(busySlots, candidate.Id, segTemplate.StartTime, segTemplate.EndTime, segTemplate.IsCrossDay, workDate);
             assignedToday.Add(candidate.Id);
-            weeklyHours[candidate.Id] = weeklyHours.GetValueOrDefault(candidate.Id) + blockHours;
+            weeklyHours[candidate.Id] = weeklyHours.GetValueOrDefault(candidate.Id) + segHours;
 
             var score = StationSkillScore(candidate.Id, workstationId, skillsByEmployee);
             foreach (var slot in slotList)
             {
-                var calendarDate = SchedulingTimeHelper.SlotCalendarDate(slot, template.StartTime, workDate);
+                var calendarDate = SchedulingTimeHelper.SlotCalendarDate(slot, segTemplate.StartTime, workDate);
                 var key = (workstationId, calendarDate, slot);
                 if (residual.TryGetValue(key, out var cnt) && cnt > 0)
                 {
                     residual[key] = cnt - 1;
                 }
                 workstationAssignments.Add(new WorkstationAssignment(
-                    candidate.Id, workDate, slot, workstationId, score, template.Id));
+                    candidate.Id, workDate, slot, workstationId, score, segTemplate.Id));
             }
 
             usedThisBlock++;
@@ -421,7 +443,12 @@ public sealed class ResidualGapFiller
         }
     }
 
-    private static bool HasOverlap(
+    /// <summary>
+    /// 块内是否存在至少一个与员工当天班次不重叠的槽位。
+    /// 审查修复（B）：替代整块 HasOverlap 判断——块与员工班次部分重叠时，
+    /// 允许补不重叠的部分（重叠部分由 LongestAvailableSegment 裁剪）。
+    /// </summary>
+    private static bool HasAnyAvailableSlot(
         IReadOnlyDictionary<long, HashSet<(DateOnly Date, TimeSpan Slot)>> busySlots,
         long employeeId,
         ShiftTemplateInput shift,
@@ -429,11 +456,72 @@ public sealed class ResidualGapFiller
     {
         if (!busySlots.TryGetValue(employeeId, out var set))
         {
-            return false;
+            return true;
         }
 
         return SchedulingTimeHelper.GetShiftSlots(shift.StartTime, shift.EndTime, shift.IsCrossDay)
-            .Any(slot => set.Contains((SchedulingTimeHelper.SlotCalendarDate(slot, shift.StartTime, workDate), slot)));
+            .Any(slot => !set.Contains((SchedulingTimeHelper.SlotCalendarDate(slot, shift.StartTime, workDate), slot)));
+    }
+
+    /// <summary>
+    /// 计算员工在块内的最长可接连续段（跳过与已有班次重叠的槽）。
+    /// 无可用槽返回 null。
+    /// </summary>
+    private static (TimeSpan Start, TimeSpan EndExclusive)? LongestAvailableSegment(
+        IReadOnlyDictionary<long, HashSet<(DateOnly Date, TimeSpan Slot)>> busySlots,
+        long employeeId,
+        ShiftTemplateInput shift,
+        DateOnly workDate)
+    {
+        var slots = SchedulingTimeHelper.GetShiftSlots(shift.StartTime, shift.EndTime, shift.IsCrossDay);
+        busySlots.TryGetValue(employeeId, out var busySet);
+
+        var bestStart = TimeSpan.Zero;
+        var bestEnd = TimeSpan.Zero;
+        var bestLen = 0;
+        var curStart = TimeSpan.Zero;
+        var curLen = 0;
+        TimeSpan? prev = null;
+
+        foreach (var slot in slots)
+        {
+            var calendarDate = SchedulingTimeHelper.SlotCalendarDate(slot, shift.StartTime, workDate);
+            var available = busySet is null || !busySet.Contains((calendarDate, slot));
+            if (!available)
+            {
+                prev = null;
+                continue;
+            }
+
+            if (prev is null || !IsConsecutiveSlot(prev.Value, slot))
+            {
+                curStart = slot;
+                curLen = 0;
+            }
+
+            curLen++;
+            prev = slot;
+            if (curLen > bestLen)
+            {
+                bestLen = curLen;
+                bestStart = curStart;
+                bestEnd = EndOf(slot);
+            }
+        }
+
+        return bestLen > 0 ? (bestStart, bestEnd) : null;
+    }
+
+    /// <summary>两个槽位是否连续（30 分钟步进，处理跨午夜回绕）。</summary>
+    private static bool IsConsecutiveSlot(TimeSpan prev, TimeSpan next)
+    {
+        var expected = prev.Add(TimeSpan.FromMinutes(30));
+        if (expected >= TimeSpan.FromHours(24))
+        {
+            expected -= TimeSpan.FromHours(24);
+        }
+
+        return next == expected;
     }
 
     private static TimeSpan EndOf(TimeSpan lastSlot)
