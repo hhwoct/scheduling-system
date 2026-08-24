@@ -119,10 +119,13 @@ onMounted(async () => {
     refreshUnreadCount()
   }
   window.addEventListener('focus', refreshUnreadCount)
+  // 通知页标记已读/全部已读后刷新 header 红点
+  window.addEventListener('notifications-changed', refreshUnreadCount)
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('focus', refreshUnreadCount)
+  window.removeEventListener('notifications-changed', refreshUnreadCount)
 })
 
 // 访问通知页等路由变化后刷新未读数

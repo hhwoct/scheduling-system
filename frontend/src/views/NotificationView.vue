@@ -112,13 +112,20 @@ function onPageChange(newPage) {
 async function handleRead(id) {
   await markAsRead(id)
   ElMessage.success('已读')
+  notifyUnreadChanged()
   loadData()
 }
 
 async function handleReadAll() {
   await markAllAsRead()
   ElMessage.success('全部已读')
+  notifyUnreadChanged()
   loadData()
+}
+
+// 通知 header 角标（红点）由布局组件持有：发事件让其刷新未读数
+function notifyUnreadChanged() {
+  window.dispatchEvent(new CustomEvent('notifications-changed'))
 }
 
 onMounted(loadData)

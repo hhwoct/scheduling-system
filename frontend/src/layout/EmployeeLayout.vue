@@ -128,6 +128,8 @@ onMounted(async () => {
   }
   refreshUnreadCount()
   refreshTimer = setInterval(refreshUnreadCount, 60000)
+  // 通知页标记已读/全部已读后刷新 header 红点
+  window.addEventListener('notifications-changed', refreshUnreadCount)
 })
 
 onUnmounted(() => {
@@ -135,6 +137,7 @@ onUnmounted(() => {
     clearInterval(refreshTimer)
     refreshTimer = null
   }
+  window.removeEventListener('notifications-changed', refreshUnreadCount)
 })
 
 // 路由切换时刷新
