@@ -153,7 +153,9 @@ public sealed record SchedulingOutput(
 /// 偏好学习评分（feature/schedule-pref-learning）。
 /// 两个维度：班次偏好（店长习惯让员工上哪个班次）与工作站偏好（习惯在哪站）。
 /// 权重 ≤ 0（规则 preference_learning_weight=0）或未加载偏好时返回 0 = 关闭。
-/// 作为分配排序的次级键：仅技能分相同/接近时贴合店长历史习惯，不改变硬约束。
+/// 连续权重（20260829）：分配排序键 = 技能分 + 偏好频次 × 权重（EffectiveScore），
+/// 权重越大店长历史习惯越能翻盘技能分差；权重=0 时回到纯技能分排序，行为不变。
+/// 硬约束（技能门槛/工时/重叠等）始终不受偏好影响。
 /// </summary>
 public static class PreferenceScoring
 {
@@ -201,6 +203,15 @@ public static class PreferenceScoring
 
         return Math.Min(input.PreferenceRestScores.GetValueOrDefault((employeeId, dayType)), 10);
     }
+
+    /// <summary>
+    /// 连续权重综合分（20260829）：技能分 + 偏好频次(封顶 10) × 权重。
+    /// 权重越大，店长历史偏好越能翻盘技能分差（每 1 偏好频次贡献 weight 分，
+    /// 权重 0.3 时最高 +3 分 ≈ 技能 1~2 档）；权重 ≤ 0（默认关闭）时等于技能分，
+    /// 行为与未启用偏好学习完全一致。调用方负责先把偏好评分为 0（权重关闭时）。
+    /// </summary>
+    public static decimal EffectiveScore(int skillScore, int prefFreq, decimal weight)
+        => skillScore + Math.Max(0m, weight) * Math.Min(Math.Max(0, prefFreq), 10);
 }
 
 public static class SchedulingTimeHelper

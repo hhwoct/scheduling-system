@@ -176,8 +176,10 @@ public sealed class WorkstationAllocator
                 var candidates = activeShifts
                     .Where(s => !assignedEmployeesThisSlot.Contains(s.EmployeeId))
                     .Where(s => HasSkill(s.EmployeeId, workstation.Key, skillsByEmployee))
-                    .OrderByDescending(s => SkillScore(s.EmployeeId, workstation.Key, skillsByEmployee))
-                    .ThenByDescending(s => PreferenceScoring.ForWorkstation(s.EmployeeId, workstation.Key, dayType, input))  // 偏好学习次级键
+                    .OrderByDescending(s => PreferenceScoring.EffectiveScore(
+                        SkillScore(s.EmployeeId, workstation.Key, skillsByEmployee),
+                        PreferenceScoring.ForWorkstation(s.EmployeeId, workstation.Key, dayType, input),
+                        input.PreferenceWeight))  // 偏好学习连续权重：技能分 + 偏好频次×权重
                     .ThenByDescending(s => s.ShiftCode)
                     .ToList();
 
@@ -229,8 +231,10 @@ public sealed class WorkstationAllocator
                 var candidates = activeShifts
                     .Where(s => !assignedEmployeesThisSlot.Contains(s.EmployeeId))
                     .Where(s => HasSkill(s.EmployeeId, workstation.Key, skillsByEmployee))
-                    .OrderByDescending(s => SkillScore(s.EmployeeId, workstation.Key, skillsByEmployee))
-                    .ThenByDescending(s => PreferenceScoring.ForWorkstation(s.EmployeeId, workstation.Key, dayType, input))  // 偏好学习次级键
+                    .OrderByDescending(s => PreferenceScoring.EffectiveScore(
+                        SkillScore(s.EmployeeId, workstation.Key, skillsByEmployee),
+                        PreferenceScoring.ForWorkstation(s.EmployeeId, workstation.Key, dayType, input),
+                        input.PreferenceWeight))  // 偏好学习连续权重：技能分 + 偏好频次×权重
                     .ThenByDescending(s => s.ShiftCode)
                     .ToList();
 

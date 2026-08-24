@@ -108,8 +108,10 @@ public sealed class ShiftAllocator
                     .Where(e => RespectsMinDailyHours(e, shift, assignedToday, input))
                     .OrderBy(e => e.IsParttime)  // 全职优先，兼职靠后
                     .ThenByDescending(e => e.IsParttime == 1 ? periodHours.GetValueOrDefault(e.Id) : 0m)
-                    .ThenByDescending(e => TotalSkillScore(e.Id, shift, skillsByEmployee))
-                    .ThenByDescending(e => PreferenceScoring.ForShift(e.Id, shift, date.DayType, input))  // 偏好学习次级键
+                    .ThenByDescending(e => PreferenceScoring.EffectiveScore(
+                        TotalSkillScore(e.Id, shift, skillsByEmployee),
+                        PreferenceScoring.ForShift(e.Id, shift, date.DayType, input),
+                        input.PreferenceWeight))  // 偏好学习连续权重：技能分 + 偏好频次×权重
                     .ThenBy(e => e.IsParttime == 1 ? 0m : weeklyHours.GetValueOrDefault(e.Id))
                     .ToList();
 

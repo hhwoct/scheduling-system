@@ -329,8 +329,10 @@ public sealed class ResidualGapFiller
                 .Where(e => e.IsParttime == 1
                             || assignedToday.Contains(e.Id)
                             || blockHours >= input.MinDailyWorkHours)
-                .OrderByDescending(e => StationSkillScore(e.Id, workstationId, skillsByEmployee))
-                .ThenByDescending(e => PreferenceScoring.ForWorkstation(e.Id, workstationId, workDateDayType, input))  // 偏好学习次级键
+                .OrderByDescending(e => PreferenceScoring.EffectiveScore(
+                    StationSkillScore(e.Id, workstationId, skillsByEmployee),
+                    PreferenceScoring.ForWorkstation(e.Id, workstationId, workDateDayType, input),
+                    input.PreferenceWeight))  // 偏好学习连续权重：技能分 + 偏好频次×权重
                 .ThenBy(e => weeklyHours.GetValueOrDefault(e.Id))
                 .ThenBy(e => e.Id)
                 .ToList();
