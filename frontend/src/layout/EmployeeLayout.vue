@@ -44,10 +44,10 @@
     <el-container>
       <el-header class="emp-header">
         <div class="header-left">
-          <el-icon class="collapse-btn" :size="20" @click="collapsed = !collapsed" :title="collapsed ? '展开侧边栏' : '收起侧边栏'">
-            <Expand v-if="collapsed" />
-            <Fold v-else />
-          </el-icon>
+          <el-button class="collapse-btn" text size="small" :title="collapsed ? '展开侧边栏' : '收起侧边栏'" @click="collapsed = !collapsed">
+            <el-icon><Expand v-if="collapsed" /><Fold v-else /></el-icon>
+            <span>{{ collapsed ? '展开' : '收起' }}</span>
+          </el-button>
           <div class="header-title">{{ $route.meta.title }}</div>
         </div>
         <div style="display: flex; align-items: center; gap: 16px">
