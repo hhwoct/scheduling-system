@@ -45,3 +45,4 @@ backend/.nuget-packages/
 
 # ===== 集成测试运行产物（含 dev JWT，勿入库） =====
 scripts/itest-*.json
+node_modules
