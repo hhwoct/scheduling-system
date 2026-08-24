@@ -1585,7 +1585,7 @@ api.MapGet("/employee/my-schedule", async (
         .AsNoTracking()
         .Where(x => x.StoreId == employee.StoreId && x.Status == "PUBLISHED" &&
                     x.EndDate >= from && x.StartDate <= to)
-        .OrderByDescending(x => x.StartDate)
+        .OrderBy(x => x.StartDate)
         .ToListAsync(cancellationToken);
 
     var shiftCodes = await dbContext.ShiftTemplates
@@ -1644,6 +1644,7 @@ api.MapGet("/employee/my-schedule", async (
         .AsNoTracking()
         .Where(x => planIds.Contains(x.PlanId) && x.BreakCoverEmployeeId == employee.Id && x.BreakStartTime != null)
         .Select(x => new { x.WorkDate, x.BreakStartTime, x.BreakEndTime, x.EmployeeId, x.BreakWorkstationId })
+        .OrderBy(x => x.WorkDate)
         .ToListAsync(cancellationToken);
 
     var coverEmpIds = coverRows.Select(x => x.EmployeeId).Distinct().ToList();
