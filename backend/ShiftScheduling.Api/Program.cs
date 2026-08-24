@@ -2342,6 +2342,11 @@ api.MapDelete("/schedules/{planId:long}", async (
         .Where(x => x.PlanId == planId)
         .ExecuteDeleteAsync(cancellationToken);
 
+    // 调整明细（schedule_adjustments 外键指向排班计划，遗漏会导致删除 500）
+    await dbContext.ScheduleAdjustments
+        .Where(x => x.PlanId == planId)
+        .ExecuteDeleteAsync(cancellationToken);
+
     // 删除计划本身
     dbContext.SchedulePlans.Remove(plan);
     await dbContext.SaveChangesAsync(cancellationToken);

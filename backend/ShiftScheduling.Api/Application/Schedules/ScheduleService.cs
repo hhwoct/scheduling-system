@@ -79,6 +79,9 @@ public sealed class ScheduleService : IScheduleService
             await _dbContext.ScheduleIssues
                 .Where(x => x.PlanId == existingPlan.Id)
                 .ExecuteDeleteAsync(cancellationToken);
+            await _dbContext.ScheduleAdjustments
+                .Where(x => x.PlanId == existingPlan.Id)
+                .ExecuteDeleteAsync(cancellationToken);
             await _dbContext.SchedulePlans
                 .Where(x => x.Id == existingPlan.Id)
                 .ExecuteDeleteAsync(cancellationToken);
@@ -1244,7 +1247,8 @@ public sealed class ScheduleService : IScheduleService
 
         await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
 
-        // 清空目标计划现有明细
+        // 清空目标计划现有明细（含历史调整记录，避免残留已失效的调整明细）
+        await _dbContext.ScheduleAdjustments.Where(x => x.PlanId == planId).ExecuteDeleteAsync(cancellationToken);
         await _dbContext.ScheduleResults.Where(x => x.PlanId == planId).ExecuteDeleteAsync(cancellationToken);
         await _dbContext.ScheduleSummaries.Where(x => x.PlanId == planId).ExecuteDeleteAsync(cancellationToken);
 

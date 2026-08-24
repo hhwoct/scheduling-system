@@ -217,6 +217,11 @@ async function handleCommand(command) {
   border-right: none;
   flex: 1;
 }
+/* 选中菜单项加深背景，突出当前页面 */
+.emp-aside :deep(.el-menu-item.is-active),
+.emp-aside :deep(.el-menu-item.is-active:hover) {
+  background-color: #0a2540;
+}
 .emp-aside-footer {
   display: flex;
   align-items: center;
