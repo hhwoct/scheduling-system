@@ -1210,18 +1210,24 @@ api.MapGet("/schedules/{planId:long}/adjustments", async (
         .ThenByDescending(x => x.Id)
         .Skip((page - 1) * pageSize)
         .Take(pageSize)
-        .Select(x => new
-        {
-            x.Id,
-            x.ActionType,
-            x.WorkDate,
-            x.TimeSlot,
-            x.EmployeeId,
-            x.BeforeJson,
-            x.AfterJson,
-            x.OperatorName,
-            x.CreatedAt
-        })
+        .Join(
+            db.Employees.AsNoTracking(),
+            a => a.EmployeeId,
+            e => (long?)e.Id,
+            (a, e) => new
+            {
+                a.Id,
+                a.ActionType,
+                a.WorkDate,
+                a.TimeSlot,
+                a.EmployeeId,
+                EmployeeNo = e.EmployeeNo,
+                EmployeeName = e.Name,
+                a.BeforeJson,
+                a.AfterJson,
+                a.OperatorName,
+                a.CreatedAt
+            })
         .ToListAsync(ct);
 
     return ApiResponse.Ok(PagedResult<object>.Create(page, pageSize, total, items), "获取调整明细成功");

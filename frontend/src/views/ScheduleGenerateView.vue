@@ -75,10 +75,11 @@
             <el-tag :type="row.status === 'PUBLISHED' ? 'success' : 'info'">{{ row.status === 'PUBLISHED' ? '已发布' : '草稿' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="260">
+        <el-table-column label="操作" width="320">
           <template #default="{ row }">
             <el-button link type="primary" @click="goView(row.id)">查看排班</el-button>
             <el-button v-if="row.status === 'DRAFT'" link type="success" @click="handlePublish(row)">发布</el-button>
+            <el-button link type="warning" @click="openAdjustments(row)">调整记录</el-button>
             <el-button link type="danger" @click="handleDelete(row)">删除</el-button>
           </template>
         </el-table-column>
@@ -92,6 +93,40 @@
         @current-change="loadPlans"
       />
     </el-card>
+
+    <!-- 调整记录明细（店长修改全程记录） -->
+    <el-dialog v-model="adjustDialog.visible" :title="'调整记录 - ' + adjustDialog.planName" width="860px" destroy-on-close>
+      <el-table :data="adjustDialog.items" size="small" max-height="420">
+        <el-table-column label="时间" width="150">
+          <template #default="{ row }">{{ formatAdjTime(row.createdAt) }}</template>
+        </el-table-column>
+        <el-table-column label="操作" width="110">
+          <template #default="{ row }">
+            <el-tag :type="actionTagType(row.actionType)" size="small">{{ actionLabel(row.actionType) }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="employeeNo" label="工号" width="80" />
+        <el-table-column prop="employeeName" label="员工" width="90" />
+        <el-table-column label="日期/时段" width="140">
+          <template #default="{ row }">{{ row.workDate ? String(row.workDate).slice(0, 10) : '-' }}{{ row.timeSlot ? ' ' + String(row.timeSlot).slice(0, 5) : '' }}</template>
+        </el-table-column>
+        <el-table-column label="调整内容" min-width="200">
+          <template #default="{ row }">{{ describeAdjustment(row) }}</template>
+        </el-table-column>
+        <el-table-column prop="operatorName" label="操作人" width="100" />
+      </el-table>
+      <template #footer>
+        <el-pagination
+          small
+          layout="total, prev, pager, next"
+          :total="adjustDialog.total"
+          :page-size="adjustDialog.pageSize"
+          :current-page="adjustDialog.page"
+          @current-change="loadAdjustments"
+        />
+        <el-button @click="adjustDialog.visible = false">关闭</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -99,7 +134,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { generateSchedule, getSchedules, publishSchedule, deleteSchedule, getScheduleIssues, getAdjustmentSummary } from '../api/schedules'
+import { generateSchedule, getSchedules, publishSchedule, deleteSchedule, getScheduleIssues, getAdjustmentSummary, getScheduleAdjustments } from '../api/schedules'
 import { getStaffingRequirementPreview } from '../api/staffingRequirements'
 
 function getToday() {
@@ -249,6 +284,72 @@ async function loadPlans(current = 1) {
   } finally {
     plansLoading.value = false
   }
+}
+
+// ===== 调整记录明细（店长修改全程记录） =====
+const adjustDialog = reactive({
+  visible: false,
+  planId: null,
+  planName: '',
+  items: [],
+  total: 0,
+  page: 1,
+  pageSize: 50,
+  loading: false
+})
+
+const ADJUST_LABELS = {
+  MOVE_SEGMENT: '移动工作段',
+  SET_REST: '改为休息',
+  SET_WORK: '恢复上班',
+  ADJUST: '调整'
+}
+const ADJUST_TAG_TYPES = {
+  MOVE_SEGMENT: 'warning',
+  SET_REST: 'danger',
+  SET_WORK: 'success',
+  ADJUST: 'info'
+}
+const actionLabel = (t) => ADJUST_LABELS[t] || t
+const actionTagType = (t) => ADJUST_TAG_TYPES[t] || 'info'
+
+function formatAdjTime(t) {
+  if (!t) return ''
+  return String(t).replace('T', ' ').slice(0, 19)
+}
+
+function describeAdjustment(row) {
+  if (row.actionType === 'MOVE_SEGMENT') {
+    try {
+      const before = JSON.parse(row.beforeJson || '{}')
+      const after = JSON.parse(row.afterJson || '{}')
+      return (before.WorkstationId ? '站' + before.WorkstationId + ' ' : '') + (before.TimeSlot || '') +
+        ' → ' + (after.WorkstationId ? '站' + after.WorkstationId + ' ' : '') + (after.TimeSlot || '')
+    } catch { return row.afterJson || '' }
+  }
+  return row.afterJson || ''
+}
+
+async function loadAdjustments(page) {
+  if (!adjustDialog.planId) return
+  adjustDialog.loading = true
+  try {
+    const res = await getScheduleAdjustments(adjustDialog.planId, page, adjustDialog.pageSize)
+    adjustDialog.page = page
+    adjustDialog.items = res.items || []
+    adjustDialog.total = res.total || 0
+  } catch (e) {
+    ElMessage.error('加载调整记录失败：' + (e.message || '网络错误'))
+  } finally {
+    adjustDialog.loading = false
+  }
+}
+
+function openAdjustments(row) {
+  adjustDialog.planId = row.id
+  adjustDialog.planName = row.planName
+  adjustDialog.visible = true
+  loadAdjustments(1)
 }
 
 async function handlePublish(row) {
