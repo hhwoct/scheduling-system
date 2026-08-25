@@ -408,7 +408,7 @@ INSERT INTO peak_restricted_hours (store_id, start_time, end_time) VALUES (1, '2
 --     (1, 'manager', '<BCRYPT_HASH>', '门店经理', 'STORE_MANAGER', 1);
 --  2. 或由部署脚本读取环境变量 INIT_ADMIN_PASSWORD / INIT_MANAGER_PASSWORD 生成上述 SQL 注入。
 -- 员工账号（E001~E023）以合法格式但不可登录的占位哈希创建，部署时替换，或执行
--- database/migrations/20260811_fix_password_hashes.sql（初始密码 = 工号，含 E023 账号兜底创建）。
+-- database/migrations/20260811_fix_password_hashes.sql（初始密码 = 工号@123456，如 E001@123456，含 E023 账号兜底创建）。
 -- 原占位哈希（含下划线、长度不足 60）非合法 bcrypt，且预插 admin/manager 会携带已知哈希，故已移除。
 
 INSERT INTO workstations (store_id, code, name, sort_order, remark, status) VALUES
