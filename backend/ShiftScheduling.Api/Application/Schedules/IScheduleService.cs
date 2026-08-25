@@ -85,4 +85,12 @@ public interface IScheduleService
         string operatorName,
         bool force,
         CancellationToken cancellationToken);
+
+    /// <summary>取消发布：已发布计划退回草稿（PublishedAt 清空、明细回 DRAFT），并通知员工。</summary>
+    Task UnpublishAsync(
+        long planId,
+        long storeId,
+        long operatorUserId,
+        string operatorName,
+        CancellationToken cancellationToken);
 }

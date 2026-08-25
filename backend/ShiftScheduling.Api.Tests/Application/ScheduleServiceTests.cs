@@ -277,6 +277,37 @@ public sealed class ScheduleServiceTests
     }
 
     [Fact]
+    public async Task UnpublishAsync_PublishedPlan_RevertsToDraftAndNotifies()
+    {
+        await SeedStoreDataAsync();
+        var service = CreateService();
+        var generated = await service.GenerateAsync(new GenerateScheduleRequest(Start, End), 1, 9, "管理员", CancellationToken.None);
+        await service.PublishAsync(generated.PlanId, 1, 9, "管理员", force: false, CancellationToken.None);
+
+        await service.UnpublishAsync(generated.PlanId, 1, 9, "管理员", CancellationToken.None);
+
+        var db = _factory.CreateDbContext();
+        var plan = await db.SchedulePlans.AsNoTracking().FirstAsync(x => x.Id == generated.PlanId);
+        Assert.Equal("DRAFT", plan.Status);
+        Assert.Null(plan.PublishedAt);
+        Assert.True(await db.ScheduleResults.AsNoTracking().AllAsync(x => x.PlanId == plan.Id && x.Status == "DRAFT"));
+        Assert.True(await db.Notifications.AsNoTracking().AnyAsync(x => x.NotificationType == "SCHEDULE_UNPUBLISHED"));
+        Assert.Contains("UNPUBLISH_SCHEDULE", _audit.Entries.Select(e => e.ActionType));
+    }
+
+    [Fact]
+    public async Task UnpublishAsync_DraftPlan_Throws()
+    {
+        await SeedStoreDataAsync();
+        var service = CreateService();
+        var generated = await service.GenerateAsync(new GenerateScheduleRequest(Start, End), 1, 9, "管理员", CancellationToken.None);
+
+        var ex = await Assert.ThrowsAsync<BusinessException>(() =>
+            service.UnpublishAsync(generated.PlanId, 1, 9, "管理员", CancellationToken.None));
+        Assert.Equal("NOT_PUBLISHED", ex.ErrorCode);
+    }
+
+    [Fact]
     public async Task GenerateAsync_NoDateParameters_ThrowsBusinessException()
     {
         await SeedStoreDataAsync();

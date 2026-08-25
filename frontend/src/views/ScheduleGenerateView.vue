@@ -79,6 +79,7 @@
           <template #default="{ row }">
             <el-button link type="primary" @click="goView(row.id)">查看排班</el-button>
             <el-button v-if="row.status === 'DRAFT'" link type="success" @click="handlePublish(row)">发布</el-button>
+            <el-button v-if="row.status === 'PUBLISHED'" link type="danger" @click="handleUnpublish(row)">取消发布</el-button>
             <el-button v-if="row.status === 'DRAFT'" link type="primary" @click="handleCopyPrevious(row)">复制上周</el-button>
             <el-button link type="warning" @click="openAdjustments(row)">调整记录</el-button>
             <el-button link type="danger" @click="handleDelete(row)">删除</el-button>
@@ -135,7 +136,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { generateSchedule, getSchedules, publishSchedule, deleteSchedule, getScheduleIssues, getAdjustmentSummary, getScheduleAdjustments, copyPreviousWeek } from '../api/schedules'
+import { generateSchedule, getSchedules, publishSchedule, unpublishSchedule, deleteSchedule, getScheduleIssues, getAdjustmentSummary, getScheduleAdjustments, copyPreviousWeek } from '../api/schedules'
 import { getStaffingRequirementPreview } from '../api/staffingRequirements'
 import { getDemandInsights } from '../api/schedules'
 
@@ -438,6 +439,26 @@ async function handlePublish(row) {
 
   ElMessage.success('发布成功')
   loadPlans(page.value)
+}
+
+// 取消发布：已发布排班退回草稿（员工端班表消失，可调整后重新发布）
+async function handleUnpublish(row) {
+  try {
+    await ElMessageBox.confirm(
+      '确定取消发布「' + row.planName + '」吗？取消后员工端将不再显示该班表，计划退回草稿，可继续调整后重新发布。',
+      '取消发布',
+      { type: 'warning', confirmButtonText: '取消发布', cancelButtonText: '再想想' }
+    )
+  } catch {
+    return
+  }
+  try {
+    await unpublishSchedule(row.id)
+    ElMessage.success('已取消发布，排班退回草稿')
+    loadPlans(page.value)
+  } catch (e) {
+    /* 拦截器已提示 */
+  }
 }
 
 async function handleDelete(row) {

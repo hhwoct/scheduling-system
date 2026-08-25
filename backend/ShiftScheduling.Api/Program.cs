@@ -1108,6 +1108,23 @@ api.MapPost("/schedules/{planId:long}/publish", async (
     return ApiResponse.Ok(true, "排班发布成功");
 }).RequireAuthorization("AdminOnly");
 
+// 取消发布：已发布排班退回草稿（可继续调整后重新发布），并通知员工班表取消
+api.MapPost("/schedules/{planId:long}/unpublish", async (
+    long planId,
+    ICurrentUser currentUser,
+    IScheduleService scheduleService,
+    CancellationToken cancellationToken) =>
+{
+    var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
+    await scheduleService.UnpublishAsync(
+        planId,
+        storeId,
+        currentUser.UserId ?? 0,
+        currentUser.Nickname ?? currentUser.Username ?? "匿名",
+        cancellationToken);
+    return ApiResponse.Ok(true, "已取消发布，排班退回草稿");
+}).RequireAuthorization("AdminOnly");
+
 // 复制上周（P2）：以最近一期已发布排班为起点生成草稿
 api.MapPost("/schedules/{planId:long}/copy-previous", async (
     long planId,

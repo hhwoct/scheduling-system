@@ -65,6 +65,11 @@ export function publishSchedule(planId, force = false) {
   return request.post(API_ROUTES.SCHEDULES.PUBLISH(planId), null, { params: { force } }).then(res => res.data)
 }
 
+// 取消发布：已发布排班退回草稿（可调整后重新发布）
+export function unpublishSchedule(planId) {
+  return request.post(API_ROUTES.SCHEDULES.UNPUBLISH(planId)).then(res => res.data)
+}
+
 // 发布前调整摘要（P0 交互）：对比生成快照返回改休/换班统计
 export function getAdjustmentSummary(planId) {
   return request.get(`/schedules/${planId}/adjustment-summary`).then(res => res.data)

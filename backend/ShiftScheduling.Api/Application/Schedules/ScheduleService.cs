@@ -1429,6 +1429,77 @@ public sealed class ScheduleService : IScheduleService
         await transaction.CommitAsync(cancellationToken);
     }
 
+    /// <summary>
+    /// 取消发布：已发布计划退回草稿，员工端不再显示该班表；
+    /// 明细状态回 DRAFT，可继续手动调整后重新发布。
+    /// </summary>
+    public async Task UnpublishAsync(
+        long planId,
+        long storeId,
+        long operatorUserId,
+        string operatorName,
+        CancellationToken cancellationToken)
+    {
+        var plan = await _dbContext.SchedulePlans
+            .FirstOrDefaultAsync(x => x.Id == planId && x.StoreId == storeId, cancellationToken)
+            ?? throw new NotFoundException("排班计划不存在");
+
+        if (plan.Status != "PUBLISHED")
+        {
+            throw new BusinessException("该排班计划未发布，无需取消", "NOT_PUBLISHED");
+        }
+
+        await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
+
+        plan.Status = "DRAFT";
+        plan.PublishedAt = null;
+        plan.UpdatedAt = DateTime.UtcNow;
+
+        await _dbContext.ScheduleResults
+            .Where(x => x.PlanId == planId)
+            .ExecuteUpdateAsync(s => s.SetProperty(x => x.Status, "DRAFT"), cancellationToken);
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        // 与发布保持一致：员工通知纳入同一事务（排班取消后员工端班表消失，需明确告知）
+        var encodedPlanName = WebUtility.HtmlEncode(plan.PlanName);
+        var employeeIds = await _dbContext.ScheduleSummaries.AsNoTracking()
+            .Where(x => x.PlanId == planId)
+            .Select(x => x.EmployeeId)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+        foreach (var empId in employeeIds)
+        {
+            _dbContext.Notifications.Add(new NotificationEntity
+            {
+                StoreId = storeId,
+                ReceiverEmployeeId = empId,
+                NotificationType = "SCHEDULE_UNPUBLISHED",
+                Title = "排班已取消",
+                Content = $"排班计划「{encodedPlanName}」已取消发布，班表暂不生效，请等待新的班表通知",
+                IsRead = 0,
+                CreatedAt = DateTime.UtcNow
+            });
+        }
+
+        _auditLogService.AddAuditEntity(
+            _dbContext,
+            storeId,
+            operatorUserId,
+            operatorName,
+            "UNPUBLISH_SCHEDULE",
+            "SCHEDULE_PLAN",
+            planId,
+            null,
+            $"{plan.PlanName} 已取消发布",
+            "取消发布排班",
+            DateTime.UtcNow);
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        await transaction.CommitAsync(cancellationToken);
+    }
+
     private async Task<SchedulePlanEntity> GetPlanAsync(long planId, long storeId, CancellationToken cancellationToken)
     {
         var plan = await _dbContext.SchedulePlans
