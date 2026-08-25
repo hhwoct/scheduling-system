@@ -39,6 +39,7 @@ export const API_ROUTES = {
     REMOVE_SLOT: (planId) => `/schedules/${encodeURIComponent(planId)}/remove-slot`,
     REPLACE_SLOT: (planId) => `/schedules/${encodeURIComponent(planId)}/replace-slot`,
     MOVE_RANGE: (planId) => `/schedules/${encodeURIComponent(planId)}/move-range`,
+    CLEAR_RANGE: (planId) => `/schedules/${encodeURIComponent(planId)}/clear-range`,
     ADD_CANDIDATES: (planId) => `/schedules/${encodeURIComponent(planId)}/add-candidates`
   },
   LEAVE: {

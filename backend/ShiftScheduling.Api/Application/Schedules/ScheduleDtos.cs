@@ -180,3 +180,12 @@ public sealed record MoveScheduleRangeRequest(
     long WorkstationId,
     IReadOnlyList<TimeSpan> TimeSlots,
     int OffsetMinutes);
+
+/// <summary>
+/// 取消排班（工具条）：删除指定工作站某天所选时段内的全部明细（直接下班），
+/// 并按剩余时段重算受影响员工的日汇总。仅草稿计划可用。
+/// </summary>
+public sealed record ClearScheduleRangeRequest(
+    DateOnly WorkDate,
+    long WorkstationId,
+    IReadOnlyList<TimeSpan> TimeSlots);

@@ -138,4 +138,13 @@ public interface IScheduleService
         long operatorUserId,
         string operatorName,
         CancellationToken cancellationToken);
+
+    /// <summary>取消排班：删除所选时段内全部明细（直接下班），重算受影响员工汇总（仅草稿计划）。</summary>
+    Task<int> ClearRangeAsync(
+        long planId,
+        ClearScheduleRangeRequest request,
+        long storeId,
+        long operatorUserId,
+        string operatorName,
+        CancellationToken cancellationToken);
 }

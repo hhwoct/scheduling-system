@@ -144,6 +144,7 @@
               <el-option v-for="e in rangeSelEmployees" :key="e.id" :value="e.id" :label="e.name" />
             </el-select>
             <el-button size="small" type="warning" :disabled="!rangeSel.restEmployeeId" @click="toggleRangeRest">{{ rangeSelRestLabel }}</el-button>
+            <el-button size="small" type="danger" @click="cancelRangeSchedule">取消排班{{ rangeSel.restEmployeeId ? '' : '（全部）' }}</el-button>
             <el-button size="small" link @click="clearRangeSel">✕</el-button>
           </div>
           <div class="m-row m-header"><div class="m-ws-col">工作站</div><div v-for="slot in slots" :key="slot.key" class="m-slot-col" :title="slot.display"><span v-if="isHour(slot)">{{ slot.display }}</span></div></div>
@@ -277,8 +278,8 @@
 import { onMounted, onBeforeUnmount, ref, reactive, computed, nextTick, watch } from 'vue'
 import * as echarts from 'echarts'
 import { useRoute } from 'vue-router'
-import { ElMessage } from 'element-plus'
-import { getMonthView, getWeekView, getDailyView, getScheduleIssues, getScheduleRationality, getSchedules, setSlotStatus, moveScheduleSegment, getAddSlotCandidates, addScheduleSlot, removeScheduleSlot, replaceScheduleSlot, moveScheduleRange } from '../api/schedules'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { getMonthView, getWeekView, getDailyView, getScheduleIssues, getScheduleRationality, getSchedules, setSlotStatus, moveScheduleSegment, getAddSlotCandidates, addScheduleSlot, removeScheduleSlot, replaceScheduleSlot, moveScheduleRange, clearScheduleRange } from '../api/schedules'
 import { getPreferenceMatrix } from '../api/preferences'
 
 const route = useRoute()
@@ -647,6 +648,16 @@ async function handleUndo() {
     } else if (entry.type === 'range-rest') {
       // 撤回休息切换：反向恢复
       await setSlotStatus(planId.value, { items: entry.payload.items })
+    } else if (entry.type === 'cancel-range') {
+      // 撤回取消排班：按员工逐个恢复原时段
+      for (const r of entry.payload.restores || []) {
+        await addScheduleSlot(planId.value, {
+          employeeId: r.employeeId,
+          workDate: entry.payload.workDate,
+          timeSlots: r.timeSlots,
+          workstationId: r.workstationId
+        })
+      }
     }
     ElMessage.success('已撤销')
     await loadDay(selectedDate.value || dayDate.value)
@@ -1309,6 +1320,78 @@ async function toggleRangeRest() {
       text: (toRest ? '已改为休息 ' : '已恢复上班 ') + (rangeSelEmployees.value.find(x => x.id === empId)?.name || ''),
       payload: { items: submitItems.map(it => ({ ...it, isRest: it.isRest === 1 ? 0 : 1 })) }
     })
+    await loadDay(dayDate.value)
+  } catch (e) {
+    /* 拦截器已提示 */
+  }
+}
+
+// 取消排班：选了员工只取消该员工在范围内的时段；未选则取消范围内所有人（需确认）
+async function cancelRangeSchedule() {
+  const keys = [...rangeSelKeys.value]
+  if (!keys.length || !dayDate.value) return
+  const wsId = wsNameToId.value.get(rangeSel.ws)
+  if (!wsId) return
+
+  const empId = rangeSel.restEmployeeId
+  // 收集范围内的明细（用于撤销恢复与受影响人数统计）
+  const byEmployee = new Map() // employeeId -> { name, timeSlots }
+  for (const k of keys) {
+    const slot = slots.value[slotIndex(k)]
+    if (!slot) continue
+    for (const u of dailyCellUsers(rangeSel.ws, slot)) {
+      const entry = byEmployee.get(u.employeeId) || { name: u.employeeName || u.employeeNo, timeSlots: [] }
+      entry.timeSlots.push(k)
+      byEmployee.set(u.employeeId, entry)
+    }
+  }
+  if (byEmployee.size === 0) {
+    ElMessage.warning('所选范围没有排班记录')
+    return
+  }
+
+  // 确认
+  let confirmText = ''
+  if (empId && byEmployee.has(empId)) {
+    const e = byEmployee.get(empId)
+    confirmText = `确定取消 ${e.name} 在所选范围的排班（${e.timeSlots.length} 段）吗？取消后这些时段直接下班。`
+  } else {
+    const people = [...byEmployee.values()].map(e => e.name).join('、')
+    confirmText = `确定取消所选范围内全部排班吗？涉及 ${people}（共 ${byEmployee.size} 人），取消后这些时段直接下班。`
+  }
+  try {
+    await ElMessageBox.confirm(confirmText, '取消排班', { type: 'warning', confirmButtonText: '取消排班', cancelButtonText: '再想想' })
+  } catch {
+    return
+  }
+
+  try {
+    let restorePayload = []
+    if (empId && byEmployee.has(empId)) {
+      const e = byEmployee.get(empId)
+      await removeScheduleSlot(planId.value, {
+        employeeId: empId,
+        workDate: dayDate.value,
+        timeSlots: e.timeSlots,
+        workstationId: wsId
+      })
+      restorePayload = [{ employeeId: empId, timeSlots: e.timeSlots, workstationId: wsId }]
+      ElMessage.success(`已取消 ${e.name} 的排班（${e.timeSlots.length} 段）`)
+    } else {
+      await clearScheduleRange(planId.value, {
+        workDate: dayDate.value,
+        workstationId: wsId,
+        timeSlots: keys
+      })
+      restorePayload = [...byEmployee.entries()].map(([id, e]) => ({ employeeId: id, timeSlots: e.timeSlots, workstationId: wsId }))
+      ElMessage.success(`已取消范围内排班（${byEmployee.size} 人）`)
+    }
+    pushUndo({
+      type: 'cancel-range',
+      text: '已取消排班 ' + (empId ? byEmployee.get(empId)?.name : rangeSel.ws + ' ' + rangeSelCount.value + ' 段'),
+      payload: { restores: restorePayload, workDate: dayDate.value }
+    })
+    clearRangeSel()
     await loadDay(dayDate.value)
   } catch (e) {
     /* 拦截器已提示 */

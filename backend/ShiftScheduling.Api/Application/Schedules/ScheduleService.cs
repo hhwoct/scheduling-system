@@ -2174,6 +2174,98 @@ public sealed class ScheduleService : IScheduleService
         return rows.Count;
     }
 
+    /// <summary>取消排班：删除所选时段内全部明细（直接下班），重算受影响员工汇总（仅草稿计划）。</summary>
+    public async Task<int> ClearRangeAsync(
+        long planId,
+        ClearScheduleRangeRequest request,
+        long storeId,
+        long operatorUserId,
+        string operatorName,
+        CancellationToken cancellationToken)
+    {
+        var plan = await GetPlanAsync(planId, storeId, cancellationToken);
+
+        if (plan.Status == "PUBLISHED")
+        {
+            throw new BusinessException("已发布的排班不能直接调整，请取消发布后再修改", "SCHEDULE_PUBLISHED");
+        }
+
+        if (request.TimeSlots is null || request.TimeSlots.Count == 0 || request.TimeSlots.Count > 68)
+        {
+            throw new BusinessException("时段列表不能为空且单次最多 68 段（34 小时）", "INVALID_TIME_SLOT");
+        }
+
+        var timeSlots = request.TimeSlots.Distinct().OrderBy(t => t).ToList();
+        foreach (var t in timeSlots)
+        {
+            if (t < TimeSpan.Zero || t >= TimeSpan.FromHours(24) || t.Seconds != 0 || t.Minutes % 30 != 0)
+            {
+                throw new BusinessException("时段必须为 30 分钟对齐的合法时间（00:00~23:30）", "INVALID_TIME_SLOT");
+            }
+        }
+
+        var workstation = await _dbContext.Workstations.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == request.WorkstationId && x.StoreId == storeId && x.Status == 1, cancellationToken)
+            ?? throw new BusinessException("工作站不存在或已停用", "WORKSTATION_NOT_FOUND");
+
+        await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
+
+        var affectedIds = await _dbContext.ScheduleResults.AsNoTracking()
+            .Where(x => x.PlanId == planId && x.WorkDate == request.WorkDate &&
+                        x.WorkstationId == request.WorkstationId && timeSlots.Contains(x.TimeSlot))
+            .Select(x => x.EmployeeId)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+
+        var deleted = await _dbContext.ScheduleResults
+            .Where(x => x.PlanId == planId && x.WorkDate == request.WorkDate &&
+                        x.WorkstationId == request.WorkstationId && timeSlots.Contains(x.TimeSlot))
+            .ExecuteDeleteAsync(cancellationToken);
+        if (deleted == 0)
+        {
+            throw new BusinessException("所选时段没有排班记录，无需取消", "SLOT_NOT_FOUND");
+        }
+
+        foreach (var empId in affectedIds)
+        {
+            await RecomputeDaySummaryAsync(planId, storeId, empId, request.WorkDate, cancellationToken);
+        }
+
+        _dbContext.ScheduleAdjustments.Add(new ScheduleAdjustmentEntity
+        {
+            StoreId = storeId,
+            PlanId = planId,
+            EmployeeId = null,
+            WorkDate = request.WorkDate,
+            TimeSlot = timeSlots[0],
+            ActionType = "CLEAR_RANGE",
+            BeforeJson = JsonSerializer.Serialize(new { request.WorkstationId, TimeSlots = timeSlots, AffectedEmployeeIds = affectedIds }),
+            AfterJson = null,
+            OperatorUserId = operatorUserId,
+            OperatorName = operatorName,
+            CreatedAt = DateTime.UtcNow
+        });
+
+        _auditLogService.AddAuditEntity(
+            _dbContext,
+            storeId,
+            operatorUserId,
+            operatorName,
+            "CLEAR_SCHEDULE_RANGE",
+            "SCHEDULE_RESULT",
+            planId,
+            null,
+            $"{request.WorkDate:yyyy-MM-dd} 「{workstation.Name}」取消 {deleted} 条明细（{affectedIds.Count} 名员工），时段 {timeSlots.Count} 段",
+            "取消排班",
+            DateTime.UtcNow);
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        await transaction.CommitAsync(cancellationToken);
+
+        return deleted;
+    }
+
     /// <summary>按当天剩余明细重算日汇总（无剩余则回退休息日）。</summary>
     private async Task RecomputeDaySummaryAsync(long planId, long storeId, long employeeId, DateOnly workDate, CancellationToken cancellationToken)
     {

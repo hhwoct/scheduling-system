@@ -1221,6 +1221,30 @@ api.MapPut("/schedules/{planId:long}/move-range", async (
     return ApiResponse.Ok(new { moved }, "平移成功");
 }).RequireAuthorization("AdminOnly");
 
+// 取消排班：删除所选时段内全部明细（直接下班），重算受影响员工汇总（仅草稿计划）
+api.MapPut("/schedules/{planId:long}/clear-range", async (
+    long planId,
+    ClearScheduleRangeRequest request,
+    ICurrentUser currentUser,
+    IScheduleService scheduleService,
+    CancellationToken cancellationToken) =>
+{
+    if (request is null)
+    {
+        throw new BusinessException("请求参数不能为空", "INVALID_REQUEST");
+    }
+
+    var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
+    var deleted = await scheduleService.ClearRangeAsync(
+        planId,
+        request,
+        storeId,
+        currentUser.UserId ?? 0,
+        currentUser.Nickname ?? currentUser.Username ?? "匿名",
+        cancellationToken);
+    return ApiResponse.Ok(new { deleted }, "已取消所选时段排班");
+}).RequireAuthorization("AdminOnly");
+
 // 空位加人候选列表：技能/兼职岗位限制/请假/当天已排班过滤
 api.MapGet("/schedules/{planId:long}/add-candidates", async (
     long planId,

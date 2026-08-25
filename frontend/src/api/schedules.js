@@ -90,6 +90,11 @@ export function moveScheduleRange(planId, data) {
   return request.put(API_ROUTES.SCHEDULES.MOVE_RANGE(planId), data).then(res => res.data)
 }
 
+// 取消排班：删除所选时段内全部明细（直接下班，仅草稿）
+export function clearScheduleRange(planId, data) {
+  return request.put(API_ROUTES.SCHEDULES.CLEAR_RANGE(planId), data).then(res => res.data)
+}
+
 // 空位加人候选员工列表
 export function getAddSlotCandidates(planId, params) {
   return request.get(API_ROUTES.SCHEDULES.ADD_CANDIDATES(planId), { params }).then(res => res.data)

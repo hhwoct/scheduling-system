@@ -633,6 +633,58 @@ public sealed class ScheduleServiceTests
     }
 
     [Fact]
+    public async Task ClearRangeAsync_ClearsAllAndRecomputesSummary()
+    {
+        await SeedStoreDataAsync();
+        var service = CreateService();
+        var generated = await service.GenerateAsync(new GenerateScheduleRequest(Start, End), 1, 9, "管理员", CancellationToken.None);
+
+        var db = _factory.CreateDbContext();
+        var e2 = await db.Employees.AsNoTracking().FirstAsync(x => x.EmployeeNo == "E002");
+        var ws = await db.Workstations.AsNoTracking().FirstAsync(x => x.Code == "SVC");
+        db.EmployeeSkills.Add(new EmployeeSkillEntity
+        {
+            EmployeeId = e2.Id, WorkstationId = ws.Id, SkillScore = 3, IsPrimarySkill = 0, Status = 1,
+            CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var two = new List<TimeSpan> { new(14, 0, 0), new(14, 30, 0) };
+        await service.AddSlotAsync(generated.PlanId,
+            new AddScheduleSlotRequest(e2.Id, Start, two, ws.Id), 1, 9, "管理员", CancellationToken.None);
+
+        var deleted = await service.ClearRangeAsync(generated.PlanId,
+            new ClearScheduleRangeRequest(Start, ws.Id, two), 1, 9, "管理员", CancellationToken.None);
+
+        Assert.Equal(2, deleted);
+        var db2 = _factory.CreateDbContext();
+        Assert.False(await db2.ScheduleResults.AsNoTracking().AnyAsync(x =>
+            x.PlanId == generated.PlanId && x.EmployeeId == e2.Id && x.WorkDate == Start &&
+            (x.TimeSlot == new TimeSpan(14, 0, 0) || x.TimeSlot == new TimeSpan(14, 30, 0))));
+        var e2Summary = await db2.ScheduleSummaries.AsNoTracking()
+            .FirstAsync(x => x.PlanId == generated.PlanId && x.EmployeeId == e2.Id && x.WorkDate == Start);
+        Assert.Equal(1, e2Summary.IsRestDay);
+        Assert.Contains("CLEAR_SCHEDULE_RANGE", _audit.Entries.Select(x => x.ActionType));
+    }
+
+    [Fact]
+    public async Task ClearRangeAsync_EmptyRange_Throws()
+    {
+        await SeedStoreDataAsync();
+        var service = CreateService();
+        var generated = await service.GenerateAsync(new GenerateScheduleRequest(Start, End), 1, 9, "管理员", CancellationToken.None);
+
+        var db = _factory.CreateDbContext();
+        var ws = await db.Workstations.AsNoTracking().FirstAsync(x => x.Code == "SVC");
+
+        var ex = await Assert.ThrowsAsync<BusinessException>(() =>
+            service.ClearRangeAsync(generated.PlanId,
+                new ClearScheduleRangeRequest(Start, ws.Id, new List<TimeSpan> { new(10, 0, 0) }),
+                1, 9, "管理员", CancellationToken.None));
+        Assert.Equal("SLOT_NOT_FOUND", ex.ErrorCode);
+    }
+
+    [Fact]
     public async Task MoveRangeAsync_ShiftsRowsAndRecomputesSummary()
     {
         await SeedStoreDataAsync();
