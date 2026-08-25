@@ -1,6 +1,6 @@
 <template>
   <el-dialog v-model="visible" title="修改密码" width="420px" destroy-on-close>
-    <el-form ref="formRef" :model="form" :rules="rules" label-width="90px">
+    <el-form ref="formRef" :model="form" :rules="rules" label-width="100px" class="change-pwd-form">
       <el-form-item label="当前密码" prop="oldPassword">
         <el-input v-model="form.oldPassword" type="password" show-password placeholder="请输入当前密码" autocomplete="current-password" />
       </el-form-item>
@@ -100,3 +100,10 @@ async function submit() {
   }
 }
 </script>
+
+<style scoped>
+/* 标签固定单行显示，避免「确认新密码」五个字换行 */
+.change-pwd-form :deep(.el-form-item__label) {
+  white-space: nowrap;
+}
+</style>
