@@ -252,6 +252,18 @@ public sealed class AuthService : IAuthService
             throw new BusinessException("新密码不能与当前密码相同", "SAME_PASSWORD");
         }
 
+        // 手机号验证（用户要求）：具备员工档案的账号需与档案手机号一致；
+        // 无员工档案的账号（admin/manager）没有手机号可验证，跳过（仍受旧密码保护）
+        var employee = await _dbContext.Employees.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.EmployeeNo == user.Username && x.StoreId == user.StoreId && x.Status == 1, cancellationToken);
+        if (employee is not null)
+        {
+            if (string.IsNullOrWhiteSpace(request.VerifyInfo) || employee.Phone != request.VerifyInfo.Trim())
+            {
+                throw new BusinessException("手机号验证失败，请使用注册手机号", "PHONE_MISMATCH");
+            }
+        }
+
         user.PasswordHash = _passwordService.Hash(request.NewPassword);
         user.PasswordVersion++;  // 使旧 JWT 令牌失效，前端改密后引导重新登录
         user.UpdatedAt = DateTime.UtcNow;

@@ -4,6 +4,9 @@
       <el-form-item label="当前密码" prop="oldPassword">
         <el-input v-model="form.oldPassword" type="password" show-password placeholder="请输入当前密码" autocomplete="current-password" />
       </el-form-item>
+      <el-form-item label="手机号" prop="verifyInfo">
+        <el-input v-model="form.verifyInfo" placeholder="请输入注册手机号" maxlength="11" />
+      </el-form-item>
       <el-form-item label="新密码" prop="newPassword">
         <el-input v-model="form.newPassword" type="password" show-password placeholder="至少 8 位，含大小写字母和数字" autocomplete="new-password" />
       </el-form-item>
@@ -11,7 +14,7 @@
         <el-input v-model="form.confirmPassword" type="password" show-password placeholder="再次输入新密码" autocomplete="new-password" />
       </el-form-item>
     </el-form>
-    <div style="font-size: 12px; color: #909399">修改成功后当前登录立即失效，需要使用新密码重新登录。</div>
+    <div style="font-size: 12px; color: #909399">手机号需与员工档案中的注册手机号一致（管理员账号无档案，不校验）。修改成功后当前登录立即失效，需要使用新密码重新登录。</div>
     <template #footer>
       <el-button @click="visible = false">取消</el-button>
       <el-button type="primary" :loading="saving" @click="submit">确定修改</el-button>
@@ -31,10 +34,14 @@ const emit = defineEmits(['success'])
 
 const formRef = ref(null)
 const saving = ref(false)
-const form = reactive({ oldPassword: '', newPassword: '', confirmPassword: '' })
+const form = reactive({ oldPassword: '', verifyInfo: '', newPassword: '', confirmPassword: '' })
 
 const rules = {
   oldPassword: [{ required: true, message: '请输入当前密码', trigger: 'blur' }],
+  verifyInfo: [
+    { required: true, message: '请输入注册手机号', trigger: 'blur' },
+    { pattern: /^\d{11}$/, message: '手机号需为 11 位数字', trigger: 'blur' }
+  ],
   newPassword: [
     { required: true, message: '请输入新密码', trigger: 'blur' },
     { min: 8, message: '新密码至少 8 位', trigger: 'blur' },
@@ -68,6 +75,7 @@ const rules = {
 watch(visible, (v) => {
   if (!v) {
     form.oldPassword = ''
+    form.verifyInfo = ''
     form.newPassword = ''
     form.confirmPassword = ''
     formRef.value?.clearValidate()
@@ -84,6 +92,7 @@ async function submit() {
   try {
     await changePassword({
       oldPassword: form.oldPassword,
+      verifyInfo: form.verifyInfo,
       newPassword: form.newPassword,
       confirmPassword: form.confirmPassword
     })
