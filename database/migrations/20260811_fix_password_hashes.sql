@@ -91,14 +91,15 @@ BEGIN
 
     -- 3. E023 账号若缺失则补建（仅 E023；E001~E022 缺失已由上方 SIGNAL 报错，
     --    不再为其它工号生成空哈希账号）
+    --    审查修复（P2）：老库升级时 E023 员工档案由更靠后的 20260814 迁移才补建，
+    --    此处不再依赖 employees 表，员工存在时取档案信息、不存在时用默认值兜底。
     INSERT INTO users (store_id, username, password_hash, nickname, role, status, created_at, updated_at)
-    SELECT e.store_id, e.employee_no,
+    SELECT COALESCE((SELECT e.store_id FROM employees e WHERE e.employee_no = 'E023' LIMIT 1), 1),
+           'E023',
            '$2b$12$Y/M96/9xESm86gGkSP10mOeZjeYiGasg9w2WrtrnHV9qd7iVFFE52',
-           e.name, 'EMPLOYEE', 1, NOW(), NOW()
-    FROM employees e
-    WHERE e.status = 1
-      AND e.employee_no = 'E023'
-      AND NOT EXISTS (SELECT 1 FROM users u WHERE u.username = e.employee_no);
+           COALESCE((SELECT e.name FROM employees e WHERE e.employee_no = 'E023' LIMIT 1), 'E023'),
+           'EMPLOYEE', 1, NOW(), NOW()
+    WHERE NOT EXISTS (SELECT 1 FROM users u WHERE u.username = 'E023');
 
     -- 4. 审计
     INSERT INTO audit_logs (store_id, operator_user_id, operator_name, action_type, target_type, target_id, after_content, remark)

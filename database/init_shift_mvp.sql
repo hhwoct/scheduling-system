@@ -185,7 +185,8 @@ CREATE TABLE staffing_requirements (
   UNIQUE KEY uk_staffing_req (store_id, day_type, workstation_id, time_slot),
   INDEX idx_staffing_req_store_type_slot (store_id, day_type, time_slot),
   CONSTRAINT fk_staffing_req_store FOREIGN KEY (store_id) REFERENCES stores(id),
-  CONSTRAINT fk_staffing_req_workstation FOREIGN KEY (workstation_id) REFERENCES workstations(id)
+  CONSTRAINT fk_staffing_req_workstation FOREIGN KEY (workstation_id) REFERENCES workstations(id),
+  CONSTRAINT chk_ideal_ge_required CHECK (ideal_count >= required_count)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE schedule_plans (

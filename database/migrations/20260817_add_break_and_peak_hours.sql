@@ -2,6 +2,8 @@ USE shift_mvp;
 
 -- 班中休息功能：schedule_summaries 增加休息时段与顶岗字段；
 -- 新增高峰禁休时段表 peak_restricted_hours（admin 端增删改查）。
+-- 审查修复（P2-10 注释）：MySQL DDL 会隐式提交，START TRANSACTION 无法保证
+-- 本脚本原子性，仅作为"整批执行"的语义标记保留。
 START TRANSACTION;
 
 -- 1. 班中休息字段（30 分钟固定休息；break_cover_employee_id = NULL 表示无人顶岗）
