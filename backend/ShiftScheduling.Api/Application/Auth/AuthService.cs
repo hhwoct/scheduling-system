@@ -118,16 +118,19 @@ public sealed class AuthService : IAuthService
 
     public async Task ForgotPasswordAsync(ForgotPasswordRequest request, string? clientIp, CancellationToken cancellationToken)
     {
-        var username = request.Username?.Trim();
-        if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(request.NewPassword) || string.IsNullOrWhiteSpace(request.VerifyInfo))
+        // 新验证口径（用户要求）：姓名 + 手机号 双因素匹配，替代原来的 用户名 + 手机号
+        var name = request.Name?.Trim();
+        var phone = request.VerifyInfo?.Trim();
+        if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(phone) ||
+            string.IsNullOrWhiteSpace(request.NewPassword) || string.IsNullOrWhiteSpace(request.ConfirmPassword))
         {
-            throw new BusinessException("用户名、新密码和验证信息不能为空", "INVALID_FORGOT_REQUEST");
+            throw new BusinessException("姓名、手机号、新密码和确认密码不能为空", "INVALID_FORGOT_REQUEST");
         }
 
         // bcrypt 只取前 72 字节：超过 72 字节会被静默截断，必须在上游拒绝
-        if (username.Length > 50 || Encoding.UTF8.GetByteCount(request.NewPassword) > 72)
+        if (name.Length > 50 || Encoding.UTF8.GetByteCount(request.NewPassword) > 72)
         {
-            throw new BusinessException("用户名或密码格式不正确（密码最长 72 字节）", "INVALID_FORGOT_REQUEST");
+            throw new BusinessException("姓名或密码格式不正确（密码最长 72 字节）", "INVALID_FORGOT_REQUEST");
         }
 
         if (request.NewPassword.Length < 8)
@@ -147,39 +150,45 @@ public sealed class AuthService : IAuthService
             throw new BusinessException("两次输入的密码不一致", "PASSWORD_MISMATCH");
         }
 
-        // 限流 + 锁定检查（无验证码环节，用户名+手机号即可重置，限流防暴力尝试）
-        _passwordResetService.CheckRateLimit(username, clientIp);
+        // 限流 + 锁定检查（按姓名维度 + IP 限流，防暴力尝试）
+        _passwordResetService.CheckRateLimit(name, clientIp);
+
+        // 按「姓名 + 手机号」定位员工（姓名与手机号必须同时匹配，防枚举统一报错）
+        var matched = await _dbContext.Employees
+            .AsNoTracking()
+            .Where(x => x.Name == name && x.Phone == phone && x.Status == 1)
+            .ToListAsync(cancellationToken);
+        if (matched.Count != 1)
+        {
+            _passwordResetService.RecordFailure(name, clientIp);
+            throw new InvalidCredentialsException("姓名或验证信息不正确");
+        }
+        var employee = matched[0];
 
         var user = await _dbContext.Users
-            .FirstOrDefaultAsync(x => x.Username == username && x.Status == 1, cancellationToken)
-            ?? throw new InvalidCredentialsException("用户名或验证信息不正确");
+            .FirstOrDefaultAsync(x => x.Username == employee.EmployeeNo && x.StoreId == employee.StoreId && x.Status == 1, cancellationToken);
+        if (user is null)
+        {
+            _passwordResetService.RecordFailure(name, clientIp);
+            throw new InvalidCredentialsException("姓名或验证信息不正确");
+        }
 
-        // 验证信息校验（防任意重置 + 防用户枚举）：
-        // 放行「具备员工档案」的管理账号（如 SYSTEM_ADMIN 角色的 E001 店长）按用户名+手机号找回；
-        // 无员工档案的账号（admin/manager）仍会被下方员工档案校验拒绝，安全边界不变。
+        // 角色白名单：仅支持具备员工档案的角色（EMPLOYEE/STORE_MANAGER/SYSTEM_ADMIN，
+        // 如 E001 店长）；admin/manager 无员工档案，天然无法通过姓名+手机号匹配
         if (user.Role is not ("EMPLOYEE" or "STORE_MANAGER" or "SYSTEM_ADMIN"))
         {
-            _passwordResetService.RecordFailure(username, clientIp);
-            throw new InvalidCredentialsException("用户名或验证信息不正确");
+            _passwordResetService.RecordFailure(name, clientIp);
+            throw new InvalidCredentialsException("姓名或验证信息不正确");
         }
 
-        var employee = await _dbContext.Employees
-            .AsNoTracking()
-            .FirstOrDefaultAsync(x => x.EmployeeNo == username && x.StoreId == user.StoreId && x.Status == 1, cancellationToken);
-        if (employee is null || employee.Phone != request.VerifyInfo)
-        {
-            _passwordResetService.RecordFailure(username, clientIp);
-            throw new InvalidCredentialsException("用户名或验证信息不正确");
-        }
-
-        // 无验证码：手机号匹配即视为身份验证通过（限流/锁定由 PasswordResetService 兜底）
+        // 无验证码：姓名+手机号匹配即视为身份验证通过（限流/锁定由 PasswordResetService 兜底）
         user.PasswordHash = _passwordService.Hash(request.NewPassword);
         user.UpdatedAt = DateTime.UtcNow;
         user.PasswordVersion++;  // 使旧 JWT 令牌失效
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 
-        _passwordResetService.RecordSuccess(username, clientIp);
+        _passwordResetService.RecordSuccess(name, clientIp);
 
         await _auditLogService.WriteAsync(
             user.StoreId ?? 1,
@@ -189,7 +198,7 @@ public sealed class AuthService : IAuthService
             "USER",
             user.Id,
             null,
-            $"用户 {user.Username} 通过忘记密码流程重置了密码",
+            $"用户 {user.Username} 通过忘记密码流程（姓名+手机号验证）重置了密码",
             "重置密码",
             cancellationToken);
     }

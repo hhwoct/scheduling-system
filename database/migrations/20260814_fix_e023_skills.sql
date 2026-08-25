@@ -5,7 +5,7 @@ USE shift_mvp;
 -- 下方技能补全与 20260811_fix_password_hashes 的 E023 账号兜底均依赖该员工存在。
 -- NOT EXISTS 守卫保证幂等（新装库 init 已含 E023，重复执行无副作用）。
 INSERT INTO employees (store_id, employee_no, name, phone, department, hire_date, primary_position, max_weekly_hours, status)
-SELECT 1, 'E023', '赵保洁', '13800000023', '保洁', '2024-01-23', '保洁岗', 48, 1
+SELECT 1, 'E023', '赵保洁', '12312341234', '保洁', '2024-01-23', '保洁岗', 48, 1
 WHERE NOT EXISTS (SELECT 1 FROM employees WHERE store_id = 1 AND employee_no = 'E023');
 
 -- 补齐赵保洁(E023)的技能：参照周保洁(E007)，保洁岗主技能 + 服务岗辅助

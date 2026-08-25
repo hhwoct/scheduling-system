@@ -33,8 +33,8 @@
     <!-- 忘记密码弹窗 -->
     <el-dialog v-model="forgotVisible" title="重置密码" width="420px">
       <el-form ref="forgotFormRef" :model="forgotForm" :rules="forgotRules" label-width="90px">
-        <el-form-item label="用户名" prop="username">
-          <el-input v-model="forgotForm.username" placeholder="请输入用户名" />
+        <el-form-item label="姓名" prop="name">
+          <el-input v-model="forgotForm.name" placeholder="请输入员工姓名（如 张店长）" />
         </el-form-item>
         <el-form-item label="手机号" prop="verifyInfo">
           <el-input v-model="forgotForm.verifyInfo" placeholder="请输入注册手机号" />
@@ -122,14 +122,14 @@ const forgotVisible = ref(false)
 const forgotLoading = ref(false)
 const forgotFormRef = ref()
 const forgotForm = reactive({
-  username: '',
+  name: '',
   verifyInfo: '',
   newPassword: '',
   confirmPassword: ''
 })
 
 const forgotRules = {
-  username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
+  name: [{ required: true, message: '请输入员工姓名', trigger: 'blur' }],
   verifyInfo: [
     { required: true, message: '请输入注册手机号', trigger: 'blur' },
     { pattern: /^\d{11}$/, message: '手机号需为 11 位数字', trigger: 'blur' }
@@ -155,7 +155,7 @@ const forgotRules = {
 }
 
 function openForgot() {
-  forgotForm.username = form.username || ''
+  forgotForm.name = ''
   forgotForm.verifyInfo = ''
   forgotForm.newPassword = ''
   forgotForm.confirmPassword = ''
@@ -175,14 +175,14 @@ async function handleForgotPassword() {
   forgotLoading.value = true
   try {
     await forgotPassword({
-      username: forgotForm.username,
+      name: forgotForm.name,
       verifyInfo: forgotForm.verifyInfo,
       newPassword: forgotForm.newPassword,
       confirmPassword: forgotForm.confirmPassword
     })
     ElMessage.success('密码重置成功，请使用新密码登录')
     forgotVisible.value = false
-    form.username = forgotForm.username
+    form.username = ''
     form.password = ''
   } catch (e) {
     // 错误提示由响应拦截器统一处理

@@ -180,7 +180,7 @@ public sealed class AuthServiceTests
         var service = CreateService();
         var ex = await Assert.ThrowsAsync<BusinessException>(() =>
             service.ForgotPasswordAsync(
-                new ForgotPasswordRequest("E001", "short", "short", "13800000000"),
+                new ForgotPasswordRequest("员工E001", "short", "short", "13800000000"),
                 "127.0.0.1",
                 CancellationToken.None));
         Assert.Equal("WEAK_PASSWORD", ex.ErrorCode);
@@ -192,7 +192,7 @@ public sealed class AuthServiceTests
         var service = CreateService();
         var ex = await Assert.ThrowsAsync<BusinessException>(() =>
             service.ForgotPasswordAsync(
-                new ForgotPasswordRequest("E001", "NewPassw0rd", "Different0!", "13800000000"),
+                new ForgotPasswordRequest("员工E001", "NewPassw0rd", "Different0!", "13800000000"),
                 "127.0.0.1",
                 CancellationToken.None));
         Assert.Equal("PASSWORD_MISMATCH", ex.ErrorCode);
@@ -226,7 +226,7 @@ public sealed class AuthServiceTests
 
         var service = CreateService();
         await service.ForgotPasswordAsync(
-            new ForgotPasswordRequest("E001", "NewPassw0rd", "NewPassw0rd", "13800000001"),
+            new ForgotPasswordRequest("员工E001", "NewPassw0rd", "NewPassw0rd", "13800000001"),
             "127.0.0.1",
             CancellationToken.None);
 
@@ -246,7 +246,24 @@ public sealed class AuthServiceTests
         var service = CreateService();
         await Assert.ThrowsAsync<InvalidCredentialsException>(() =>
             service.ForgotPasswordAsync(
-                new ForgotPasswordRequest("E001", "NewPassw0rd", "NewPassw0rd", "13999999999"),
+                new ForgotPasswordRequest("员工E001", "NewPassw0rd", "NewPassw0rd", "13999999999"),
+                "127.0.0.1",
+                CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task ForgotPasswordAsync_WrongName_Throws()
+    {
+        // 姓名错误（手机号正确）同样拒绝，防枚举
+        var db = _factory.CreateDbContext();
+        db.Users.Add(NewUser(username: "E001", role: "EMPLOYEE"));
+        await db.SaveChangesAsync();
+        await SeedEmployeeAsync(_factory);
+
+        var service = CreateService();
+        await Assert.ThrowsAsync<InvalidCredentialsException>(() =>
+            service.ForgotPasswordAsync(
+                new ForgotPasswordRequest("不存在的人", "NewPassw0rd", "NewPassw0rd", "13800000000"),
                 "127.0.0.1",
                 CancellationToken.None));
     }
@@ -264,7 +281,7 @@ public sealed class AuthServiceTests
 
         var service = CreateService();
         await service.ForgotPasswordAsync(
-            new ForgotPasswordRequest("E001", "NewPassw0rd", "NewPassw0rd", "13800000000"),
+            new ForgotPasswordRequest("员工E001", "NewPassw0rd", "NewPassw0rd", "13800000000"),
             "127.0.0.1",
             CancellationToken.None);
 
