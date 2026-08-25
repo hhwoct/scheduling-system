@@ -281,6 +281,7 @@ import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getMonthView, getWeekView, getDailyView, getScheduleIssues, getScheduleRationality, getSchedules, setSlotStatus, moveScheduleSegment, getAddSlotCandidates, addScheduleSlot, removeScheduleSlot, replaceScheduleSlot, moveScheduleRange, clearScheduleRange } from '../api/schedules'
 import { getPreferenceMatrix } from '../api/preferences'
+import { getWorkstations } from '../api/workstations'
 
 const route = useRoute()
 const planId = ref(route.query.planId || '')
@@ -303,11 +304,15 @@ const dailyRows = ref([])
 const prefMap = ref(new Map()) // key: employeeNo|workstationCode -> freq
 let prefLoaded = false
 
+// 审查修复（P2）：偏好矩阵以 workstationCode 为键，而日明细行只有 workstationName，
+// 此前键口径不一致导致绿点永不显示；补 code↔name 映射后统一用 code 查询
+const wsNameToCode = ref(new Map())
+
 async function loadPreferenceMap() {
   if (prefLoaded) return
   prefLoaded = true
   try {
-    const items = await getPreferenceMatrix('')
+    const items = await getPreferenceMatrix()
     const map = new Map()
     for (const it of items || []) {
       if (it.freq >= 3) map.set(it.employeeNo + '|' + it.workstationCode, it.freq)
@@ -316,10 +321,17 @@ async function loadPreferenceMap() {
   } catch (e) {
     // 偏好矩阵加载失败不影响排班查看（角标静默缺失）
   }
+  try {
+    const ws = await getWorkstations()
+    wsNameToCode.value = new Map((ws || []).map(w => [w.name, w.code]))
+  } catch (e) {
+    /* 名称映射失败时角标静默缺失 */
+  }
 }
 
 function prefMatch(emp, ws) {
-  return prefMap.value.has((emp.employeeNo || '') + '|' + (emp.workstationName || ws))
+  const code = wsNameToCode.value.get(emp.workstationName || ws) || emp.workstationName || ws
+  return prefMap.value.has((emp.employeeNo || '') + '|' + code)
 }
 const dailyIssues = ref([])
 const dailyLoading = ref(false)
@@ -454,6 +466,8 @@ const wsIdByName = computed(() => {
 // 默认只移动被拖的那半个小时
 function onChipMouseDown(e, emp, ws, slot) {
   if (e.button !== 0) return
+  // 审查修复（P0）：批量模式下禁用色块拖拽/双击，避免框选时误触发移动工作段
+  if (batchMode.value) return
   // 休息块不可拖动
   if (inBreak(emp, slot)) return
   const slotIdx = slots.value.findIndex(s => s.key === slot.key)
@@ -495,6 +509,8 @@ function onChipDblClick(emp, slot) {
     dragMove.justDragged = false
     return
   }
+  // 审查修复（P0）：批量模式下禁用双击休息弹窗
+  if (batchMode.value) return
   // 双击的第二下单击已把高亮关掉，这里重新打开，保证对话框打开时高亮仍在
   highlightedEmpId.value = emp.employeeId
   openSlotStatusDialog(emp, slot)
@@ -713,7 +729,7 @@ function batchCellFromEvent(e) {
   const col = e.target?.closest?.('.m-slot-col')
   const row = e.target?.closest?.('.m-row')
   if (!col || !row) return null
-  const wsIdx = dailyWorkstations.value.indexOf(row.querySelector('.m-ws-col')?.textContent?.trim())
+  const wsIdx = dailyWorkstations.value.indexOf(row.querySelector('.m-ws-col')?.textContent?.replace('兼', '').trim())
   const si = slots.value.findIndex(s => s.key === (col.getAttribute('data-slot') || ''))
   return wsIdx >= 0 && si >= 0 ? { wsIdx, si } : null
 }
@@ -946,10 +962,18 @@ function disabledDate(date) {
   return date < start || date > end
 }
 
+// 审查修复（P1）：请求序号防竞态——快速切换日期/计划时旧响应不再覆盖新数据
+let weekLoadSeq = 0
+let wholeLoadSeq = 0
+let dayLoadSeq = 0
+
 async function loadWeek() {
   if (!planId.value) { errorMsg.value = '请输入计划ID'; return }
   if (!weekStart.value) { weekStart.value = currentPlan.value?.startDate || getToday() }
-  weekRows.value = await getWeekView(planId.value, weekStart.value)
+  const seq = ++weekLoadSeq
+  const res = await getWeekView(planId.value, weekStart.value)
+  if (seq !== weekLoadSeq) return
+  weekRows.value = res
   // 并集所有行的日期，避免只取第一行而遗漏其他员工的班次日期
   const dateSet = new Set()
   weekRows.value.forEach(r => {
@@ -965,6 +989,7 @@ async function loadWeek() {
   // 加载低技能岗位缺口 → 生成兼职替补需求色块
   try {
     const iss = await getScheduleIssues(planId.value)
+    if (seq !== weekLoadSeq) return
     const lowSkillGaps = (iss || []).filter(i => i.issueType === 'STAFFING_GAP' && i.isLowSkill && i.workDate && i.workstationName)
     const map = {}
     const wsSet = new Set()
@@ -996,6 +1021,7 @@ async function loadWhole() {
   if (!planId.value) { errorMsg.value = '请输入计划ID'; return }
   const plan = currentPlan.value
   if (!plan) return
+  const seq = ++wholeLoadSeq
 
   // 周期拆成自然周（每 7 天一段）并行拉取，再按员工合并
   const weeks = []
@@ -1004,6 +1030,7 @@ async function loadWhole() {
     weeks.push(fmtDate(d))
   }
   const weekResults = await Promise.all(weeks.map(w => getWeekView(planId.value, w)))
+  if (seq !== wholeLoadSeq) return
 
   const empMap = new Map()
   for (const week of weekResults) {
@@ -1047,6 +1074,7 @@ async function loadDay(date) {
     if (!d) return
   }
   dailyLoading.value = true
+  const seq = ++dayLoadSeq
   try {
     // 同时拉取月视图数据：用于矩阵下方的「休息员工」区
     const [res, iss, month] = await Promise.all([
@@ -1054,6 +1082,7 @@ async function loadDay(date) {
       getScheduleIssues(planId.value),
       getMonthView(planId.value)
     ])
+    if (seq !== dayLoadSeq) return
     dailyRows.value = res || []
     dailyIssues.value = iss || []
     if (Array.isArray(month)) monthRows.value = month
@@ -1692,6 +1721,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('keydown', onUndoKeydown)
   document.removeEventListener('mousemove', onRangeMouseMove)
   document.removeEventListener('mouseup', onRangeMouseUp)
+  clearTimeout(undoBarTimer)
   if (rationalityChart) {
     rationalityChart.dispose()
     rationalityChart = null

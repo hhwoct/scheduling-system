@@ -136,9 +136,8 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { generateSchedule, getSchedules, publishSchedule, unpublishSchedule, deleteSchedule, getScheduleIssues, getAdjustmentSummary, getScheduleAdjustments, copyPreviousWeek } from '../api/schedules'
+import { generateSchedule, getSchedules, publishSchedule, unpublishSchedule, deleteSchedule, getScheduleIssues, getAdjustmentSummary, getScheduleAdjustments, copyPreviousWeek, getDemandInsights } from '../api/schedules'
 import { getStaffingRequirementPreview } from '../api/staffingRequirements'
-import { getDemandInsights } from '../api/schedules'
 
 function getToday() {
   const d = new Date()

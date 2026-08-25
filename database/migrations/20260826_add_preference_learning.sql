@@ -79,3 +79,26 @@ SET @ddl := IF(@col_exists = 0,
 PREPARE stmt FROM @ddl;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
+
+-- 审查修复（P1）：preference_trends 建表时漏了 created_at/updated_at，
+-- 但 EF 实体映射了这两列 → 老库升级路径下偏好趋势读写报 Unknown column。
+-- 幂等补列（本地已手工补过的库自动跳过）。
+SET @col_exists := (SELECT COUNT(*) FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'preference_trends'
+    AND COLUMN_NAME = 'created_at');
+SET @ddl := IF(@col_exists = 0,
+  'ALTER TABLE preference_trends ADD COLUMN created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP AFTER adjustments',
+  'SELECT 1');
+PREPARE stmt FROM @ddl;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @col_exists := (SELECT COUNT(*) FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'preference_trends'
+    AND COLUMN_NAME = 'updated_at');
+SET @ddl := IF(@col_exists = 0,
+  'ALTER TABLE preference_trends ADD COLUMN updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER created_at',
+  'SELECT 1');
+PREPARE stmt FROM @ddl;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;

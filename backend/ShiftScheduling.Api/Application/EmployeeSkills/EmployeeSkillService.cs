@@ -69,7 +69,7 @@ public sealed class EmployeeSkillService : IEmployeeSkillService
             .AsNoTracking()
             .Where(x => x.Status == 1)
             .Join(
-                _dbContext.Employees.AsNoTracking().Where(e => e.StoreId == storeId && e.IsParttime != 1),
+                _dbContext.Employees.AsNoTracking().Where(e => e.StoreId == storeId && e.Status == 1 && e.IsParttime != 1),
                 s => s.EmployeeId,
                 e => e.Id,
                 (s, e) => new SkillMatrixCell(s.EmployeeId, s.WorkstationId, s.SkillScore, s.IsPrimarySkill))
@@ -213,6 +213,17 @@ public sealed class EmployeeSkillService : IEmployeeSkillService
             .ToListAsync(cancellationToken);
 
         var beforeContent = await BuildMatrixContentAsync(employeeId, cancellationToken);
+
+        // 审查修复（P2）：提交含主技能时，先清除库中该员工其他工作站上的主技能标记，
+        // 避免与库中已有主技能并存产生双主技能（与单格修改口径一致）
+        if (request.Skills.Any(x => x.IsPrimarySkill == 1))
+        {
+            await _dbContext.EmployeeSkills
+                .Where(x => x.EmployeeId == employeeId && x.IsPrimarySkill == 1 && !workstationIds.Contains(x.WorkstationId))
+                .ExecuteUpdateAsync(s => s
+                    .SetProperty(x => x.IsPrimarySkill, 0)
+                    .SetProperty(x => x.UpdatedAt, DateTime.UtcNow), cancellationToken);
+        }
 
         // P3-14 修复：批量查询现有技能，避免循环内 N+1 查询
         var existingSkills = await _dbContext.EmployeeSkills

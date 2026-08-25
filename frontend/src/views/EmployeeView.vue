@@ -330,7 +330,7 @@ async function openSkills(row) {
     const workstations = await getWorkstations()
     if (seq !== skillsSeq) return
     skillRows.value = workstations.map(ws => {
-      const existing = matrix.skills.find(s => s.workstationId === ws.id)
+      const existing = (matrix?.skills || []).find(s => s.workstationId === ws.id)
       return {
         workstationId: ws.id,
         workstationName: ws.name,

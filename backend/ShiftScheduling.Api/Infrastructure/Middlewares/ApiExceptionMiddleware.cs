@@ -1,4 +1,6 @@
 using System.Net;
+using Microsoft.AspNetCore.Http;
+using Microsoft.EntityFrameworkCore;
 using ShiftScheduling.Api.Application.Common;
 
 namespace ShiftScheduling.Api.Infrastructure.Middlewares;
@@ -42,6 +44,17 @@ public sealed class ApiExceptionMiddleware
             // 其余业务错误保持 400，便于客户端区分「无权限」与「参数/业务错误」。
             var status = ex.ErrorCode == "FORBIDDEN" ? HttpStatusCode.Forbidden : HttpStatusCode.BadRequest;
             await ApiResponseWriter.WriteErrorAsync(context, status, ex.Message, ex.ErrorCode);
+        }
+        catch (BadHttpRequestException ex)
+        {
+            // 审查修复（P2）：JSON 解析失败/请求体非法统一按 400 返回，而不是落入通用 500
+            await ApiResponseWriter.WriteErrorAsync(context, HttpStatusCode.BadRequest, "请求格式不正确", "INVALID_REQUEST");
+        }
+        catch (DbUpdateConcurrencyException ex)
+        {
+            // 审查修复（P2）：并发编辑冲突（乐观锁 Version 令牌）返回 409，前端可提示刷新重试
+            _logger.LogWarning(ex, "并发编辑冲突");
+            await ApiResponseWriter.WriteErrorAsync(context, HttpStatusCode.Conflict, "数据已被他人修改，请刷新后重试", "CONCURRENCY_CONFLICT");
         }
         catch (Exception ex)
         {

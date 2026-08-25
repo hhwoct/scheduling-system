@@ -55,7 +55,7 @@
         <el-table-column prop="priority" label="优先级" width="80" />
         <el-table-column prop="coveredWorkstations" label="覆盖工作站">
           <template #default="{ row }">
-            <el-tag v-for="ws in row.coveredWorkstations" :key="ws" size="small" style="margin-right: 4px">{{ ws }}</el-tag>
+            <el-tag v-for="ws in (Array.isArray(row.coveredWorkstations) ? row.coveredWorkstations : String(row.coveredWorkstations || '').split(',').filter(Boolean))" :key="ws" size="small" style="margin-right: 4px">{{ ws }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column label="操作" width="120">

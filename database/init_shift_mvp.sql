@@ -358,7 +358,7 @@ CREATE TABLE leave_requests (
   CONSTRAINT fk_leave_requests_store FOREIGN KEY (store_id) REFERENCES stores(id),
   CONSTRAINT fk_leave_requests_employee FOREIGN KEY (employee_id) REFERENCES employees(id),
   CONSTRAINT fk_leave_requests_reviewer FOREIGN KEY (review_user_id) REFERENCES users(id),
-  CONSTRAINT chk_leave_type CHECK (leave_type IN ('PERSONAL', 'SICK', 'ANNUAL')),
+  CONSTRAINT chk_leave_type CHECK (leave_type IN ('PERSONAL', 'SICK', 'ANNUAL', 'OTHER')),
   CONSTRAINT chk_leave_date_range CHECK (start_date <= end_date),
   CONSTRAINT chk_leave_max_days CHECK (DATEDIFF(end_date, start_date) <= 30)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

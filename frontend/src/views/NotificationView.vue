@@ -112,17 +112,25 @@ function onPageChange(newPage) {
 }
 
 async function handleRead(id) {
-  await markAsRead(id)
-  ElMessage.success('已读')
-  notifyUnreadChanged()
-  loadData()
+  try {
+    await markAsRead(id)
+    ElMessage.success('已读')
+    notifyUnreadChanged()
+    loadData()
+  } catch (e) {
+    /* 拦截器已提示 */
+  }
 }
 
 async function handleReadAll() {
-  await markAllAsRead()
-  ElMessage.success('全部已读')
-  notifyUnreadChanged()
-  loadData()
+  try {
+    await markAllAsRead()
+    ElMessage.success('全部已读')
+    notifyUnreadChanged()
+    loadData()
+  } catch (e) {
+    /* 拦截器已提示 */
+  }
 }
 
 // 通知 header 角标（红点）由布局组件持有：发事件让其刷新未读数

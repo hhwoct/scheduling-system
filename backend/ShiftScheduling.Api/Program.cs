@@ -1748,6 +1748,7 @@ api.MapGet("/employee/my-schedule", async (
 
     var shiftCodes = await dbContext.ShiftTemplates
         .AsNoTracking()
+        .Where(x => x.StoreId == employee.StoreId)
         .ToDictionaryAsync(x => x.Id, x => x.Code, cancellationToken);
 
     var planIds = plans.Select(p => p.Id).ToList();
@@ -1910,11 +1911,18 @@ api.MapPost("/leave-requests", async (
             $"{string.Join("、", conflictDays.Take(5).Select(d => d.ToString("yyyy-MM-dd")))}" +
             (conflictDays.Count > 5 ? $" 等 {conflictDays.Count} 天" : ""), "LEAVE_CONFLICT_WITH_SCHEDULE");
 
+    // 审查修复（P1）：LeaveType 入库前白名单校验，非法值会撞数据库 CHECK 约束 → 500
+    var leaveType = request.LeaveType ?? "PERSONAL";
+    if (leaveType is not ("PERSONAL" or "SICK" or "ANNUAL" or "OTHER"))
+    {
+        throw new BusinessException("请假类型无效（PERSONAL/SICK/ANNUAL/OTHER）", "INVALID_LEAVE_TYPE");
+    }
+
     var leave = new LeaveRequestEntity
     {
         StoreId = emp.StoreId,
         EmployeeId = emp.Id,
-        LeaveType = request.LeaveType ?? "PERSONAL",
+        LeaveType = leaveType,
         StartDate = request.StartDate,
         EndDate = request.EndDate,
         Reason = request.Reason,
@@ -2183,6 +2191,19 @@ api.MapPost("/shift-swaps", async (
     if (pendingSwap)
         throw new BusinessException("已存在相同的待审批换班申请", "DUPLICATE_SWAP");
 
+    // 排他性（审查 P2-3）：申请人或目标同事当天不得存在其他未驳回换班，
+    // 否则多次批准会对同一天反复交换员工，造成排班数据错乱
+    var exclusiveSwap = await db.ShiftSwaps.AnyAsync(
+        x => x.PlanId == request.PlanId
+             && x.SwapDate == request.SwapDate
+             && x.Status != "REJECTED"
+             && (x.RequesterEmployeeId == requesterEmp.Id
+                 || x.TargetEmployeeId == requesterEmp.Id
+                 || x.RequesterEmployeeId == request.TargetEmployeeId
+                 || x.TargetEmployeeId == request.TargetEmployeeId), ct);
+    if (exclusiveSwap)
+        throw new BusinessException("您或目标同事当天已有其他换班申请，请先处理", "SWAP_EXCLUSIVE");
+
     var swap = new ShiftSwapEntity
     {
         StoreId = requesterEmp.StoreId,
@@ -2380,6 +2401,23 @@ api.MapPut("/shift-swaps/{id:long}/review", async (
                 throw new BusinessException("该申请已审批", "ALREADY_REVIEWED");
             }
 
+            // 复核换班日现状（审查 P0）：申请后计划可能被取消发布/调整，
+            // 过期前提下的交换会静默损坏数据（申请人明细被清、同伴班表被删）
+            var requesterDayNow = await db.ScheduleSummaries.AsNoTracking()
+                .FirstOrDefaultAsync(x => x.PlanId == swap.PlanId && x.WorkDate == swap.SwapDate && x.EmployeeId == swap.RequesterEmployeeId, ct);
+            var targetDayNow = await db.ScheduleSummaries.AsNoTracking()
+                .FirstOrDefaultAsync(x => x.PlanId == swap.PlanId && x.WorkDate == swap.SwapDate && x.EmployeeId == swap.TargetEmployeeId, ct);
+            if (requesterDayNow == null || requesterDayNow.IsRestDay == 1)
+            {
+                await db.Database.RollbackTransactionAsync(ct);
+                throw new BusinessException("申请人当天已无上班安排，排班已变化，请重新申请换班", "SWAP_STATE_CHANGED");
+            }
+            if (targetDayNow != null && targetDayNow.IsRestDay == 0)
+            {
+                await db.Database.RollbackTransactionAsync(ct);
+                throw new BusinessException("同伴当天已有上班安排，排班已变化，请重新申请换班", "SWAP_STATE_CHANGED");
+            }
+
             // 交换 schedule_results（无唯一约束，直接互换）
             var resultsA = await db.ScheduleResults
                 .Where(x => x.PlanId == swap.PlanId && x.WorkDate == swap.SwapDate && x.EmployeeId == swap.RequesterEmployeeId)
@@ -2505,6 +2543,11 @@ api.MapDelete("/schedules/{planId:long}", async (
         .Where(x => x.PlanId == planId)
         .ExecuteDeleteAsync(cancellationToken);
 
+    // 审查修复（P2）：偏好趋势无外键，删除计划需手动清理孤儿行
+    await dbContext.PreferenceTrends
+        .Where(x => x.PlanId == planId)
+        .ExecuteDeleteAsync(cancellationToken);
+
     // 删除计划本身
     dbContext.SchedulePlans.Remove(plan);
     await dbContext.SaveChangesAsync(cancellationToken);
@@ -2533,6 +2576,7 @@ api.MapGet("/schedules/{planId:long}/issues", async (
 
     var workstationInfo = await dbContext.Workstations
         .AsNoTracking()
+        .Where(x => x.StoreId == storeId)
         .ToDictionaryAsync(x => x.Id, x => new { x.Name, x.IsLowSkill }, cancellationToken);
 
     var issues = await dbContext.ScheduleIssues

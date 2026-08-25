@@ -163,7 +163,11 @@ function openForgot() {
 }
 
 async function handleForgotPassword() {
-  await forgotFormRef.value.validate()
+  try {
+    await forgotFormRef.value.validate()
+  } catch {
+    return // 校验失败，表单已标红
+  }
   if (forgotForm.newPassword !== forgotForm.confirmPassword) {
     ElMessage.error('两次输入的密码不一致')
     return

@@ -42,10 +42,12 @@ WHERE t.store_id = 1 AND t.code = 'S10'
                   WHERE sw.shift_template_id = t.id AND sw.workstation_id = w.id);
 
 -- 4) 店长站人数需求：19:00-23:30 + 00:00-03:30 = 1（三种 day_type）
---    审查修复（P2）：ON DUPLICATE 用自赋值 no-op（照 20260818 迁移风格），
+--    审查修复（P0）：补 ideal_count 列——老库该列 NOT NULL 无默认值，缺列会导致
+--    INSERT 在严格模式下报 1364 升级断链；新装库有 DEFAULT 0 可跑通，两条路径行为分裂。
+--    ON DUPLICATE 用自赋值 no-op（照 20260818 迁移风格），
 --    不覆盖用户在「人数需求」页手工调整过的值；仅插入缺失行。
-INSERT INTO staffing_requirements (store_id, day_type, workstation_id, time_slot, required_count)
-SELECT w.store_id, dt.day_type, w.id, ts.time_slot, 1
+INSERT INTO staffing_requirements (store_id, day_type, workstation_id, time_slot, required_count, ideal_count)
+SELECT w.store_id, dt.day_type, w.id, ts.time_slot, 1, 1
 FROM workstations w
 CROSS JOIN (SELECT 'WORKDAY' AS day_type UNION ALL SELECT 'WEEKEND' UNION ALL SELECT 'HOLIDAY') dt
 CROSS JOIN (
@@ -57,7 +59,13 @@ CROSS JOIN (
   UNION ALL SELECT '02:30:00' UNION ALL SELECT '03:00:00' UNION ALL SELECT '03:30:00'
 ) ts
 WHERE w.store_id = 1 AND w.code = 'BOSS'
-ON DUPLICATE KEY UPDATE required_count = staffing_requirements.required_count;
+ON DUPLICATE KEY UPDATE required_count = staffing_requirements.required_count, ideal_count = staffing_requirements.ideal_count;
+
+-- 4b) 审查修复（P1）：S10 优先级 10→1。20260825_add_boss_backup 中同名更新因
+--     文件名排序先于本迁移执行（当时 S10 尚未创建）而落空，此处创建后立即兜底。
+UPDATE shift_templates
+SET priority = 1, updated_at = CURRENT_TIMESTAMP
+WHERE store_id = 1 AND code = 'S10' AND priority <> 1;
 
 -- 5) 张店长(E001)专职「店长」岗：主岗位 + 技能重置
 UPDATE employees
