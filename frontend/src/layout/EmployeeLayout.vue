@@ -62,10 +62,12 @@
             </span>
             <template #dropdown>
               <el-dropdown-menu>
-                <el-dropdown-item command="logout">退出登录</el-dropdown-item>
+                <el-dropdown-item command="change-password">修改密码</el-dropdown-item>
+                <el-dropdown-item command="logout" divided>退出登录</el-dropdown-item>
               </el-dropdown-menu>
             </template>
           </el-dropdown>
+          <ChangePasswordDialog v-model="changePwdVisible" />
         </div>
       </el-header>
       <el-main class="emp-content" :class="{ collapsed }">
@@ -82,6 +84,7 @@ import { ElMessageBox } from 'element-plus'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { getUnreadCount } from '../api/notifications'
+import ChangePasswordDialog from '../components/ChangePasswordDialog.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -145,7 +148,13 @@ watch(() => route.path, () => {
   refreshUnreadCount()
 })
 
+const changePwdVisible = ref(false)
+
 async function handleCommand(command) {
+  if (command === 'change-password') {
+    changePwdVisible.value = true
+    return
+  }
   if (command === 'logout') {
     try {
       await ElMessageBox.confirm('确定要退出登录吗？', '提示', {

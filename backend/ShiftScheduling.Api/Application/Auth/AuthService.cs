@@ -191,4 +191,71 @@ public sealed class AuthService : IAuthService
             "重置密码",
             cancellationToken);
     }
+
+    /// <summary>
+    /// 登录后自助修改密码（安全审查 P1-1）：校验旧密码 + 新密码策略（≥8 位且含大小写和数字、
+    /// ≤72 字节、不能与旧密码相同），成功后 PasswordVersion+1 使全部旧 Token 失效。
+    /// </summary>
+    public async Task ChangePasswordAsync(long userId, ChangePasswordRequest request, CancellationToken cancellationToken)
+    {
+        if (request is null || string.IsNullOrWhiteSpace(request.OldPassword) ||
+            string.IsNullOrWhiteSpace(request.NewPassword) || string.IsNullOrWhiteSpace(request.ConfirmPassword))
+        {
+            throw new BusinessException("当前密码、新密码和确认密码不能为空", "INVALID_CHANGE_PASSWORD");
+        }
+
+        if (request.NewPassword != request.ConfirmPassword)
+        {
+            throw new BusinessException("两次输入的新密码不一致", "PASSWORD_MISMATCH");
+        }
+
+        // bcrypt 只取前 72 字节：超过必须在上游拒绝
+        if (Encoding.UTF8.GetByteCount(request.NewPassword) > 72)
+        {
+            throw new BusinessException("新密码最长 72 字节", "INVALID_CHANGE_PASSWORD");
+        }
+
+        if (request.NewPassword.Length < 8 ||
+            !request.NewPassword.Any(char.IsUpper) ||
+            !request.NewPassword.Any(char.IsLower) ||
+            !request.NewPassword.Any(char.IsDigit))
+        {
+            throw new BusinessException("新密码至少 8 位，且必须包含大写字母、小写字母和数字", "WEAK_PASSWORD");
+        }
+
+        var user = await _dbContext.Users
+            .FirstOrDefaultAsync(x => x.Id == userId, cancellationToken)
+            ?? throw new NotFoundException("用户不存在");
+
+        if (!_passwordService.Verify(request.OldPassword, user.PasswordHash))
+        {
+            // 与登录失败同口径：固定时延，避免时序侧信道。
+            // 注意：返回 400 而非 401——已认证上下文中的"旧密码错误"是业务校验失败，
+            // 若返回 401 会触发前端拦截器的会话失效自动登出，体验异常。
+            await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
+            throw new BusinessException("当前密码不正确", "WRONG_OLD_PASSWORD");
+        }
+
+        if (_passwordService.Verify(request.NewPassword, user.PasswordHash))
+        {
+            throw new BusinessException("新密码不能与当前密码相同", "SAME_PASSWORD");
+        }
+
+        user.PasswordHash = _passwordService.Hash(request.NewPassword);
+        user.PasswordVersion++;  // 使旧 JWT 令牌失效，前端改密后引导重新登录
+        user.UpdatedAt = DateTime.UtcNow;
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        await _auditLogService.WriteAsync(
+            user.StoreId ?? 1,
+            user.Id,
+            user.Nickname,
+            "CHANGE_PASSWORD",
+            "USER",
+            user.Id,
+            null,
+            $"用户 {user.Username} 自助修改了密码",
+            "修改密码",
+            cancellationToken);
+    }
 }

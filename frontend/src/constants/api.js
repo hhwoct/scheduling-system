@@ -2,6 +2,7 @@ export const API_ROUTES = {
   AUTH: {
     LOGIN: '/auth/login',
     FORGOT_PASSWORD: '/auth/forgot-password',
+    CHANGE_PASSWORD: '/auth/change-password',
     ME: '/auth/me'
   },
   EMPLOYEES: {

@@ -273,6 +273,24 @@ api.MapPost("/auth/forgot-password", async (
     return ApiResponse.Ok(true, "密码重置成功，请使用新密码登录");
 }).RequireRateLimiting("ResetLimiter");
 
+// 登录后自助修改密码（安全审查 P1-1）：改密成功后旧 Token 全部失效，前端引导重新登录
+api.MapPost("/auth/change-password", async (
+    ChangePasswordRequest request,
+    IAuthService authService,
+    ICurrentUser currentUser,
+    CancellationToken cancellationToken) =>
+{
+    if (request is null)
+    {
+        throw new BusinessException("请求参数不能为空", "INVALID_REQUEST");
+    }
+
+    var userId = currentUser.UserId
+        ?? throw new UnauthorizedBusinessException("当前用户未关联账号");
+    await authService.ChangePasswordAsync(userId, request, cancellationToken);
+    return ApiResponse.Ok(true, "密码修改成功，旧登录已失效，请重新登录");
+}).RequireAuthorization();
+
 api.MapGet("/auth/me", async (IAuthService authService, CancellationToken cancellationToken) =>
 {
     var result = await authService.GetCurrentUserAsync(cancellationToken);

@@ -253,4 +253,92 @@ public sealed class AuthServiceTests
         Assert.Equal(originalVersion + 1, reloaded.PasswordVersion);
         Assert.Contains(_audit.Entries, e => e.ActionType == "RESET_PASSWORD");
     }
+
+    [Fact]
+    public async Task ChangePasswordAsync_Valid_UpdatesHashAndBumpsVersion()
+    {
+        var db = _factory.CreateDbContext();
+        var user = NewUser();
+        db.Users.Add(user);
+        await db.SaveChangesAsync();
+
+        var service = CreateService();
+        var originalHash = user.PasswordHash;
+        var originalVersion = user.PasswordVersion;
+
+        await service.ChangePasswordAsync(user.Id,
+            new ChangePasswordRequest("Passw0rd!", "NewPassw0rd!", "NewPassw0rd!"),
+            CancellationToken.None);
+
+        var reloaded = await db.Users.AsNoTracking().FirstAsync(x => x.Id == user.Id);
+        Assert.NotEqual(originalHash, reloaded.PasswordHash);
+        Assert.Equal(originalVersion + 1, reloaded.PasswordVersion);
+        var passwordService = new BcryptPasswordService();
+        Assert.True(passwordService.Verify("NewPassw0rd!", reloaded.PasswordHash));
+        Assert.Contains(_audit.Entries, e => e.ActionType == "CHANGE_PASSWORD");
+    }
+
+    [Fact]
+    public async Task ChangePasswordAsync_WrongOldPassword_Throws()
+    {
+        var db = _factory.CreateDbContext();
+        var user = NewUser();
+        db.Users.Add(user);
+        await db.SaveChangesAsync();
+
+        var service = CreateService();
+        var ex = await Assert.ThrowsAsync<BusinessException>(() =>
+            service.ChangePasswordAsync(user.Id,
+                new ChangePasswordRequest("WrongPassw0rd!", "NewPassw0rd!", "NewPassw0rd!"),
+                CancellationToken.None));
+        Assert.Equal("WRONG_OLD_PASSWORD", ex.ErrorCode);
+    }
+
+    [Fact]
+    public async Task ChangePasswordAsync_WeakPassword_Throws()
+    {
+        var db = _factory.CreateDbContext();
+        var user = NewUser();
+        db.Users.Add(user);
+        await db.SaveChangesAsync();
+
+        var service = CreateService();
+        var ex = await Assert.ThrowsAsync<BusinessException>(() =>
+            service.ChangePasswordAsync(user.Id,
+                new ChangePasswordRequest("Passw0rd!", "12345678", "12345678"),
+                CancellationToken.None));
+        Assert.Equal("WEAK_PASSWORD", ex.ErrorCode);
+    }
+
+    [Fact]
+    public async Task ChangePasswordAsync_MismatchConfirm_Throws()
+    {
+        var db = _factory.CreateDbContext();
+        var user = NewUser();
+        db.Users.Add(user);
+        await db.SaveChangesAsync();
+
+        var service = CreateService();
+        var ex = await Assert.ThrowsAsync<BusinessException>(() =>
+            service.ChangePasswordAsync(user.Id,
+                new ChangePasswordRequest("Passw0rd!", "NewPassw0rd!", "OtherPassw0rd!"),
+                CancellationToken.None));
+        Assert.Equal("PASSWORD_MISMATCH", ex.ErrorCode);
+    }
+
+    [Fact]
+    public async Task ChangePasswordAsync_SameAsOld_Throws()
+    {
+        var db = _factory.CreateDbContext();
+        var user = NewUser();
+        db.Users.Add(user);
+        await db.SaveChangesAsync();
+
+        var service = CreateService();
+        var ex = await Assert.ThrowsAsync<BusinessException>(() =>
+            service.ChangePasswordAsync(user.Id,
+                new ChangePasswordRequest("Passw0rd!", "Passw0rd!", "Passw0rd!"),
+                CancellationToken.None));
+        Assert.Equal("SAME_PASSWORD", ex.ErrorCode);
+    }
 }
