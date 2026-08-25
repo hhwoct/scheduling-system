@@ -112,7 +112,7 @@ UPDATE users SET password_hash = '<BCRYPT_HASH>' WHERE username BETWEEN 'E001' A
 
 > 提示：若按顺序执行全部迁移，`database/migrations/20260811_fix_password_hashes.sql`
 > 会把 admin/manager 重置为初始密码 `Admin@123456` / `Manager@123456`、员工重置为
-> 「密码 = 工号」（如 E001），并兜底创建缺失的员工账号（如 E023）。初始密码属已知明文，
+> 「密码 = 工号@123456」（如 E001@123456），并兜底创建缺失的员工账号（如 E023）。初始密码属已知明文，
 > **首次登录后请立即修改**。
 
 ### 2. 启动后端
