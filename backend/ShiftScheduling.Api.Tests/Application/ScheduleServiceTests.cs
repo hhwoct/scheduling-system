@@ -320,7 +320,7 @@ public sealed class ScheduleServiceTests
 
         await service.AddSlotAsync(
             generated.PlanId,
-            new AddScheduleSlotRequest(e1.Id, Start, new TimeSpan(10, 0, 0), ws.Id),
+            new AddScheduleSlotRequest(e1.Id, Start, new List<TimeSpan> { new(10, 0, 0) }, ws.Id),
             1, 9, "管理员", CancellationToken.None);
 
         var db2 = _factory.CreateDbContext();
@@ -352,7 +352,7 @@ public sealed class ScheduleServiceTests
 
         await service.AddSlotAsync(
             generated.PlanId,
-            new AddScheduleSlotRequest(e1.Id, Start, new TimeSpan(12, 0, 0), ws.Id),
+            new AddScheduleSlotRequest(e1.Id, Start, new List<TimeSpan> { new(12, 0, 0) }, ws.Id),
             1, 9, "管理员", CancellationToken.None);
 
         var db2 = _factory.CreateDbContext();
@@ -377,7 +377,7 @@ public sealed class ScheduleServiceTests
 
         var ex = await Assert.ThrowsAsync<BusinessException>(() =>
             service.AddSlotAsync(generated.PlanId,
-                new AddScheduleSlotRequest(e2.Id, Start, new TimeSpan(10, 0, 0), ws.Id),
+                new AddScheduleSlotRequest(e2.Id, Start, new List<TimeSpan> { new(10, 0, 0) }, ws.Id),
                 1, 9, "管理员", CancellationToken.None));
         Assert.Equal("INVALID_ADJUST", ex.ErrorCode);
     }
@@ -402,7 +402,7 @@ public sealed class ScheduleServiceTests
 
         var ex = await Assert.ThrowsAsync<BusinessException>(() =>
             service.AddSlotAsync(generated.PlanId,
-                new AddScheduleSlotRequest(e1.Id, Start, new TimeSpan(10, 0, 0), ws.Id),
+                new AddScheduleSlotRequest(e1.Id, Start, new List<TimeSpan> { new(10, 0, 0) }, ws.Id),
                 1, 9, "管理员", CancellationToken.None));
         Assert.Equal("ON_LEAVE", ex.ErrorCode);
     }
@@ -432,9 +432,63 @@ public sealed class ScheduleServiceTests
 
         var ex = await Assert.ThrowsAsync<BusinessException>(() =>
             service.AddSlotAsync(generated.PlanId,
-                new AddScheduleSlotRequest(pt.Id, Start, new TimeSpan(10, 0, 0), ws.Id),
+                new AddScheduleSlotRequest(pt.Id, Start, new List<TimeSpan> { new(10, 0, 0) }, ws.Id),
                 1, 9, "管理员", CancellationToken.None));
         Assert.Equal("PARTTIME_LOW_SKILL_ONLY", ex.ErrorCode);
+    }
+
+    [Fact]
+    public async Task AddSlotAsync_MultiSlotRange_CreatesAllRowsAndSummary()
+    {
+        await SeedStoreDataAsync();
+        var service = CreateService();
+        var generated = await service.GenerateAsync(new GenerateScheduleRequest(Start, End), 1, 9, "管理员", CancellationToken.None);
+
+        var db = _factory.CreateDbContext();
+        var e1 = await db.Employees.AsNoTracking().FirstAsync(x => x.EmployeeNo == "E001");
+        var ws = await db.Workstations.AsNoTracking().FirstAsync(x => x.Code == "SVC");
+
+        // 滑动选择 4 段：14:00-16:00
+        await service.AddSlotAsync(
+            generated.PlanId,
+            new AddScheduleSlotRequest(e1.Id, Start,
+                new List<TimeSpan> { new(14, 0, 0), new(14, 30, 0), new(15, 0, 0), new(15, 30, 0) },
+                ws.Id),
+            1, 9, "管理员", CancellationToken.None);
+
+        var db2 = _factory.CreateDbContext();
+        var dayRows = await db2.ScheduleResults.AsNoTracking()
+            .Where(x => x.PlanId == generated.PlanId && x.EmployeeId == e1.Id && x.WorkDate == Start)
+            .ToListAsync();
+        var rows = dayRows.Where(x => x.TimeSlot >= new TimeSpan(14, 0, 0) && x.TimeSlot <= new TimeSpan(15, 30, 0)).ToList();
+        Assert.Equal(4, rows.Count);
+        Assert.All(rows, r => Assert.Null(r.ShiftTemplateId));
+
+        var summary = await db2.ScheduleSummaries.AsNoTracking()
+            .FirstAsync(x => x.PlanId == generated.PlanId && x.EmployeeId == e1.Id && x.WorkDate == Start);
+        Assert.Equal(0, summary.IsRestDay);
+        Assert.Equal(new TimeSpan(14, 0, 0), summary.StartTime);
+        Assert.Equal(new TimeSpan(16, 0, 0), summary.EndTime);
+    }
+
+    [Fact]
+    public async Task AddSlotAsync_NonContiguousSlots_Throws()
+    {
+        await SeedStoreDataAsync();
+        var service = CreateService();
+        var generated = await service.GenerateAsync(new GenerateScheduleRequest(Start, End), 1, 9, "管理员", CancellationToken.None);
+
+        var db = _factory.CreateDbContext();
+        var e1 = await db.Employees.AsNoTracking().FirstAsync(x => x.EmployeeNo == "E001");
+        var ws = await db.Workstations.AsNoTracking().FirstAsync(x => x.Code == "SVC");
+
+        var ex = await Assert.ThrowsAsync<BusinessException>(() =>
+            service.AddSlotAsync(generated.PlanId,
+                new AddScheduleSlotRequest(e1.Id, Start,
+                    new List<TimeSpan> { new(14, 0, 0), new(15, 0, 0) },
+                    ws.Id),
+                1, 9, "管理员", CancellationToken.None));
+        Assert.Equal("INVALID_TIME_SLOT", ex.ErrorCode);
     }
 
     [Fact]

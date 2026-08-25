@@ -134,8 +134,9 @@
       <div v-if="viewMode === 'day'" v-loading="loading">
         <el-date-picker v-model="dayDate" type="date" value-format="YYYY-MM-DD" style="width: 150px; margin-bottom: 12px" placeholder="选择日期" :disabled-date="disabledDate" @change="loadDay" />
         <div v-if="dayDate" class="matrix-wrap"><div class="matrix" :class="{ 'has-chip-highlight': highlightedEmpId }" @click="highlightedEmpId = null">
+          <div v-if="rangeSelect.active" class="range-hint">{{ rangeHint }}</div>
           <div class="m-row m-header"><div class="m-ws-col">工作站</div><div v-for="slot in slots" :key="slot.key" class="m-slot-col" :title="slot.display"><span v-if="isHour(slot)">{{ slot.display }}</span></div></div>
-          <div v-for="ws in dailyWorkstations" :key="ws" class="m-row"><div class="m-ws-col">{{ ws }}<el-tag v-if="wsLowSkill(ws)" type="success" size="small" style="margin-left:4px">兼</el-tag></div><div v-for="(slot, si) in slots" :key="slot.key" class="m-slot-col" :class="[cellClass(ws, slot), { 'is-empty': dailyCellUsers(ws, slot).length === 0 }, snapTarget.ws === ws && snapTarget.slotIdx === si ? 'snap-target' : '', batchSelected(ws, si) ? 'batch-selected' : '']" :data-slot="slot.key" :title="dailyCellUsers(ws, slot).length === 0 ? '点击添加人员' : slot.display" @click="onCellClick(ws, slot)"><div v-if="dailySlotIssues(ws, slot).length" class="gap-flag" :class="{ 'gap-flag-low': lowSkillGapIssues(ws, slot).length > 0 }" :title="gapTooltip(ws, slot)">{{ lowSkillGapIssues(ws, slot).length > 0 ? '兼' : '缺' }}</div><div v-for="emp in dailyCellUsers(ws, slot)" :key="emp.employeeId" class="emp-chip" :class="{ 'is-parttime': emp.isParttime === 1, 'pt-first': isFirstPartTimeChip(emp, ws, slot), 'is-break': inBreak(emp, slot), 'is-highlighted': highlightedEmpId === emp.employeeId }" :title="'单击高亮该员工当天全部色块；双击切换休息/上班；按住拖动可移动半小时'" @mousedown.prevent.stop="onChipMouseDown($event, emp, ws, slot)" @click.stop="onChipClick(emp, slot)" @dblclick.stop="onChipDblClick(emp, slot)"><div class="emp-name">{{ emp.employeeName }}<span v-if="prefMatch(emp, ws)" class="pref-dot" title="与店长历史偏好一致" /> <span v-if="inBreak(emp, slot)" class="break-flag" :title="breakTip(emp)">休</span></div><div v-if="!inBreak(emp, slot)" class="emp-shift">{{ emp.shiftCode || '--' }}</div><div v-else class="emp-shift break-info" :title="breakTip(emp)">休息</div></div></div></div>
+          <div v-for="ws in dailyWorkstations" :key="ws" class="m-row"><div class="m-ws-col">{{ ws }}<el-tag v-if="wsLowSkill(ws)" type="success" size="small" style="margin-left:4px">兼</el-tag></div><div v-for="(slot, si) in slots" :key="slot.key" class="m-slot-col" :class="[cellClass(ws, slot), { 'is-empty': dailyCellUsers(ws, slot).length === 0 }, rangeSelected(ws, slot) ? 'range-selected' : '', snapTarget.ws === ws && snapTarget.slotIdx === si ? 'snap-target' : '', batchSelected(ws, si) ? 'batch-selected' : '']" :data-slot="slot.key" :title="dailyCellUsers(ws, slot).length === 0 ? '点击添加人员，按住滑动可选多个时段' : slot.display" @mousedown="onCellMouseDown(ws, slot, $event)" @click="onCellClick(ws, slot)"><div v-if="dailySlotIssues(ws, slot).length" class="gap-flag" :class="{ 'gap-flag-low': lowSkillGapIssues(ws, slot).length > 0 }" :title="gapTooltip(ws, slot)">{{ lowSkillGapIssues(ws, slot).length > 0 ? '兼' : '缺' }}</div><div v-for="emp in dailyCellUsers(ws, slot)" :key="emp.employeeId" class="emp-chip" :class="{ 'is-parttime': emp.isParttime === 1, 'pt-first': isFirstPartTimeChip(emp, ws, slot), 'is-break': inBreak(emp, slot), 'is-highlighted': highlightedEmpId === emp.employeeId }" :title="'单击高亮该员工当天全部色块；双击切换休息/上班；按住拖动可移动半小时'" @mousedown.prevent.stop="onChipMouseDown($event, emp, ws, slot)" @click.stop="onChipClick(emp, slot)" @dblclick.stop="onChipDblClick(emp, slot)"><div class="emp-name">{{ emp.employeeName }}<span v-if="prefMatch(emp, ws)" class="pref-dot" title="与店长历史偏好一致" /> <span v-if="inBreak(emp, slot)" class="break-flag" :title="breakTip(emp)">休</span></div><div v-if="!inBreak(emp, slot)" class="emp-shift">{{ emp.shiftCode || '--' }}</div><div v-else class="emp-shift break-info" :title="breakTip(emp)">休息</div></div></div></div>
         </div></div>
       </div>
 
@@ -221,7 +222,7 @@
     <el-dialog v-model="addSlotDialog.visible" title="添加人员" width="460px" destroy-on-close>
       <div class="ds-info">
         <div><span class="ds-label">日期：</span>{{ addSlotDialog.workDate }}　<span class="ds-label">工作站：</span>{{ addSlotDialog.wsName }}</div>
-        <div><span class="ds-label">时段：</span>{{ addSlotDialog.slotDisplay }}（30 分钟）</div>
+        <div><span class="ds-label">时段：</span>{{ addSlotDialog.rangeText }}</div>
       </div>
       <el-select
         v-model="addSlotDialog.employeeId"
@@ -1015,19 +1016,29 @@ async function loadDay(date) {
 
 async function selectDate(date) { selectedDate.value = date; highlightedEmpId.value = null; await loadDay(date) }
 
-// ===== P3 空位加人：点击日明细空格子 → 选择员工补 30 分钟上班段 =====
+// ===== P3 空位加人：日明细空格子点击/滑动多选 → 选择员工补 30 分钟上班段 =====
 const addSlotDialog = reactive({
   visible: false,
   loading: false,
   saving: false,
   wsName: '',
   wsId: null,
-  slotKey: '',
-  slotDisplay: '',
+  timeSlots: [],   // 所选连续时段（'HH:mm' 数组）
+  rangeText: '',
   workDate: '',
   employeeId: null,
   candidates: []
 })
+
+// 滑动选择状态（时间轴同一行内横向滑动）
+const rangeSelect = reactive({
+  active: false,
+  moved: false,
+  ws: '',
+  startKey: '',
+  endKey: ''
+})
+let suppressCellClickUntil = 0
 
 // 工作站名称 → id 映射（来源：日明细行 + 缺口问题行）
 const wsNameToId = computed(() => {
@@ -1040,25 +1051,112 @@ const wsNameToId = computed(() => {
 const addSlotSelected = computed(() =>
   addSlotDialog.candidates.find(c => c.employeeId === addSlotDialog.employeeId) || null)
 
-// 点击格子：空位打开添加人员弹窗；非空仅清除高亮（与原行为一致）
+function slotIndex(key) {
+  return slots.value.findIndex(s => s.key === key)
+}
+
+function slotKeysBetween(startKey, endKey) {
+  const a = slotIndex(startKey)
+  const b = slotIndex(endKey)
+  if (a < 0 || b < 0) return []
+  const lo = Math.min(a, b)
+  const hi = Math.max(a, b)
+  return slots.value.slice(lo, hi + 1).map(s => s.key)
+}
+
+// 时段结束标签：该时段 + 30 分钟（时间轴最末 05:30+1 → 06:00+1）
+function slotEndDisplay(key) {
+  const idx = slotIndex(key)
+  const next = idx >= 0 ? slots.value[idx + 1] : null
+  return next ? next.display : (key === '05:30' ? '06:00+1' : key)
+}
+
+const rangeHint = computed(() => {
+  if (!rangeSelect.active) return ''
+  const keys = slotKeysBetween(rangeSelect.startKey, rangeSelect.endKey)
+  if (!keys.length) return ''
+  const start = slots.value[slotIndex(rangeSelect.startKey)]
+  return `已选 ${keys.length} 段（${start.display} ~ ${slotEndDisplay(rangeSelect.endKey)}），松开鼠标确认`
+})
+
+function rangeSelected(ws, slot) {
+  if (!rangeSelect.active || ws !== rangeSelect.ws) return false
+  const a = slotIndex(rangeSelect.startKey)
+  const b = slotIndex(rangeSelect.endKey)
+  const i = slotIndex(slot.key)
+  return i >= Math.min(a, b) && i <= Math.max(a, b)
+}
+
+// 滑动起点：仅空格子可进入选择（有人的格子不拦截，保留原交互）
+function onCellMouseDown(ws, slot, e) {
+  if (e && e.button !== undefined && e.button !== 0) return
+  if (dailyCellUsers(ws, slot).length > 0) return
+  if (e) e.preventDefault()
+  rangeSelect.active = true
+  rangeSelect.moved = false
+  rangeSelect.ws = ws
+  rangeSelect.startKey = slot.key
+  rangeSelect.endKey = slot.key
+  document.addEventListener('mousemove', onRangeMouseMove)
+  document.addEventListener('mouseup', onRangeMouseUp)
+}
+
+function cellAtPoint(e) {
+  const el = document.elementFromPoint(e.clientX, e.clientY)
+  const cell = el?.closest?.('.m-slot-col')
+  if (!cell) return null
+  const row = cell.closest('.m-row')
+  const wsEl = row?.querySelector('.m-ws-col')
+  return { ws: wsEl ? wsEl.innerText.replace('兼', '').trim() : '', key: cell.getAttribute('data-slot') }
+}
+
+function onRangeMouseMove(e) {
+  if (!rangeSelect.active) return
+  const hit = cellAtPoint(e)
+  if (!hit || hit.ws !== rangeSelect.ws || !hit.key) return
+  if (hit.key !== rangeSelect.endKey) rangeSelect.moved = true
+  rangeSelect.endKey = hit.key
+}
+
+function onRangeMouseUp() {
+  document.removeEventListener('mousemove', onRangeMouseMove)
+  document.removeEventListener('mouseup', onRangeMouseUp)
+  if (!rangeSelect.active) return
+  const ws = rangeSelect.ws
+  const startKey = rangeSelect.startKey
+  const endKey = rangeSelect.endKey
+  const moved = rangeSelect.moved
+  rangeSelect.active = false
+  rangeSelect.moved = false
+  if (moved) {
+    // 滑动结束：按所选范围打开弹窗，并吞掉随后的 click 事件
+    suppressCellClickUntil = Date.now() + 350
+    openAddSlot(ws, slotKeysBetween(startKey, endKey))
+  }
+  // 未移动（纯点击）：交由 click 事件走单时段流程
+}
+
+// 点击格子：拖动结束后的 click 被忽略；空位打开添加人员弹窗；非空仅清除高亮
 function onCellClick(ws, slot) {
+  if (Date.now() < suppressCellClickUntil) return
   if (dailyCellUsers(ws, slot).length === 0) {
-    openAddSlot(ws, slot)
+    openAddSlot(ws, [slot.key])
   } else {
     highlightedEmpId.value = null
   }
 }
 
-async function openAddSlot(ws, slot) {
+async function openAddSlot(ws, slotKeys) {
   const wsId = wsNameToId.value.get(ws)
-  if (!wsId || !dayDate.value) {
+  if (!wsId || !dayDate.value || !Array.isArray(slotKeys) || slotKeys.length === 0) {
     ElMessage.warning('无法识别该工作站或日期，请刷新后重试')
     return
   }
   addSlotDialog.wsName = ws
   addSlotDialog.wsId = wsId
-  addSlotDialog.slotKey = slot.key
-  addSlotDialog.slotDisplay = slot.display
+  addSlotDialog.timeSlots = slotKeys
+  const startSlot = slots.value[slotIndex(slotKeys[0])]
+  addSlotDialog.rangeText = `${startSlot.display} ~ ${slotEndDisplay(slotKeys[slotKeys.length - 1])}（${slotKeys.length} 段）`
   addSlotDialog.workDate = dayDate.value
   addSlotDialog.employeeId = null
   addSlotDialog.candidates = []
@@ -1071,7 +1169,7 @@ async function loadAddSlotCandidates() {
   try {
     const res = await getAddSlotCandidates(planId.value, {
       workDate: addSlotDialog.workDate,
-      timeSlot: addSlotDialog.slotKey,
+      timeSlot: addSlotDialog.timeSlots[0],
       workstationId: addSlotDialog.wsId
     })
     addSlotDialog.candidates = Array.isArray(res) ? res : []
@@ -1096,10 +1194,10 @@ async function submitAddSlot() {
     await addScheduleSlot(planId.value, {
       employeeId: addSlotDialog.employeeId,
       workDate: addSlotDialog.workDate,
-      timeSlot: addSlotDialog.slotKey,
+      timeSlots: addSlotDialog.timeSlots,
       workstationId: addSlotDialog.wsId
     })
-    ElMessage.success('添加成功')
+    ElMessage.success(`添加成功（${addSlotDialog.timeSlots.length} 段）`)
     addSlotDialog.visible = false
     // 刷新日明细与缺口标记
     await loadDay(addSlotDialog.workDate)
@@ -1314,6 +1412,8 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.removeEventListener('mousemove', onDragMove)
   window.removeEventListener('mouseup', onDragEnd)
+  document.removeEventListener('mousemove', onRangeMouseMove)
+  document.removeEventListener('mouseup', onRangeMouseUp)
   if (rationalityChart) {
     rationalityChart.dispose()
     rationalityChart = null
@@ -1356,7 +1456,7 @@ onBeforeUnmount(() => {
 .cal-parttime { font-size: 12px; color: #67c23a; }
 .cal-rest { font-size: 12px; color: #f56c6c; }
 .cal-shift { font-size: 11px; color: #909399; margin-top: 4px; }
-.matrix-wrap { overflow: auto; max-height: 560px; }
+.matrix-wrap { overflow: auto; max-height: 560px; position: relative; }
 .matrix { border: 1px solid #ebeef5; border-radius: 4px; }
 .m-row { display: flex; border-bottom: 1px solid #ebeef5; }
 .m-row:last-child { border-bottom: none; }
@@ -1365,10 +1465,12 @@ onBeforeUnmount(() => {
 .m-header .m-ws-col { background: #f5f7fa; z-index: 5; }
 .m-slot-col { width: 72px; min-height: 48px; flex-shrink: 0; padding: 2px 3px; border-right: 1px solid #f5f7fa; font-size: 11px; text-align: center; position: relative; }
 .m-slot-col:last-child { border-right: none; }
-/* P3 空位加人：空格子可点击，悬停显示 + 提示 */
+/* P3 空位加人：空格子可点击，悬停显示 + 提示；滑动选择多时段 */
 .m-slot-col.is-empty { cursor: pointer; }
 .m-slot-col.is-empty:hover { background: rgba(64, 158, 255, 0.08); }
 .m-slot-col.is-empty:hover::after { content: '+'; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #409eff; font-size: 16px; font-weight: 600; pointer-events: none; }
+.m-slot-col.range-selected { background: rgba(64, 158, 255, 0.18); outline: 1px solid #409eff; outline-offset: -1px; }
+.range-hint { position: absolute; top: 6px; left: 6px; z-index: 20; background: #409eff; color: #fff; font-size: 12px; padding: 4px 12px; border-radius: 4px; width: fit-content; pointer-events: none; }
 .has-employee { background: #ecf5ff; }
 .next-day { background: #fdf6ec; }
 .has-gap { box-shadow: inset 0 0 0 2px #f56c6c; }

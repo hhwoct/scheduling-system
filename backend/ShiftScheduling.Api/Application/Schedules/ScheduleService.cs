@@ -1501,7 +1501,8 @@ public sealed class ScheduleService : IScheduleService
     }
 
     /// <summary>
-    /// 空位加人（P3）：给员工在指定日期/时段/工作站新增一个 30 分钟上班段（不挂班次模板）。
+    /// 空位加人（P3）：给员工在指定日期/时段/工作站新增连续 30 分钟上班段（不挂班次模板）。
+    /// 支持滑动选择多个时段（时间轴 13:00 起，跨午夜时段按当天末尾处理）。
     /// 草稿与已发布计划均允许；已发布时额外通知该员工「排班变更」。
     /// </summary>
     public async Task<AddScheduleSlotRequest> AddSlotAsync(
@@ -1514,9 +1515,29 @@ public sealed class ScheduleService : IScheduleService
     {
         var plan = await GetPlanAsync(planId, storeId, cancellationToken);
 
-        if (request.TimeSlot < TimeSpan.Zero || request.TimeSlot >= TimeSpan.FromHours(24) || request.TimeSlot.Seconds != 0 || request.TimeSlot.Minutes % 30 != 0)
+        if (request.TimeSlots is null || request.TimeSlots.Count == 0 || request.TimeSlots.Count > 68)
         {
-            throw new BusinessException("时段必须为 30 分钟对齐的合法时间（00:00~23:30）", "INVALID_TIME_SLOT");
+            throw new BusinessException("时段列表不能为空且单次最多 68 段（34 小时）", "INVALID_TIME_SLOT");
+        }
+
+        var timeSlots = request.TimeSlots.Distinct().OrderBy(t => t).ToList();
+        foreach (var t in timeSlots)
+        {
+            if (t < TimeSpan.Zero || t >= TimeSpan.FromHours(24) || t.Seconds != 0 || t.Minutes % 30 != 0)
+            {
+                throw new BusinessException("时段必须为 30 分钟对齐的合法时间（00:00~23:30）", "INVALID_TIME_SLOT");
+            }
+        }
+
+        // 时间轴 13:00 起，次日 00:00~05:30 属于当天末尾：按轴序校验连续性（支持跨午夜滑动）
+        double timelineMin(TimeSpan t) => t.TotalMinutes < 13 * 60 ? t.TotalMinutes + 1440 : t.TotalMinutes;
+        var orderedSlots = timeSlots.OrderBy(timelineMin).ToList();
+        for (var i = 1; i < orderedSlots.Count; i++)
+        {
+            if (timelineMin(orderedSlots[i]) - timelineMin(orderedSlots[i - 1]) != 30)
+            {
+                throw new BusinessException("所选时段必须为连续的半小时时段", "INVALID_TIME_SLOT");
+            }
         }
 
         var employee = await _dbContext.Employees.AsNoTracking()
@@ -1552,27 +1573,30 @@ public sealed class ScheduleService : IScheduleService
 
         var duplicated = await _dbContext.ScheduleResults.AsNoTracking()
             .AnyAsync(x => x.PlanId == planId && x.EmployeeId == request.EmployeeId &&
-                           x.WorkDate == request.WorkDate && x.TimeSlot == request.TimeSlot, cancellationToken);
+                           x.WorkDate == request.WorkDate && timeSlots.Contains(x.TimeSlot), cancellationToken);
         if (duplicated)
         {
-            throw new BusinessException("该员工在该时段已有排班记录", "SLOT_ALREADY_ASSIGNED");
+            throw new BusinessException("该员工在所选时段已有排班记录", "SLOT_ALREADY_ASSIGNED");
         }
 
-        _dbContext.ScheduleResults.Add(new ScheduleResultEntity
+        foreach (var slot in timeSlots)
         {
-            PlanId = planId,
-            StoreId = storeId,
-            EmployeeId = request.EmployeeId,
-            WorkDate = request.WorkDate,
-            ShiftTemplateId = null,
-            TimeSlot = request.TimeSlot,
-            WorkstationId = request.WorkstationId,
-            SkillScore = skillScore,
-            Status = plan.Status,
-            Version = 1,
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow
-        });
+            _dbContext.ScheduleResults.Add(new ScheduleResultEntity
+            {
+                PlanId = planId,
+                StoreId = storeId,
+                EmployeeId = request.EmployeeId,
+                WorkDate = request.WorkDate,
+                ShiftTemplateId = null,
+                TimeSlot = slot,
+                WorkstationId = request.WorkstationId,
+                SkillScore = skillScore,
+                Status = plan.Status,
+                Version = 1,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            });
+        }
 
         // 汇总：按当天全部时段重算起止/工时/覆盖工作站（支持同一员工多次加时）
         var summary = await _dbContext.ScheduleSummaries
@@ -1582,10 +1606,15 @@ public sealed class ScheduleService : IScheduleService
             .Where(x => x.PlanId == planId && x.EmployeeId == request.EmployeeId && x.WorkDate == request.WorkDate)
             .Select(x => new { x.TimeSlot, x.WorkstationId })
             .ToListAsync(cancellationToken);
-        daySlots.Add(new { TimeSlot = request.TimeSlot, WorkstationId = (long?)request.WorkstationId });
+        foreach (var slot in timeSlots)
+        {
+            daySlots.Add(new { TimeSlot = slot, WorkstationId = (long?)request.WorkstationId });
+        }
 
-        var startTime = daySlots.Min(x => x.TimeSlot);
-        var endTime = daySlots.Max(x => x.TimeSlot) + TimeSpan.FromMinutes(30);
+        // 按时间轴排序（13:00 起，00:00~05:30 属当天末尾），支持跨午夜段
+        var orderedAll = daySlots.OrderBy(x => timelineMin(x.TimeSlot)).ToList();
+        var startTime = orderedAll.First().TimeSlot;
+        var endTime = TimeSpan.FromMinutes((timelineMin(orderedAll.Last().TimeSlot) + 30) % 1440);
         var covered = string.Join(",", daySlots.Select(x => x.WorkstationId).Distinct().OrderBy(x => x));
 
         if (summary is null)
@@ -1625,7 +1654,7 @@ public sealed class ScheduleService : IScheduleService
                 ReceiverEmployeeId = request.EmployeeId,
                 NotificationType = "SCHEDULE_CHANGED",
                 Title = "排班变更",
-                Content = $"{request.WorkDate:yyyy-MM-dd} {request.TimeSlot:hh\\:mm} 您被新增安排到「{workstation.Name}」上班（30 分钟），请查看班表",
+                Content = $"{request.WorkDate:yyyy-MM-dd} {startTime:hh\\:mm}-{endTime:hh\\:mm}（{timeSlots.Count} 段）您被新增安排到「{workstation.Name}」上班，请查看班表",
                 IsRead = 0,
                 CreatedAt = DateTime.UtcNow
             });
@@ -1638,10 +1667,10 @@ public sealed class ScheduleService : IScheduleService
             PlanId = planId,
             EmployeeId = request.EmployeeId,
             WorkDate = request.WorkDate,
-            TimeSlot = request.TimeSlot,
+            TimeSlot = startTime,
             ActionType = "ADD_SLOT",
             BeforeJson = null,
-            AfterJson = JsonSerializer.Serialize(new { request.WorkstationId, SkillScore = skillScore }),
+            AfterJson = JsonSerializer.Serialize(new { request.WorkstationId, SkillScore = skillScore, SlotCount = timeSlots.Count, StartTime = startTime, EndTime = endTime }),
             OperatorUserId = operatorUserId,
             OperatorName = operatorName,
             CreatedAt = DateTime.UtcNow
@@ -1656,7 +1685,7 @@ public sealed class ScheduleService : IScheduleService
             "SCHEDULE_RESULT",
             planId,
             null,
-            $"{request.WorkDate:yyyy-MM-dd} {request.TimeSlot:hh\\:mm} 员工 {employee.EmployeeNo} 加到「{workstation.Name}」",
+            $"{request.WorkDate:yyyy-MM-dd} {startTime:hh\\:mm}-{endTime:hh\\:mm}（{timeSlots.Count} 段）员工 {employee.EmployeeNo} 加到「{workstation.Name}」",
             "空位加人",
             DateTime.UtcNow);
 

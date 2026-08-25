@@ -150,13 +150,14 @@ public sealed record SetSlotStatusItem(
 public sealed record SetSlotStatusRequest(IReadOnlyList<SetSlotStatusItem> Items);
 
 /// <summary>
-/// 空位加人：给员工在指定日期/时段/工作站新增一个 30 分钟上班段（不挂班次模板）。
+/// 空位加人：给员工在指定日期/时段/工作站新增连续 30 分钟上班段（不挂班次模板）。
+/// TimeSlots 为连续半小时时段列表（时间轴 13:00 起，跨午夜时 00:00~05:30 属于当天末尾）。
 /// 草稿与已发布计划均允许（已发布时额外通知该员工排班变更）。
 /// </summary>
 public sealed record AddScheduleSlotRequest(
     long EmployeeId,
     DateOnly WorkDate,
-    TimeSpan TimeSlot,
+    IReadOnlyList<TimeSpan> TimeSlots,
     long WorkstationId);
 
 /// <summary>空位加人候选（按技能/兼职岗位限制/请假/当天已排班过滤）。</summary>
