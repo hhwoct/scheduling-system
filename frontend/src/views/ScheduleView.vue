@@ -135,8 +135,19 @@
         <el-date-picker v-model="dayDate" type="date" value-format="YYYY-MM-DD" style="width: 150px; margin-bottom: 12px" placeholder="选择日期" :disabled-date="disabledDate" @change="loadDay" />
         <div v-if="dayDate" class="matrix-wrap"><div class="matrix" :class="{ 'has-chip-highlight': highlightedEmpId }" @click="highlightedEmpId = null">
           <div v-if="rangeSelect.active" class="range-hint">{{ rangeHint }}</div>
+          <div v-if="rangeSel.visible" class="range-toolbar" @click.stop>
+            <span class="rt-info">{{ rangeSel.ws }} {{ rangeSelStart }} ~ {{ rangeSelEnd }}（{{ rangeSelCount }} 段）</span>
+            <el-button size="small" type="primary" @click="openReplaceDialog">换人</el-button>
+            <el-button size="small" @click="moveRangeBy(-30)">◀ 左移</el-button>
+            <el-button size="small" @click="moveRangeBy(30)">右移 ▶</el-button>
+            <el-select v-model="rangeSel.restEmployeeId" size="small" placeholder="员工" style="width: 110px">
+              <el-option v-for="e in rangeSelEmployees" :key="e.id" :value="e.id" :label="e.name" />
+            </el-select>
+            <el-button size="small" type="warning" :disabled="!rangeSel.restEmployeeId" @click="toggleRangeRest">{{ rangeSelRestLabel }}</el-button>
+            <el-button size="small" link @click="clearRangeSel">✕</el-button>
+          </div>
           <div class="m-row m-header"><div class="m-ws-col">工作站</div><div v-for="slot in slots" :key="slot.key" class="m-slot-col" :title="slot.display"><span v-if="isHour(slot)">{{ slot.display }}</span></div></div>
-          <div v-for="ws in dailyWorkstations" :key="ws" class="m-row"><div class="m-ws-col">{{ ws }}<el-tag v-if="wsLowSkill(ws)" type="success" size="small" style="margin-left:4px">兼</el-tag></div><div v-for="(slot, si) in slots" :key="slot.key" class="m-slot-col" :class="[cellClass(ws, slot), { 'is-empty': dailyCellUsers(ws, slot).length === 0 }, rangeSelected(ws, slot) ? 'range-selected' : '', snapTarget.ws === ws && snapTarget.slotIdx === si ? 'snap-target' : '', batchSelected(ws, si) ? 'batch-selected' : '']" :data-slot="slot.key" :title="dailyCellUsers(ws, slot).length === 0 ? '点击添加人员，按住滑动可选多个时段' : slot.display" @mousedown="onCellMouseDown(ws, slot, $event)" @click="onCellClick(ws, slot)"><div v-if="dailySlotIssues(ws, slot).length" class="gap-flag" :class="{ 'gap-flag-low': lowSkillGapIssues(ws, slot).length > 0 }" :title="gapTooltip(ws, slot)">{{ lowSkillGapIssues(ws, slot).length > 0 ? '兼' : '缺' }}</div><div v-for="emp in dailyCellUsers(ws, slot)" :key="emp.employeeId" class="emp-chip" :class="{ 'is-parttime': emp.isParttime === 1, 'pt-first': isFirstPartTimeChip(emp, ws, slot), 'is-break': inBreak(emp, slot), 'is-highlighted': highlightedEmpId === emp.employeeId }" :title="'单击高亮该员工当天全部色块；双击切换休息/上班；按住拖动可移动半小时'" @mousedown.prevent.stop="onChipMouseDown($event, emp, ws, slot)" @click.stop="onChipClick(emp, slot)" @dblclick.stop="onChipDblClick(emp, slot)"><div class="emp-name">{{ emp.employeeName }}<span v-if="prefMatch(emp, ws)" class="pref-dot" title="与店长历史偏好一致" /> <span v-if="inBreak(emp, slot)" class="break-flag" :title="breakTip(emp)">休</span></div><div v-if="!inBreak(emp, slot)" class="emp-shift">{{ emp.shiftCode || '--' }}</div><div v-else class="emp-shift break-info" :title="breakTip(emp)">休息</div></div></div></div>
+          <div v-for="ws in dailyWorkstations" :key="ws" class="m-row"><div class="m-ws-col">{{ ws }}<el-tag v-if="wsLowSkill(ws)" type="success" size="small" style="margin-left:4px">兼</el-tag></div><div v-for="(slot, si) in slots" :key="slot.key" class="m-slot-col" :class="[cellClass(ws, slot), { 'is-empty': dailyCellUsers(ws, slot).length === 0 }, (rangeSelected(ws, slot) || rangeSelSelected(ws, slot)) ? 'range-selected' : '', snapTarget.ws === ws && snapTarget.slotIdx === si ? 'snap-target' : '', batchSelected(ws, si) ? 'batch-selected' : '']" :data-slot="slot.key" :title="dailyCellUsers(ws, slot).length === 0 ? '点击添加人员，按住滑动可选多个时段' : '按住滑动可选择范围后修改（换人/平移/休息）'" @mousedown="onCellMouseDown(ws, slot, $event)" @click="onCellClick(ws, slot)"><div v-if="dailySlotIssues(ws, slot).length" class="gap-flag" :class="{ 'gap-flag-low': lowSkillGapIssues(ws, slot).length > 0 }" :title="gapTooltip(ws, slot)">{{ lowSkillGapIssues(ws, slot).length > 0 ? '兼' : '缺' }}</div><div v-for="emp in dailyCellUsers(ws, slot)" :key="emp.employeeId" class="emp-chip" :class="{ 'is-parttime': emp.isParttime === 1, 'pt-first': isFirstPartTimeChip(emp, ws, slot), 'is-break': inBreak(emp, slot), 'is-highlighted': highlightedEmpId === emp.employeeId }" :title="'单击高亮该员工当天全部色块；双击切换休息/上班；按住滑动可选择范围'" @click.stop="onChipClick(emp, slot)" @dblclick.stop="onChipDblClick(emp, slot)"><div class="emp-name">{{ emp.employeeName }}<span v-if="prefMatch(emp, ws)" class="pref-dot" title="与店长历史偏好一致" /> <span v-if="inBreak(emp, slot)" class="break-flag" :title="breakTip(emp)">休</span></div><div v-if="!inBreak(emp, slot)" class="emp-shift">{{ emp.shiftCode || '--' }}</div><div v-else class="emp-shift break-info" :title="breakTip(emp)">休息</div></div></div></div>
         </div></div>
       </div>
 
@@ -218,12 +229,13 @@
       </template>
     </el-dialog>
 
-    <!-- P3 空位加人：日明细点击空格子，给未排班员工补 30 分钟上班段 -->
-    <el-dialog v-model="addSlotDialog.visible" title="添加人员" width="460px" destroy-on-close>
+    <!-- P3 空位加人/范围换人：日明细点击空格子补人；选中已有安排后可换人 -->
+    <el-dialog v-model="addSlotDialog.visible" :title="addSlotDialog.mode === 'replace' ? '换人' : '添加人员'" width="460px" destroy-on-close>
       <div class="ds-info">
         <div><span class="ds-label">日期：</span>{{ addSlotDialog.workDate }}　<span class="ds-label">工作站：</span>{{ addSlotDialog.wsName }}</div>
         <div><span class="ds-label">时段：</span>{{ addSlotDialog.rangeText }}</div>
       </div>
+      <el-alert v-if="addSlotDialog.mode === 'replace'" type="warning" :closable="false" style="margin-top: 10px" title="将移除所选范围内现有人员的时段，替换为所选员工" />
       <el-select
         v-model="addSlotDialog.employeeId"
         placeholder="请选择员工"
@@ -266,7 +278,7 @@ import { onMounted, onBeforeUnmount, ref, reactive, computed, nextTick, watch } 
 import * as echarts from 'echarts'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { getMonthView, getWeekView, getDailyView, getScheduleIssues, getScheduleRationality, getSchedules, setSlotStatus, moveScheduleSegment, getAddSlotCandidates, addScheduleSlot, removeScheduleSlot } from '../api/schedules'
+import { getMonthView, getWeekView, getDailyView, getScheduleIssues, getScheduleRationality, getSchedules, setSlotStatus, moveScheduleSegment, getAddSlotCandidates, addScheduleSlot, removeScheduleSlot, replaceScheduleSlot, moveScheduleRange } from '../api/schedules'
 import { getPreferenceMatrix } from '../api/preferences'
 
 const route = useRoute()
@@ -472,6 +484,7 @@ function onChipClick(emp, slot) {
     dragMove.justDragged = false
     return
   }
+  if (Date.now() < suppressCellClickUntil) return
   highlightedEmpId.value = highlightedEmpId.value === emp.employeeId ? null : emp.employeeId
 }
 
@@ -628,6 +641,12 @@ async function handleUndo() {
         timeSlots: entry.payload.timeSlots,
         workstationId: entry.payload.workstationId
       })
+    } else if (entry.type === 'move-range') {
+      // 撤回范围平移：反向平移
+      await moveScheduleRange(planId.value, entry.payload)
+    } else if (entry.type === 'range-rest') {
+      // 撤回休息切换：反向恢复
+      await setSlotStatus(planId.value, { items: entry.payload.items })
     }
     ElMessage.success('已撤销')
     await loadDay(selectedDate.value || dayDate.value)
@@ -1039,6 +1058,7 @@ const addSlotDialog = reactive({
   visible: false,
   loading: false,
   saving: false,
+  mode: 'add',      // add=空位加人；replace=范围换人（移除范围内现有安排）
   wsName: '',
   wsId: null,
   timeSlots: [],   // 所选连续时段（'HH:mm' 数组）
@@ -1105,10 +1125,9 @@ function rangeSelected(ws, slot) {
   return i >= Math.min(a, b) && i <= Math.max(a, b)
 }
 
-// 滑动起点：仅空格子可进入选择（有人的格子不拦截，保留原交互）
+// 滑动起点：任何格子（含有人格子）都可进入范围选择；chip 单击/双击行为保留
 function onCellMouseDown(ws, slot, e) {
   if (e && e.button !== undefined && e.button !== 0) return
-  if (dailyCellUsers(ws, slot).length > 0) return
   if (e) e.preventDefault()
   rangeSelect.active = true
   rangeSelect.moved = false
@@ -1136,6 +1155,57 @@ function onRangeMouseMove(e) {
   rangeSelect.endKey = hit.key
 }
 
+// ===== P3 范围选择工具条（对已有安排：换人 / 平移 / 休息切换） =====
+const rangeSel = reactive({ visible: false, ws: '', startKey: '', endKey: '', restEmployeeId: null })
+
+const rangeSelKeys = computed(() => rangeSel.visible ? slotKeysBetween(rangeSel.startKey, rangeSel.endKey) : [])
+const rangeSelCount = computed(() => rangeSelKeys.value.length)
+const rangeSelStart = computed(() => { const s = slots.value[slotIndex(rangeSel.startKey)]; return s ? s.display : '' })
+const rangeSelEnd = computed(() => slotEndDisplay(rangeSel.endKey))
+
+function rangeSelSelected(ws, slot) {
+  if (!rangeSel.visible || ws !== rangeSel.ws) return false
+  return rangeSelKeys.value.includes(slot.key)
+}
+
+// 范围内出现的员工（供休息切换下拉）
+const rangeSelEmployees = computed(() => {
+  const map = new Map()
+  for (const k of rangeSelKeys.value) {
+    const slot = slots.value[slotIndex(k)]
+    if (!slot) continue
+    for (const u of dailyCellUsers(rangeSel.ws, slot)) {
+      if (!map.has(u.employeeId)) {
+        map.set(u.employeeId, { id: u.employeeId, name: u.employeeName || '', no: u.employeeNo || '' })
+      }
+    }
+  }
+  return [...map.values()]
+})
+
+// 休息切换按钮文案：该员工在范围内的时段若已处于休息（班中休息窗口覆盖范围起点）→ 恢复上班
+const rangeSelRestLabel = computed(() => {
+  const empId = rangeSel.restEmployeeId
+  if (!empId) return '改为休息'
+  const keys = rangeSelKeys.value
+  if (!keys.length) return '改为休息'
+  const slot = slots.value[slotIndex(keys[0])]
+  const u = slot ? dailyCellUsers(rangeSel.ws, slot).find(x => x.employeeId === empId) : null
+  return u && inBreak(u, slot) ? '恢复上班' : '改为休息'
+})
+
+function rangeHasEmployees(ws, keys) {
+  return keys.some(k => {
+    const s = slots.value[slotIndex(k)]
+    return s && dailyCellUsers(ws, s).length > 0
+  })
+}
+
+function clearRangeSel() {
+  rangeSel.visible = false
+  rangeSel.restEmployeeId = null
+}
+
 function onRangeMouseUp() {
   document.removeEventListener('mousemove', onRangeMouseMove)
   document.removeEventListener('mouseup', onRangeMouseUp)
@@ -1147,11 +1217,102 @@ function onRangeMouseUp() {
   rangeSelect.active = false
   rangeSelect.moved = false
   if (moved) {
-    // 滑动结束：按所选范围打开弹窗，并吞掉随后的 click 事件
+    // 滑动结束：吞掉随后的 click 事件
     suppressCellClickUntil = Date.now() + 350
-    openAddSlot(ws, slotKeysBetween(startKey, endKey))
+    const keys = slotKeysBetween(startKey, endKey)
+    const occupied = rangeHasEmployees(ws, keys)
+    if (!occupied) {
+      // 全空范围 → 直接弹添加人员
+      openAddSlot(ws, keys)
+    } else if (currentPlan.value?.status === 'PUBLISHED') {
+      ElMessage.warning('已发布排班仅支持空位加人，不能修改已有安排')
+    } else {
+      // 有人的范围 → 显示工具条（换人/平移/休息）
+      rangeSel.visible = true
+      rangeSel.ws = ws
+      rangeSel.startKey = startKey
+      rangeSel.endKey = endKey
+      rangeSel.restEmployeeId = rangeSelEmployees.value.length === 1 ? rangeSelEmployees.value[0].id : null
+    }
   }
   // 未移动（纯点击）：交由 click 事件走单时段流程
+}
+
+// 换人：打开添加人员弹窗（替换模式）
+function openReplaceDialog() {
+  const keys = [...rangeSelKeys.value]
+  if (!keys.length) return
+  openAddSlot(rangeSel.ws, keys, 'replace')
+}
+
+// 左移/右移 30 分钟
+async function moveRangeBy(offset) {
+  const keys = [...rangeSelKeys.value]
+  if (!keys.length || !dayDate.value) return
+  const wsId = wsNameToId.value.get(rangeSel.ws)
+  if (!wsId) return
+  try {
+    await moveScheduleRange(planId.value, {
+      workDate: dayDate.value,
+      workstationId: wsId,
+      timeSlots: keys,
+      offsetMinutes: offset
+    })
+    ElMessage.success(offset < 0 ? '已左移 30 分钟' : '已右移 30 分钟')
+    pushUndo({
+      type: 'move-range',
+      text: `范围平移 ${offset < 0 ? '左移' : '右移'} 30 分钟（${rangeSel.ws} ${rangeSelCount.value} 段）`,
+      payload: { workDate: dayDate.value, workstationId: wsId, timeSlots: keys, offsetMinutes: -offset }
+    })
+    // 平移选择范围并刷新（保持工具条可用，可连续点按）
+    const delta = offset > 0 ? 1 : -1
+    const si = slotIndex(rangeSel.startKey) + delta
+    const ei = slotIndex(rangeSel.endKey) + delta
+    if (si >= 0 && ei < slots.value.length) {
+      rangeSel.startKey = slots.value[si].key
+      rangeSel.endKey = slots.value[ei].key
+    } else {
+      clearRangeSel()
+    }
+    await loadDay(dayDate.value)
+  } catch (e) {
+    /* 拦截器已提示 */
+  }
+}
+
+// 休息切换：只改所选员工的时段（班中休息为每天一个 30 分钟窗口，落在范围内首个该员工时段）
+async function toggleRangeRest() {
+  const empId = rangeSel.restEmployeeId
+  const keys = [...rangeSelKeys.value]
+  if (!empId || !keys.length || !dayDate.value) return
+  const items = []
+  for (const k of keys) {
+    const slot = slots.value[slotIndex(k)]
+    if (!slot) continue
+    const u = dailyCellUsers(rangeSel.ws, slot).find(x => x.employeeId === empId)
+    if (u) {
+      items.push({ employeeId: empId, workDate: dayDate.value, timeSlot: k + ':00', isRest: inBreak(u, slot) ? 0 : 1 })
+    }
+  }
+  if (items.length === 0) {
+    ElMessage.warning('所选范围内该员工没有时段')
+    return
+  }
+  const toRest = items[0].isRest === 1
+  // 班中休息每天一个 30 分钟窗口：改为休息只标记范围内该员工首个时段；恢复上班则清除所有标记
+  const submitItems = toRest ? [items[0]] : items
+  try {
+    await setSlotStatus(planId.value, { items: submitItems })
+    ElMessage.success(toRest ? '已改为休息（30 分钟）' : '已恢复上班')
+    pushUndo({
+      type: 'range-rest',
+      text: (toRest ? '已改为休息 ' : '已恢复上班 ') + (rangeSelEmployees.value.find(x => x.id === empId)?.name || ''),
+      payload: { items: submitItems.map(it => ({ ...it, isRest: it.isRest === 1 ? 0 : 1 })) }
+    })
+    await loadDay(dayDate.value)
+  } catch (e) {
+    /* 拦截器已提示 */
+  }
 }
 
 // 点击格子：拖动结束后的 click 被忽略；空位打开添加人员弹窗；非空仅清除高亮
@@ -1164,12 +1325,13 @@ function onCellClick(ws, slot) {
   }
 }
 
-async function openAddSlot(ws, slotKeys) {
+async function openAddSlot(ws, slotKeys, mode = 'add') {
   const wsId = wsNameToId.value.get(ws)
   if (!wsId || !dayDate.value || !Array.isArray(slotKeys) || slotKeys.length === 0) {
     ElMessage.warning('无法识别该工作站或日期，请刷新后重试')
     return
   }
+  addSlotDialog.mode = mode
   addSlotDialog.wsName = ws
   addSlotDialog.wsId = wsId
   addSlotDialog.timeSlots = slotKeys
@@ -1209,25 +1371,27 @@ async function submitAddSlot() {
   if (!addSlotDialog.employeeId) return
   addSlotDialog.saving = true
   try {
-    await addScheduleSlot(planId.value, {
+    const payload = {
       employeeId: addSlotDialog.employeeId,
       workDate: addSlotDialog.workDate,
       timeSlots: addSlotDialog.timeSlots,
       workstationId: addSlotDialog.wsId
-    })
-    ElMessage.success(`添加成功（${addSlotDialog.timeSlots.length} 段）`)
-    // 入撤销栈：支持撤销条 / Ctrl+Z（Cmd+Z）撤回
-    pushUndo({
-      type: 'add-slot',
-      text: `已添加 ${addSlotSelected.value?.name || ''}（${addSlotDialog.wsName} ${addSlotDialog.rangeText}）`,
-      payload: {
-        employeeId: addSlotDialog.employeeId,
-        workDate: addSlotDialog.workDate,
-        timeSlots: [...addSlotDialog.timeSlots],
-        workstationId: addSlotDialog.wsId
-      }
-    })
+    }
+    if (addSlotDialog.mode === 'replace') {
+      await replaceScheduleSlot(planId.value, payload)
+      ElMessage.success(`换人成功（${addSlotDialog.timeSlots.length} 段）`)
+    } else {
+      await addScheduleSlot(planId.value, payload)
+      ElMessage.success(`添加成功（${addSlotDialog.timeSlots.length} 段）`)
+      // 入撤销栈：支持撤销条 / Ctrl+Z（Cmd+Z）撤回
+      pushUndo({
+        type: 'add-slot',
+        text: `已添加 ${addSlotSelected.value?.name || ''}（${addSlotDialog.wsName} ${addSlotDialog.rangeText}）`,
+        payload: { ...payload, timeSlots: [...payload.timeSlots] }
+      })
+    }
     addSlotDialog.visible = false
+    clearRangeSel()
     // 刷新日明细与缺口标记
     await loadDay(addSlotDialog.workDate)
   } catch (e) {
@@ -1502,6 +1666,9 @@ onBeforeUnmount(() => {
 .m-slot-col.is-empty:hover::after { content: '+'; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #409eff; font-size: 16px; font-weight: 600; pointer-events: none; }
 .m-slot-col.range-selected { background: rgba(64, 158, 255, 0.18); outline: 1px solid #409eff; outline-offset: -1px; }
 .range-hint { position: absolute; top: 6px; left: 6px; z-index: 20; background: #409eff; color: #fff; font-size: 12px; padding: 4px 12px; border-radius: 4px; width: fit-content; pointer-events: none; }
+.range-toolbar { position: absolute; top: 6px; left: 6px; z-index: 25; display: flex; align-items: center; gap: 8px; background: #fff; border: 1px solid #409eff; border-radius: 6px; padding: 6px 10px; box-shadow: 0 2px 12px rgba(0,0,0,0.15); }
+.range-toolbar .rt-info { font-size: 12px; color: #409eff; font-weight: 600; white-space: nowrap; }
+.matrix { user-select: none; }
 .has-employee { background: #ecf5ff; }
 .next-day { background: #fdf6ec; }
 .has-gap { box-shadow: inset 0 0 0 2px #f56c6c; }

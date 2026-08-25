@@ -120,4 +120,22 @@ public interface IScheduleService
         long operatorUserId,
         string operatorName,
         CancellationToken cancellationToken);
+
+    /// <summary>换人：移除范围内全部员工的时段，改为所选员工（仅草稿计划）。</summary>
+    Task ReplaceSlotAsync(
+        long planId,
+        AddScheduleSlotRequest request,
+        long storeId,
+        long operatorUserId,
+        string operatorName,
+        CancellationToken cancellationToken);
+
+    /// <summary>范围平移：所选时段内全部明细整体 ±30 分钟平移（仅草稿计划）。</summary>
+    Task<int> MoveRangeAsync(
+        long planId,
+        MoveScheduleRangeRequest request,
+        long storeId,
+        long operatorUserId,
+        string operatorName,
+        CancellationToken cancellationToken);
 }

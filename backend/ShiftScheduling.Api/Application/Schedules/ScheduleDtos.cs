@@ -170,3 +170,13 @@ public sealed record AddSlotCandidateItem(
     int IsRestDay,
     int SkillScore,
     string? PrimaryPosition);
+
+/// <summary>
+/// 范围平移（工具条左移/右移 30 分钟）：把指定工作站某天所选时段内的全部明细整体平移。
+/// OffsetMinutes 为 ±30 的整数倍且非 0。仅草稿计划可用。
+/// </summary>
+public sealed record MoveScheduleRangeRequest(
+    DateOnly WorkDate,
+    long WorkstationId,
+    IReadOnlyList<TimeSpan> TimeSlots,
+    int OffsetMinutes);

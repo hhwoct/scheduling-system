@@ -80,6 +80,16 @@ export function removeScheduleSlot(planId, data) {
   return request.put(API_ROUTES.SCHEDULES.REMOVE_SLOT(planId), data).then(res => res.data)
 }
 
+// 范围换人：移除范围内全部员工的时段，改为所选员工（仅草稿）
+export function replaceScheduleSlot(planId, data) {
+  return request.put(API_ROUTES.SCHEDULES.REPLACE_SLOT(planId), data).then(res => res.data)
+}
+
+// 范围平移：所选时段内全部明细整体 ±30 分钟平移（仅草稿）
+export function moveScheduleRange(planId, data) {
+  return request.put(API_ROUTES.SCHEDULES.MOVE_RANGE(planId), data).then(res => res.data)
+}
+
 // 空位加人候选员工列表
 export function getAddSlotCandidates(planId, params) {
   return request.get(API_ROUTES.SCHEDULES.ADD_CANDIDATES(planId), { params }).then(res => res.data)

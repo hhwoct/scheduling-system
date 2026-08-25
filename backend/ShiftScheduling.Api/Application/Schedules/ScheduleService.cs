@@ -1919,6 +1919,327 @@ public sealed class ScheduleService : IScheduleService
             .ToList();
     }
 
+    /// <summary>
+    /// 换人（P3）：移除范围内（工作站×时段）全部员工的明细，改为所选员工。
+    /// 仅草稿计划；按员工技能/兼职岗位限制/请假校验新员工。
+    /// </summary>
+    public async Task ReplaceSlotAsync(
+        long planId,
+        AddScheduleSlotRequest request,
+        long storeId,
+        long operatorUserId,
+        string operatorName,
+        CancellationToken cancellationToken)
+    {
+        var plan = await GetPlanAsync(planId, storeId, cancellationToken);
+
+        if (plan.Status == "PUBLISHED")
+        {
+            throw new BusinessException("已发布的排班不能直接调整，请取消发布后再修改", "SCHEDULE_PUBLISHED");
+        }
+
+        if (request.TimeSlots is null || request.TimeSlots.Count == 0 || request.TimeSlots.Count > 68)
+        {
+            throw new BusinessException("时段列表不能为空且单次最多 68 段（34 小时）", "INVALID_TIME_SLOT");
+        }
+
+        var timeSlots = request.TimeSlots.Distinct().OrderBy(t => t).ToList();
+        foreach (var t in timeSlots)
+        {
+            if (t < TimeSpan.Zero || t >= TimeSpan.FromHours(24) || t.Seconds != 0 || t.Minutes % 30 != 0)
+            {
+                throw new BusinessException("时段必须为 30 分钟对齐的合法时间（00:00~23:30）", "INVALID_TIME_SLOT");
+            }
+        }
+
+        var employee = await _dbContext.Employees.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == request.EmployeeId && x.StoreId == storeId && x.Status == 1, cancellationToken)
+            ?? throw new BusinessException("员工不存在或已停用", "EMPLOYEE_NOT_FOUND");
+
+        var workstation = await _dbContext.Workstations.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == request.WorkstationId && x.StoreId == storeId && x.Status == 1, cancellationToken)
+            ?? throw new BusinessException("工作站不存在或已停用", "WORKSTATION_NOT_FOUND");
+
+        if (employee.IsParttime == 1 && workstation.IsLowSkill != 1)
+        {
+            throw new BusinessException("兼职员工仅可安排低技能岗位（保洁/咨客/传送/服务）", "PARTTIME_LOW_SKILL_ONLY");
+        }
+
+        var skillScore = await _dbContext.EmployeeSkills.AsNoTracking()
+            .Where(x => x.EmployeeId == request.EmployeeId && x.WorkstationId == request.WorkstationId && x.Status == 1 && x.SkillScore > 0)
+            .Select(x => (int?)x.SkillScore)
+            .FirstOrDefaultAsync(cancellationToken)
+            ?? throw new BusinessException("员工不具备该工作站技能，无法安排", "INVALID_ADJUST");
+
+        var onLeave = await _dbContext.LeaveRequests.AsNoTracking()
+            .AnyAsync(x => x.EmployeeId == request.EmployeeId && x.StoreId == storeId && x.Status == "APPROVED" &&
+                           x.StartDate <= request.WorkDate && request.WorkDate <= x.EndDate, cancellationToken);
+        if (onLeave)
+        {
+            throw new BusinessException("该员工当天处于已批准的请假中，无法安排", "ON_LEAVE");
+        }
+
+        await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
+
+        // 范围内现有员工（用于重算汇总）
+        var affectedIds = await _dbContext.ScheduleResults.AsNoTracking()
+            .Where(x => x.PlanId == planId && x.WorkDate == request.WorkDate &&
+                        x.WorkstationId == request.WorkstationId && timeSlots.Contains(x.TimeSlot))
+            .Select(x => x.EmployeeId)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+
+        // 移除范围内全部现有明细
+        await _dbContext.ScheduleResults
+            .Where(x => x.PlanId == planId && x.WorkDate == request.WorkDate &&
+                        x.WorkstationId == request.WorkstationId && timeSlots.Contains(x.TimeSlot))
+            .ExecuteDeleteAsync(cancellationToken);
+
+        // 加入新员工
+        foreach (var slot in timeSlots)
+        {
+            _dbContext.ScheduleResults.Add(new ScheduleResultEntity
+            {
+                PlanId = planId,
+                StoreId = storeId,
+                EmployeeId = request.EmployeeId,
+                WorkDate = request.WorkDate,
+                ShiftTemplateId = null,
+                TimeSlot = slot,
+                WorkstationId = request.WorkstationId,
+                SkillScore = skillScore,
+                Status = plan.Status,
+                Version = 1,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            });
+        }
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        // 重算受影响员工（新员工 + 被移除员工）的日汇总
+        foreach (var empId in affectedIds.Append(request.EmployeeId).Distinct())
+        {
+            await RecomputeDaySummaryAsync(planId, storeId, empId, request.WorkDate, cancellationToken);
+        }
+
+        _dbContext.ScheduleAdjustments.Add(new ScheduleAdjustmentEntity
+        {
+            StoreId = storeId,
+            PlanId = planId,
+            EmployeeId = request.EmployeeId,
+            WorkDate = request.WorkDate,
+            TimeSlot = timeSlots[0],
+            ActionType = "REPLACE_SLOT",
+            BeforeJson = JsonSerializer.Serialize(new { RemovedEmployeeIds = affectedIds, request.WorkstationId, SlotCount = timeSlots.Count }),
+            AfterJson = JsonSerializer.Serialize(new { request.WorkstationId, SkillScore = skillScore, SlotCount = timeSlots.Count }),
+            OperatorUserId = operatorUserId,
+            OperatorName = operatorName,
+            CreatedAt = DateTime.UtcNow
+        });
+
+        _auditLogService.AddAuditEntity(
+            _dbContext,
+            storeId,
+            operatorUserId,
+            operatorName,
+            "REPLACE_SCHEDULE_SLOT",
+            "SCHEDULE_RESULT",
+            planId,
+            null,
+            $"{request.WorkDate:yyyy-MM-dd} 「{workstation.Name}」{timeSlots.Count} 段换人：{string.Join(",", affectedIds)} → {employee.EmployeeNo}",
+            "范围换人",
+            DateTime.UtcNow);
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        await transaction.CommitAsync(cancellationToken);
+    }
+
+    /// <summary>范围平移：所选时段内全部明细整体 ±30 分钟平移（仅草稿计划）。</summary>
+    public async Task<int> MoveRangeAsync(
+        long planId,
+        MoveScheduleRangeRequest request,
+        long storeId,
+        long operatorUserId,
+        string operatorName,
+        CancellationToken cancellationToken)
+    {
+        var plan = await GetPlanAsync(planId, storeId, cancellationToken);
+
+        if (plan.Status == "PUBLISHED")
+        {
+            throw new BusinessException("已发布的排班不能直接调整，请取消发布后再修改", "SCHEDULE_PUBLISHED");
+        }
+
+        if (request.OffsetMinutes % 30 != 0 || request.OffsetMinutes == 0)
+        {
+            throw new BusinessException("平移量必须为 ±30 分钟的整数倍且非 0", "INVALID_MOVE");
+        }
+
+        if (request.TimeSlots is null || request.TimeSlots.Count == 0 || request.TimeSlots.Count > 68)
+        {
+            throw new BusinessException("时段列表不能为空且单次最多 68 段（34 小时）", "INVALID_TIME_SLOT");
+        }
+
+        var timeSlots = request.TimeSlots.Distinct().OrderBy(t => t).ToList();
+        foreach (var t in timeSlots)
+        {
+            if (t < TimeSpan.Zero || t >= TimeSpan.FromHours(24) || t.Seconds != 0 || t.Minutes % 30 != 0)
+            {
+                throw new BusinessException("时段必须为 30 分钟对齐的合法时间（00:00~23:30）", "INVALID_TIME_SLOT");
+            }
+        }
+
+        var offset = TimeSpan.FromMinutes(request.OffsetMinutes);
+
+        await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
+
+        var rows = await _dbContext.ScheduleResults
+            .Where(x => x.PlanId == planId && x.WorkDate == request.WorkDate &&
+                        x.WorkstationId == request.WorkstationId && timeSlots.Contains(x.TimeSlot))
+            .ToListAsync(cancellationToken);
+        if (rows.Count == 0)
+        {
+            throw new BusinessException("所选时段没有排班记录，无法移动", "SLOT_NOT_FOUND");
+        }
+
+        var affectedIds = rows.Select(x => x.EmployeeId).Distinct().ToList();
+
+        // 目标时段合法性 + 冲突检查（同一员工当天在目标时段已有其他安排则拒绝）
+        foreach (var row in rows)
+        {
+            var newSlot = row.TimeSlot + offset;
+            if (newSlot < TimeSpan.Zero || newSlot >= TimeSpan.FromHours(24))
+            {
+                throw new BusinessException("移动后时段会跨出当天时间轴（13:00~次日 05:30），无法平移", "INVALID_MOVE");
+            }
+
+            var conflict = await _dbContext.ScheduleResults.AsNoTracking()
+                .AnyAsync(x => x.PlanId == planId && x.EmployeeId == row.EmployeeId &&
+                               x.WorkDate == request.WorkDate && x.TimeSlot == newSlot &&
+                               !rows.Select(r => r.Id).Contains(x.Id), cancellationToken);
+            if (conflict)
+            {
+                throw new BusinessException($"移动后与员工 {row.EmployeeId} 在 {newSlot:hh\\:mm} 的已有安排重叠", "MOVE_CONFLICT");
+            }
+        }
+
+        foreach (var row in rows)
+        {
+            row.TimeSlot = row.TimeSlot + offset;
+            row.Version++;
+            row.UpdatedAt = DateTime.UtcNow;
+        }
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        foreach (var empId in affectedIds)
+        {
+            await RecomputeDaySummaryAsync(planId, storeId, empId, request.WorkDate, cancellationToken);
+        }
+
+        _dbContext.ScheduleAdjustments.Add(new ScheduleAdjustmentEntity
+        {
+            StoreId = storeId,
+            PlanId = planId,
+            EmployeeId = null,
+            WorkDate = request.WorkDate,
+            TimeSlot = timeSlots[0],
+            ActionType = "MOVE_RANGE",
+            BeforeJson = JsonSerializer.Serialize(new { request.WorkstationId, TimeSlots = timeSlots }),
+            AfterJson = JsonSerializer.Serialize(new { request.WorkstationId, OffsetMinutes = request.OffsetMinutes, MovedRows = rows.Count }),
+            OperatorUserId = operatorUserId,
+            OperatorName = operatorName,
+            CreatedAt = DateTime.UtcNow
+        });
+
+        _auditLogService.AddAuditEntity(
+            _dbContext,
+            storeId,
+            operatorUserId,
+            operatorName,
+            "MOVE_SCHEDULE_RANGE",
+            "SCHEDULE_RESULT",
+            planId,
+            null,
+            $"{request.WorkDate:yyyy-MM-dd} 「工作站 {request.WorkstationId}」{rows.Count} 条明细平移 {request.OffsetMinutes} 分钟",
+            "范围平移",
+            DateTime.UtcNow);
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        await transaction.CommitAsync(cancellationToken);
+
+        return rows.Count;
+    }
+
+    /// <summary>按当天剩余明细重算日汇总（无剩余则回退休息日）。</summary>
+    private async Task RecomputeDaySummaryAsync(long planId, long storeId, long employeeId, DateOnly workDate, CancellationToken cancellationToken)
+    {
+        double timelineMin(TimeSpan t) => t.TotalMinutes < 13 * 60 ? t.TotalMinutes + 1440 : t.TotalMinutes;
+
+        var summary = await _dbContext.ScheduleSummaries
+            .FirstOrDefaultAsync(x => x.PlanId == planId && x.EmployeeId == employeeId && x.WorkDate == workDate, cancellationToken);
+
+        var daySlots = await _dbContext.ScheduleResults.AsNoTracking()
+            .Where(x => x.PlanId == planId && x.EmployeeId == employeeId && x.WorkDate == workDate)
+            .Select(x => new { x.TimeSlot, x.WorkstationId })
+            .ToListAsync(cancellationToken);
+
+        if (daySlots.Count == 0)
+        {
+            if (summary is not null)
+            {
+                summary.IsRestDay = 1;
+                summary.ShiftTemplateId = null;
+                summary.StartTime = null;
+                summary.EndTime = null;
+                summary.WorkHours = 0;
+                summary.CoveredWorkstations = null;
+                summary.BreakStartTime = null;
+                summary.BreakEndTime = null;
+                summary.BreakCoverEmployeeId = null;
+                summary.BreakWorkstationId = null;
+                summary.UpdatedAt = DateTime.UtcNow;
+            }
+            return;
+        }
+
+        var ordered = daySlots.OrderBy(x => timelineMin(x.TimeSlot)).ToList();
+        var startTime = ordered.First().TimeSlot;
+        var endTime = TimeSpan.FromMinutes((timelineMin(ordered.Last().TimeSlot) + 30) % 1440);
+        var covered = string.Join(",", daySlots.Select(x => x.WorkstationId).Distinct().OrderBy(x => x));
+
+        if (summary is null)
+        {
+            _dbContext.ScheduleSummaries.Add(new ScheduleSummaryEntity
+            {
+                PlanId = planId,
+                StoreId = storeId,
+                EmployeeId = employeeId,
+                WorkDate = workDate,
+                IsRestDay = 0,
+                ShiftTemplateId = null,
+                StartTime = startTime,
+                EndTime = endTime,
+                WorkHours = daySlots.Count * 0.5m,
+                CoveredWorkstations = covered,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            });
+        }
+        else
+        {
+            summary.IsRestDay = 0;
+            summary.StartTime = startTime;
+            summary.EndTime = endTime;
+            summary.WorkHours = daySlots.Count * 0.5m;
+            summary.CoveredWorkstations = covered;
+            summary.UpdatedAt = DateTime.UtcNow;
+        }
+    }
+
     private async Task<SchedulePlanEntity> GetPlanAsync(long planId, long storeId, CancellationToken cancellationToken)
     {
         var plan = await _dbContext.SchedulePlans

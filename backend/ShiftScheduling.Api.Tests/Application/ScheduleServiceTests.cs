@@ -574,6 +574,121 @@ public sealed class ScheduleServiceTests
     }
 
     [Fact]
+    public async Task ReplaceSlotAsync_ReplacesAllEmployeesInRange()
+    {
+        await SeedStoreDataAsync();
+        var service = CreateService();
+        var generated = await service.GenerateAsync(new GenerateScheduleRequest(Start, End), 1, 9, "管理员", CancellationToken.None);
+
+        var db = _factory.CreateDbContext();
+        var e1 = await db.Employees.AsNoTracking().FirstAsync(x => x.EmployeeNo == "E001");
+        var e2 = await db.Employees.AsNoTracking().FirstAsync(x => x.EmployeeNo == "E002");
+        var ws = await db.Workstations.AsNoTracking().FirstAsync(x => x.Code == "SVC");
+        // 给 E002 补 SVC 技能，先给他加两段
+        db.EmployeeSkills.Add(new EmployeeSkillEntity
+        {
+            EmployeeId = e2.Id, WorkstationId = ws.Id, SkillScore = 3, IsPrimarySkill = 0, Status = 1,
+            CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var two = new List<TimeSpan> { new(14, 0, 0), new(14, 30, 0) };
+        await service.AddSlotAsync(generated.PlanId,
+            new AddScheduleSlotRequest(e2.Id, Start, two, ws.Id), 1, 9, "管理员", CancellationToken.None);
+
+        // 范围换人：E002 → E001
+        await service.ReplaceSlotAsync(generated.PlanId,
+            new AddScheduleSlotRequest(e1.Id, Start, two, ws.Id), 1, 9, "管理员", CancellationToken.None);
+
+        var db2 = _factory.CreateDbContext();
+        Assert.False(await db2.ScheduleResults.AsNoTracking().AnyAsync(x =>
+            x.PlanId == generated.PlanId && x.EmployeeId == e2.Id && x.WorkDate == Start && x.TimeSlot == new TimeSpan(14, 0, 0)));
+        Assert.Equal(2, await db2.ScheduleResults.AsNoTracking().CountAsync(x =>
+            x.PlanId == generated.PlanId && x.EmployeeId == e1.Id && x.WorkDate == Start &&
+            (x.TimeSlot == new TimeSpan(14, 0, 0) || x.TimeSlot == new TimeSpan(14, 30, 0))));
+        // E002 该天无其他明细 → 回退休息
+        var e2Summary = await db2.ScheduleSummaries.AsNoTracking()
+            .FirstAsync(x => x.PlanId == generated.PlanId && x.EmployeeId == e2.Id && x.WorkDate == Start);
+        Assert.Equal(1, e2Summary.IsRestDay);
+        Assert.Contains("REPLACE_SCHEDULE_SLOT", _audit.Entries.Select(x => x.ActionType));
+    }
+
+    [Fact]
+    public async Task ReplaceSlotAsync_Published_Throws()
+    {
+        await SeedStoreDataAsync();
+        var service = CreateService();
+        var generated = await service.GenerateAsync(new GenerateScheduleRequest(Start, End), 1, 9, "管理员", CancellationToken.None);
+        await service.PublishAsync(generated.PlanId, 1, 9, "管理员", force: false, CancellationToken.None);
+
+        var db = _factory.CreateDbContext();
+        var e1 = await db.Employees.AsNoTracking().FirstAsync(x => x.EmployeeNo == "E001");
+        var ws = await db.Workstations.AsNoTracking().FirstAsync(x => x.Code == "SVC");
+
+        var ex = await Assert.ThrowsAsync<BusinessException>(() =>
+            service.ReplaceSlotAsync(generated.PlanId,
+                new AddScheduleSlotRequest(e1.Id, Start, new List<TimeSpan> { new(19, 0, 0) }, ws.Id),
+                1, 9, "管理员", CancellationToken.None));
+        Assert.Equal("SCHEDULE_PUBLISHED", ex.ErrorCode);
+    }
+
+    [Fact]
+    public async Task MoveRangeAsync_ShiftsRowsAndRecomputesSummary()
+    {
+        await SeedStoreDataAsync();
+        var service = CreateService();
+        var generated = await service.GenerateAsync(new GenerateScheduleRequest(Start, End), 1, 9, "管理员", CancellationToken.None);
+
+        var db = _factory.CreateDbContext();
+        var e1 = await db.Employees.AsNoTracking().FirstAsync(x => x.EmployeeNo == "E001");
+        var ws = await db.Workstations.AsNoTracking().FirstAsync(x => x.Code == "SVC");
+        // 动态取 E001 实际排班的日期与首个时段（班次起点），-30 分钟目标为空
+        var allRows = await db.ScheduleResults.AsNoTracking()
+            .Where(x => x.PlanId == generated.PlanId && x.EmployeeId == e1.Id)
+            .Select(x => new { x.WorkDate, x.TimeSlot })
+            .ToListAsync();
+        var first = allRows.OrderBy(x => x.WorkDate).ThenBy(x => x.TimeSlot).First();
+        var target = first.TimeSlot - TimeSpan.FromMinutes(30);
+
+        var moved = await service.MoveRangeAsync(generated.PlanId,
+            new MoveScheduleRangeRequest(first.WorkDate, ws.Id, new List<TimeSpan> { first.TimeSlot }, -30),
+            1, 9, "管理员", CancellationToken.None);
+
+        Assert.Equal(1, moved);
+        var db2 = _factory.CreateDbContext();
+        Assert.False(await db2.ScheduleResults.AsNoTracking().AnyAsync(x =>
+            x.PlanId == generated.PlanId && x.EmployeeId == e1.Id && x.WorkDate == first.WorkDate && x.TimeSlot == first.TimeSlot));
+        Assert.True(await db2.ScheduleResults.AsNoTracking().AnyAsync(x =>
+            x.PlanId == generated.PlanId && x.EmployeeId == e1.Id && x.WorkDate == first.WorkDate && x.TimeSlot == target));
+        Assert.Contains("MOVE_SCHEDULE_RANGE", _audit.Entries.Select(x => x.ActionType));
+    }
+
+    [Fact]
+    public async Task MoveRangeAsync_Conflict_Throws()
+    {
+        await SeedStoreDataAsync();
+        var service = CreateService();
+        var generated = await service.GenerateAsync(new GenerateScheduleRequest(Start, End), 1, 9, "管理员", CancellationToken.None);
+
+        var db = _factory.CreateDbContext();
+        var e1 = await db.Employees.AsNoTracking().FirstAsync(x => x.EmployeeNo == "E001");
+        var ws = await db.Workstations.AsNoTracking().FirstAsync(x => x.Code == "SVC");
+
+        // 取 E001 实际首个时段，+30 分钟与自身下一时段重叠 → 拒绝
+        var allRows = await db.ScheduleResults.AsNoTracking()
+            .Where(x => x.PlanId == generated.PlanId && x.EmployeeId == e1.Id)
+            .Select(x => new { x.WorkDate, x.TimeSlot })
+            .ToListAsync();
+        var first = allRows.OrderBy(x => x.WorkDate).ThenBy(x => x.TimeSlot).First();
+
+        var ex = await Assert.ThrowsAsync<BusinessException>(() =>
+            service.MoveRangeAsync(generated.PlanId,
+                new MoveScheduleRangeRequest(first.WorkDate, ws.Id, new List<TimeSpan> { first.TimeSlot }, 30),
+                1, 9, "管理员", CancellationToken.None));
+        Assert.Equal("MOVE_CONFLICT", ex.ErrorCode);
+    }
+
+    [Fact]
     public async Task GetAddSlotCandidatesAsync_FiltersBySkillScheduledAndLeave()
     {
         await SeedStoreDataAsync();

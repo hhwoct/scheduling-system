@@ -1173,6 +1173,54 @@ api.MapPut("/schedules/{planId:long}/remove-slot", async (
     return ApiResponse.Ok(true, "已移除所选时段");
 }).RequireAuthorization("AdminOnly");
 
+// 范围换人：移除范围内全部员工的时段，改为所选员工（仅草稿计划）
+api.MapPut("/schedules/{planId:long}/replace-slot", async (
+    long planId,
+    AddScheduleSlotRequest request,
+    ICurrentUser currentUser,
+    IScheduleService scheduleService,
+    CancellationToken cancellationToken) =>
+{
+    if (request is null)
+    {
+        throw new BusinessException("请求参数不能为空", "INVALID_REQUEST");
+    }
+
+    var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
+    await scheduleService.ReplaceSlotAsync(
+        planId,
+        request,
+        storeId,
+        currentUser.UserId ?? 0,
+        currentUser.Nickname ?? currentUser.Username ?? "匿名",
+        cancellationToken);
+    return ApiResponse.Ok(true, "换人成功");
+}).RequireAuthorization("AdminOnly");
+
+// 范围平移：所选时段内全部明细整体 ±30 分钟平移（仅草稿计划）
+api.MapPut("/schedules/{planId:long}/move-range", async (
+    long planId,
+    MoveScheduleRangeRequest request,
+    ICurrentUser currentUser,
+    IScheduleService scheduleService,
+    CancellationToken cancellationToken) =>
+{
+    if (request is null)
+    {
+        throw new BusinessException("请求参数不能为空", "INVALID_REQUEST");
+    }
+
+    var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
+    var moved = await scheduleService.MoveRangeAsync(
+        planId,
+        request,
+        storeId,
+        currentUser.UserId ?? 0,
+        currentUser.Nickname ?? currentUser.Username ?? "匿名",
+        cancellationToken);
+    return ApiResponse.Ok(new { moved }, "平移成功");
+}).RequireAuthorization("AdminOnly");
+
 // 空位加人候选列表：技能/兼职岗位限制/请假/当天已排班过滤
 api.MapGet("/schedules/{planId:long}/add-candidates", async (
     long planId,
