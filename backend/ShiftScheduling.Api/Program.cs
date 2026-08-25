@@ -278,6 +278,7 @@ api.MapPost("/auth/change-password", async (
     ChangePasswordRequest request,
     IAuthService authService,
     ICurrentUser currentUser,
+    HttpContext httpContext,
     CancellationToken cancellationToken) =>
 {
     if (request is null)
@@ -287,9 +288,10 @@ api.MapPost("/auth/change-password", async (
 
     var userId = currentUser.UserId
         ?? throw new UnauthorizedBusinessException("当前用户未关联账号");
-    await authService.ChangePasswordAsync(userId, request, cancellationToken);
+    var clientIp = httpContext.Connection.RemoteIpAddress?.ToString();
+    await authService.ChangePasswordAsync(userId, request, clientIp, cancellationToken);
     return ApiResponse.Ok(true, "密码修改成功，旧登录已失效，请重新登录");
-}).RequireAuthorization();
+}).RequireAuthorization().RequireRateLimiting("LoginLimiter");
 
 api.MapGet("/auth/me", async (IAuthService authService, CancellationToken cancellationToken) =>
 {

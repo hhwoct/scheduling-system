@@ -56,6 +56,13 @@ public sealed class ApiExceptionMiddleware
             _logger.LogWarning(ex, "并发编辑冲突");
             await ApiResponseWriter.WriteErrorAsync(context, HttpStatusCode.Conflict, "数据已被他人修改，请刷新后重试", "CONCURRENCY_CONFLICT");
         }
+        catch (DbUpdateException ex)
+        {
+            // 审查修复（P2-8）：唯一索引/外键等数据库约束冲突（多为并发 TOCTOU 竞态）
+            // 映射为 400 而非 500，提示用户重试
+            _logger.LogWarning(ex, "数据库约束冲突");
+            await ApiResponseWriter.WriteErrorAsync(context, HttpStatusCode.BadRequest, "数据冲突，请刷新后重试", "DATA_CONFLICT");
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "系统异常");

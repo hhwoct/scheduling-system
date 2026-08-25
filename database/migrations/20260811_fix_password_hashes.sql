@@ -60,6 +60,15 @@ BEGIN
     WHERE username IN ('admin', 'manager', 'E001','E002','E003','E004','E005','E006','E007','E008','E009','E010',
                        'E011','E012','E013','E014','E015','E016','E017','E018','E019','E020','E021','E022','E023');
 
+    -- 1b. 审查修复（P1-1）：新版 init 不再预插 admin/manager，新装路径执行本迁移时
+    --      兜底补建（初始密码与上方 CASE 一致），避免第 2 步 24 账号校验 SIGNAL 中断。
+    INSERT INTO users (store_id, username, password_hash, nickname, role, status, created_at, updated_at)
+    SELECT 1, 'admin', '$2b$12$9p9nWbNUcDdJk9wAvqapge0GCFfX4quD8OH6XTJJVn9WPB2xORj12', '系统管理员', 'SYSTEM_ADMIN', 1, NOW(), NOW()
+    WHERE NOT EXISTS (SELECT 1 FROM users WHERE username = 'admin');
+    INSERT INTO users (store_id, username, password_hash, nickname, role, status, created_at, updated_at)
+    SELECT 1, 'manager', '$2b$12$7O.K0j9MXlDUBm1q/8/a6uABHQLinhhc5Jc8jOUZwsLF0yjXbROqq', '门店经理', 'STORE_MANAGER', 1, NOW(), NOW()
+    WHERE NOT EXISTS (SELECT 1 FROM users WHERE username = 'manager');
+
     -- 2. 校验核心 24 账号（admin/manager/E001~E022）完整存在。
     --    用 COUNT(*) 而非 ROW_COUNT()：ROW_COUNT 只反映「变更行数」，重跑时已正确的哈希可能为 0，
     --    无法可靠反映「账号是否存在」。

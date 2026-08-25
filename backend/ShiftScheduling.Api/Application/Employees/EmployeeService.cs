@@ -288,7 +288,7 @@ public sealed class EmployeeService : IEmployeeService
             throw new BusinessException("最大周工时必须在 1 到 168 之间", "INVALID_EMPLOYEE");
         }
 
-        // 手机号格式校验（忘记密码按「用户名+手机号」精确匹配，脏数据将导致无法自助重置密码）
+        // 手机号格式校验（忘记密码按「员工姓名+手机号」精确匹配，脏数据将导致无法自助重置密码）
         if (!string.IsNullOrWhiteSpace(request.Phone) &&
             !System.Text.RegularExpressions.Regex.IsMatch(request.Phone.Trim(), "^1[0-9]{10}$"))
         {

@@ -665,14 +665,25 @@ async function handleUndo() {
       // 撤回休息切换：反向恢复
       await setSlotStatus(planId.value, { items: entry.payload.items })
     } else if (entry.type === 'cancel-range') {
-      // 撤回取消排班：按员工逐个恢复原时段
+      // 撤回取消排班：按员工逐个恢复原时段；非连续时段按连续段拆分，
+      // 否则后端连续性校验会拒绝整批恢复（审查修复 P2-13）
       for (const r of entry.payload.restores || []) {
-        await addScheduleSlot(planId.value, {
-          employeeId: r.employeeId,
-          workDate: entry.payload.workDate,
-          timeSlots: r.timeSlots,
-          workstationId: r.workstationId
-        })
+        const idxs = [...r.timeSlots].map(k => slotIndex(k)).filter(i => i >= 0).sort((a, b) => a - b)
+        const runs = []
+        let cur = []
+        for (const i of idxs) {
+          if (cur.length && i - cur[cur.length - 1] !== 1) { runs.push(cur); cur = [] }
+          cur.push(i)
+        }
+        if (cur.length) runs.push(cur)
+        for (const run of runs) {
+          await addScheduleSlot(planId.value, {
+            employeeId: r.employeeId,
+            workDate: entry.payload.workDate,
+            timeSlots: run.map(i => slots.value[i].key),
+            workstationId: r.workstationId
+          })
+        }
       }
     }
     ElMessage.success('已撤销')
@@ -1168,6 +1179,8 @@ function rangeSelected(ws, slot) {
 // 滑动起点：任何格子（含有人格子）都可进入范围选择；chip 单击/双击行为保留
 function onCellMouseDown(ws, slot, e) {
   if (e && e.button !== undefined && e.button !== 0) return
+  // 审查修复（P2-14）：批量模式下的框选不与范围选择并存
+  if (batchMode.value) return
   if (e) e.preventDefault()
   rangeSelect.active = true
   rangeSelect.moved = false
@@ -1291,6 +1304,13 @@ async function moveRangeBy(offset) {
   if (!keys.length || !dayDate.value) return
   const wsId = wsNameToId.value.get(rangeSel.ws)
   if (!wsId) return
+  // 审查修复（P1-1）：撤销条目存平移后的新时段，按新时段反平移（此前存旧时段必失败）
+  const delta = offset > 0 ? 1 : -1
+  const si = slotIndex(rangeSel.startKey) + delta
+  const ei = slotIndex(rangeSel.endKey) + delta
+  const shiftedKeys = (si >= 0 && ei < slots.value.length)
+    ? slots.value.slice(Math.min(si, ei), Math.max(si, ei) + 1).map(s => s.key)
+    : []
   try {
     await moveScheduleRange(planId.value, {
       workDate: dayDate.value,
@@ -1302,15 +1322,12 @@ async function moveRangeBy(offset) {
     pushUndo({
       type: 'move-range',
       text: `范围平移 ${offset < 0 ? '左移' : '右移'} 30 分钟（${rangeSel.ws} ${rangeSelCount.value} 段）`,
-      payload: { workDate: dayDate.value, workstationId: wsId, timeSlots: keys, offsetMinutes: -offset }
+      payload: { workDate: dayDate.value, workstationId: wsId, timeSlots: shiftedKeys.length ? shiftedKeys : keys, offsetMinutes: -offset }
     })
     // 平移选择范围并刷新（保持工具条可用，可连续点按）
-    const delta = offset > 0 ? 1 : -1
-    const si = slotIndex(rangeSel.startKey) + delta
-    const ei = slotIndex(rangeSel.endKey) + delta
-    if (si >= 0 && ei < slots.value.length) {
-      rangeSel.startKey = slots.value[si].key
-      rangeSel.endKey = slots.value[ei].key
+    if (shiftedKeys.length) {
+      rangeSel.startKey = shiftedKeys[0]
+      rangeSel.endKey = shiftedKeys[shiftedKeys.length - 1]
     } else {
       clearRangeSel()
     }
@@ -1585,6 +1602,10 @@ function selectPlan(row) {
   issuesList.value = []
   wsFilter.value = ''
   typeFilter.value = ''
+  // 审查修复（P1-6）：切换计划时清空撤销栈与范围工具条，防止撤销/工具条作用到错误计划
+  undoStack.value = []
+  undoBar.visible = false
+  clearRangeSel()
   // 保持当前视图，各视图按新方案自动重新加载；日明细日期会自动落到新方案周期内
   loadAll()
 }

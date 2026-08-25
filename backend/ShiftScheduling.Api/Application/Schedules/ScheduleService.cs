@@ -1088,6 +1088,12 @@ public sealed class ScheduleService : IScheduleService
         CancellationToken cancellationToken)
     {
         var plan = await GetPlanAsync(planId, storeId, cancellationToken);
+        // 审查修复（P1-5）：工作日期必须在计划周期内
+        if (request.WorkDate < plan.StartDate || request.WorkDate > plan.EndDate)
+        {
+            throw new BusinessException($"工作日期 {request.WorkDate:yyyy-MM-dd} 超出计划周期（{plan.StartDate:yyyy-MM-dd} ~ {plan.EndDate:yyyy-MM-dd}）", "DATE_OUT_OF_RANGE");
+        }
+
 
         if (plan.Status == "PUBLISHED")
         {
@@ -1503,6 +1509,20 @@ public sealed class ScheduleService : IScheduleService
 
         await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
 
+        // 审查修复（P2-15）：与发布一致，原子抢占 PUBLISHED→DRAFT，防止并发重复取消产生重复通知
+        var claimed = await _dbContext.SchedulePlans
+            .Where(x => x.Id == planId && x.StoreId == storeId && x.Status == "PUBLISHED")
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(x => x.Status, "DRAFT")
+                .SetProperty(x => x.PublishedAt, (DateTime?)null)
+                .SetProperty(x => x.UpdatedAt, DateTime.UtcNow), cancellationToken);
+        if (claimed == 0)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            throw new BusinessException("该排班计划未发布，无需取消", "NOT_PUBLISHED");
+        }
+
+        // 同步内存中的跟踪实体
         plan.Status = "DRAFT";
         plan.PublishedAt = null;
         plan.UpdatedAt = DateTime.UtcNow;
@@ -1566,6 +1586,12 @@ public sealed class ScheduleService : IScheduleService
         CancellationToken cancellationToken)
     {
         var plan = await GetPlanAsync(planId, storeId, cancellationToken);
+
+        // 审查修复（P1-5）：工作日期必须在计划周期内
+        if (request.WorkDate < plan.StartDate || request.WorkDate > plan.EndDate)
+        {
+            throw new BusinessException($"工作日期 {request.WorkDate:yyyy-MM-dd} 超出计划周期（{plan.StartDate:yyyy-MM-dd} ~ {plan.EndDate:yyyy-MM-dd}）", "DATE_OUT_OF_RANGE");
+        }
 
         if (request.TimeSlots is null || request.TimeSlots.Count == 0 || request.TimeSlots.Count > 68)
         {
@@ -1761,6 +1787,12 @@ public sealed class ScheduleService : IScheduleService
         CancellationToken cancellationToken)
     {
         var plan = await GetPlanAsync(planId, storeId, cancellationToken);
+        // 审查修复（P1-5）：工作日期必须在计划周期内
+        if (request.WorkDate < plan.StartDate || request.WorkDate > plan.EndDate)
+        {
+            throw new BusinessException($"工作日期 {request.WorkDate:yyyy-MM-dd} 超出计划周期（{plan.StartDate:yyyy-MM-dd} ~ {plan.EndDate:yyyy-MM-dd}）", "DATE_OUT_OF_RANGE");
+        }
+
 
         if (request.TimeSlots is null || request.TimeSlots.Count == 0 || request.TimeSlots.Count > 68)
         {
@@ -1792,69 +1824,16 @@ public sealed class ScheduleService : IScheduleService
             throw new BusinessException("未找到对应时段的排班记录，无法移除", "SLOT_NOT_FOUND");
         }
 
-        // 汇总：按剩余时段重算；无剩余则回退为休息日
-        double timelineMin(TimeSpan t) => t.TotalMinutes < 13 * 60 ? t.TotalMinutes + 1440 : t.TotalMinutes;
+        // 审查修复（P1-2）：统一走 RecomputeDaySummaryAsync，与 Clear/Replace 口径一致
+        //（含幽灵休息清理：休息时段被移除时同步清除标记）
+        await RecomputeDaySummaryAsync(planId, storeId, request.EmployeeId, request.WorkDate, cancellationToken);
 
-        var summary = await _dbContext.ScheduleSummaries
-            .FirstOrDefaultAsync(x => x.PlanId == planId && x.EmployeeId == request.EmployeeId && x.WorkDate == request.WorkDate, cancellationToken);
-
-        var daySlots = await _dbContext.ScheduleResults.AsNoTracking()
-            .Where(x => x.PlanId == planId && x.EmployeeId == request.EmployeeId && x.WorkDate == request.WorkDate)
-            .Select(x => new { x.TimeSlot, x.WorkstationId })
-            .ToListAsync(cancellationToken);
-
-        if (daySlots.Count == 0)
-        {
-            if (summary is not null)
-            {
-                summary.IsRestDay = 1;
-                summary.ShiftTemplateId = null;
-                summary.StartTime = null;
-                summary.EndTime = null;
-                summary.WorkHours = 0;
-                summary.CoveredWorkstations = null;
-                summary.BreakStartTime = null;
-                summary.BreakEndTime = null;
-                summary.BreakCoverEmployeeId = null;
-                summary.BreakWorkstationId = null;
-                summary.UpdatedAt = DateTime.UtcNow;
-            }
-        }
-        else
-        {
-            var orderedAll = daySlots.OrderBy(x => timelineMin(x.TimeSlot)).ToList();
-            var startTime = orderedAll.First().TimeSlot;
-            var endTime = TimeSpan.FromMinutes((timelineMin(orderedAll.Last().TimeSlot) + 30) % 1440);
-            var covered = string.Join(",", daySlots.Select(x => x.WorkstationId).Distinct().OrderBy(x => x));
-
-            if (summary is null)
-            {
-                _dbContext.ScheduleSummaries.Add(new ScheduleSummaryEntity
-                {
-                    PlanId = planId,
-                    StoreId = storeId,
-                    EmployeeId = request.EmployeeId,
-                    WorkDate = request.WorkDate,
-                    IsRestDay = 0,
-                    ShiftTemplateId = null,
-                    StartTime = startTime,
-                    EndTime = endTime,
-                    WorkHours = daySlots.Count * 0.5m,
-                    CoveredWorkstations = covered,
-                    CreatedAt = DateTime.UtcNow,
-                    UpdatedAt = DateTime.UtcNow
-                });
-            }
-            else
-            {
-                summary.IsRestDay = 0;
-                summary.StartTime = startTime;
-                summary.EndTime = endTime;
-                summary.WorkHours = daySlots.Count * 0.5m;
-                summary.CoveredWorkstations = covered;
-                summary.UpdatedAt = DateTime.UtcNow;
-            }
-        }
+        // 审查修复（P1-3）：被移除员工若正顶岗他人休息，清理失效的顶岗引用
+        await _dbContext.ScheduleSummaries
+            .Where(x => x.PlanId == planId && x.WorkDate == request.WorkDate && x.BreakCoverEmployeeId == request.EmployeeId)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(x => x.BreakCoverEmployeeId, (long?)null)
+                .SetProperty(x => x.UpdatedAt, DateTime.UtcNow), cancellationToken);
 
         // 已发布计划：通知员工排班变更撤销
         if (plan.Status == "PUBLISHED")
@@ -1984,6 +1963,12 @@ public sealed class ScheduleService : IScheduleService
         CancellationToken cancellationToken)
     {
         var plan = await GetPlanAsync(planId, storeId, cancellationToken);
+        // 审查修复（P1-5）：工作日期必须在计划周期内
+        if (request.WorkDate < plan.StartDate || request.WorkDate > plan.EndDate)
+        {
+            throw new BusinessException($"工作日期 {request.WorkDate:yyyy-MM-dd} 超出计划周期（{plan.StartDate:yyyy-MM-dd} ~ {plan.EndDate:yyyy-MM-dd}）", "DATE_OUT_OF_RANGE");
+        }
+
 
         if (plan.Status == "PUBLISHED")
         {
@@ -2085,6 +2070,13 @@ public sealed class ScheduleService : IScheduleService
             await RecomputeDaySummaryAsync(planId, storeId, empId, request.WorkDate, cancellationToken);
         }
 
+        // 审查修复（P1-3）：被移除员工若正顶岗他人休息，清理失效的顶岗引用
+        await _dbContext.ScheduleSummaries
+            .Where(x => x.PlanId == planId && x.WorkDate == request.WorkDate && x.BreakCoverEmployeeId != null && affectedIds.Contains(x.BreakCoverEmployeeId.Value))
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(x => x.BreakCoverEmployeeId, (long?)null)
+                .SetProperty(x => x.UpdatedAt, DateTime.UtcNow), cancellationToken);
+
         _dbContext.ScheduleAdjustments.Add(new ScheduleAdjustmentEntity
         {
             StoreId = storeId,
@@ -2128,6 +2120,12 @@ public sealed class ScheduleService : IScheduleService
         CancellationToken cancellationToken)
     {
         var plan = await GetPlanAsync(planId, storeId, cancellationToken);
+        // 审查修复（P1-5）：工作日期必须在计划周期内
+        if (request.WorkDate < plan.StartDate || request.WorkDate > plan.EndDate)
+        {
+            throw new BusinessException($"工作日期 {request.WorkDate:yyyy-MM-dd} 超出计划周期（{plan.StartDate:yyyy-MM-dd} ~ {plan.EndDate:yyyy-MM-dd}）", "DATE_OUT_OF_RANGE");
+        }
+
 
         if (plan.Status == "PUBLISHED")
         {
@@ -2155,6 +2153,14 @@ public sealed class ScheduleService : IScheduleService
 
         var offset = TimeSpan.FromMinutes(request.OffsetMinutes);
 
+        // 审查修复（P2-10）：与其余四类操作一致，校验工作站存在且启用
+        var workstationExists = await _dbContext.Workstations.AsNoTracking()
+            .AnyAsync(x => x.Id == request.WorkstationId && x.StoreId == storeId && x.Status == 1, cancellationToken);
+        if (!workstationExists)
+        {
+            throw new BusinessException("工作站不存在或已停用", "WORKSTATION_NOT_FOUND");
+        }
+
         await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
 
         var rows = await _dbContext.ScheduleResults
@@ -2174,15 +2180,22 @@ public sealed class ScheduleService : IScheduleService
             await EnsureNotOnLeaveAsync(empId, request.WorkDate, storeId, cancellationToken);
         }
 
+        // 审查修复（P2-9）：按 13:00 时间轴回绕计算目标时段，支持同一天内的跨午夜平移
+        // （23:30 右移 → 00:00，00:00 左移 → 23:30）；越出时间轴两端才拒绝
+        double timelineMin(TimeSpan t) => t.TotalMinutes < 13 * 60 ? t.TotalMinutes + 1440 : t.TotalMinutes;
+        const double axisStart = 13 * 60;
+        const double axisEnd = 13 * 60 + 34 * 30; // 13:00 ~ 次日 06:00（05:30 段结束）
+
         // 目标时段合法性 + 冲突检查（同一员工当天在目标时段已有其他安排则拒绝）
         foreach (var row in rows)
         {
-            var newSlot = row.TimeSlot + offset;
-            if (newSlot < TimeSpan.Zero || newSlot >= TimeSpan.FromHours(24))
+            var newTm = timelineMin(row.TimeSlot) + offset.TotalMinutes;
+            if (newTm < axisStart || newTm >= axisEnd)
             {
-                throw new BusinessException("移动后时段会跨出当天时间轴（13:00~次日 05:30），无法平移", "INVALID_MOVE");
+                throw new BusinessException("移动后时段会跨出当天时间轴（13:00~次日 06:00），无法平移", "INVALID_MOVE");
             }
 
+            var newSlot = TimeSpan.FromMinutes(newTm % 1440);
             var conflict = await _dbContext.ScheduleResults.AsNoTracking()
                 .AnyAsync(x => x.PlanId == planId && x.EmployeeId == row.EmployeeId &&
                                x.WorkDate == request.WorkDate && x.TimeSlot == newSlot &&
@@ -2195,27 +2208,40 @@ public sealed class ScheduleService : IScheduleService
 
         foreach (var row in rows)
         {
-            row.TimeSlot = row.TimeSlot + offset;
+            // 与校验口径一致：按 13:00 时间轴回绕应用平移（支持跨午夜）
+            row.TimeSlot = TimeSpan.FromMinutes((timelineMin(row.TimeSlot) + offset.TotalMinutes) % 1440);
             row.Version++;
             row.UpdatedAt = DateTime.UtcNow;
         }
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 
-        // 平移的时段若恰好是某员工的班中休息时段，休息标记随行平移（否则会在旧时段留下幽灵休息）
-        var movedOriginSlots = rows.Select(r => r.TimeSlot - offset).ToHashSet();
+        // 审查修复（P1-4）：休息标记随行平移按「员工维度」判定——仅当该员工的休息时段
+        // 恰好落在该员工自身被平移的时段内才平移，避免他人员工的移动误清/误移休息
+        var originByEmployee = rows
+            .GroupBy(r => r.EmployeeId)
+            .ToDictionary(g => g.Key, g => g.Select(r => r.TimeSlot - offset).ToHashSet());
         var affectedSummaries = await _dbContext.ScheduleSummaries
             .Where(x => x.PlanId == planId && x.WorkDate == request.WorkDate && affectedIds.Contains(x.EmployeeId))
             .ToListAsync(cancellationToken);
         foreach (var s in affectedSummaries)
         {
-            if (s.BreakStartTime is not null && movedOriginSlots.Contains(s.BreakStartTime.Value))
+            if (s.BreakStartTime is not null &&
+                originByEmployee.TryGetValue(s.EmployeeId, out var ownOrigins) &&
+                ownOrigins.Contains(s.BreakStartTime.Value))
             {
                 s.BreakStartTime = TimeSpan.FromMinutes((s.BreakStartTime.Value.TotalMinutes + offset.TotalMinutes + 1440) % 1440);
                 s.BreakEndTime = TimeSpan.FromMinutes((s.BreakStartTime.Value.TotalMinutes + 30) % 1440);
                 s.UpdatedAt = DateTime.UtcNow;
             }
         }
+
+        // 审查修复（P1-3）：被平移员工若正顶岗他人休息，清理失效的顶岗引用
+        await _dbContext.ScheduleSummaries
+            .Where(x => x.PlanId == planId && x.WorkDate == request.WorkDate && x.BreakCoverEmployeeId != null && affectedIds.Contains(x.BreakCoverEmployeeId.Value))
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(x => x.BreakCoverEmployeeId, (long?)null)
+                .SetProperty(x => x.UpdatedAt, DateTime.UtcNow), cancellationToken);
 
         foreach (var empId in affectedIds)
         {
@@ -2267,6 +2293,12 @@ public sealed class ScheduleService : IScheduleService
         CancellationToken cancellationToken)
     {
         var plan = await GetPlanAsync(planId, storeId, cancellationToken);
+        // 审查修复（P1-5）：工作日期必须在计划周期内
+        if (request.WorkDate < plan.StartDate || request.WorkDate > plan.EndDate)
+        {
+            throw new BusinessException($"工作日期 {request.WorkDate:yyyy-MM-dd} 超出计划周期（{plan.StartDate:yyyy-MM-dd} ~ {plan.EndDate:yyyy-MM-dd}）", "DATE_OUT_OF_RANGE");
+        }
+
 
         if (plan.Status == "PUBLISHED")
         {
@@ -2319,6 +2351,13 @@ public sealed class ScheduleService : IScheduleService
         {
             await RecomputeDaySummaryAsync(planId, storeId, empId, request.WorkDate, cancellationToken);
         }
+
+        // 审查修复（P1-3）：被取消排班的员工若正顶岗他人休息，清理失效的顶岗引用
+        await _dbContext.ScheduleSummaries
+            .Where(x => x.PlanId == planId && x.WorkDate == request.WorkDate && x.BreakCoverEmployeeId != null && affectedIds.Contains(x.BreakCoverEmployeeId.Value))
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(x => x.BreakCoverEmployeeId, (long?)null)
+                .SetProperty(x => x.UpdatedAt, DateTime.UtcNow), cancellationToken);
 
         _dbContext.ScheduleAdjustments.Add(new ScheduleAdjustmentEntity
         {

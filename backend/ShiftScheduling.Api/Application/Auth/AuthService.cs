@@ -181,6 +181,12 @@ public sealed class AuthService : IAuthService
             throw new InvalidCredentialsException("姓名或验证信息不正确");
         }
 
+        // 审查修复（P2）：与改密口径一致，禁止重置为当前密码
+        if (_passwordService.Verify(request.NewPassword, user.PasswordHash))
+        {
+            throw new BusinessException("新密码不能与当前密码相同", "SAME_PASSWORD");
+        }
+
         // 无验证码：姓名+手机号匹配即视为身份验证通过（限流/锁定由 PasswordResetService 兜底）
         user.PasswordHash = _passwordService.Hash(request.NewPassword);
         user.UpdatedAt = DateTime.UtcNow;
@@ -198,16 +204,16 @@ public sealed class AuthService : IAuthService
             "USER",
             user.Id,
             null,
-            $"用户 {user.Username} 通过忘记密码流程（姓名+手机号验证）重置了密码",
+            $"用户 {user.Username} 通过忘记密码流程（姓名+手机号验证）重置了密码（来源 IP：{clientIp ?? "未知"}）",
             "重置密码",
             cancellationToken);
     }
 
     /// <summary>
-    /// 登录后自助修改密码（安全审查 P1-1）：校验旧密码 + 新密码策略（≥8 位且含大小写和数字、
-    /// ≤72 字节、不能与旧密码相同），成功后 PasswordVersion+1 使全部旧 Token 失效。
+    /// 登录后自助修改密码（安全审查 P1-1/P1-2 加固）：校验旧密码 + 新密码策略 + 手机号，
+    /// 成功后 PasswordVersion+1 使全部旧 Token 失效。限流/锁定与失败延时与登录口径一致。
     /// </summary>
-    public async Task ChangePasswordAsync(long userId, ChangePasswordRequest request, CancellationToken cancellationToken)
+    public async Task ChangePasswordAsync(long userId, ChangePasswordRequest request, string? clientIp, CancellationToken cancellationToken)
     {
         if (request is null || string.IsNullOrWhiteSpace(request.OldPassword) ||
             string.IsNullOrWhiteSpace(request.NewPassword) || string.IsNullOrWhiteSpace(request.ConfirmPassword))
@@ -238,13 +244,47 @@ public sealed class AuthService : IAuthService
             .FirstOrDefaultAsync(x => x.Id == userId, cancellationToken)
             ?? throw new NotFoundException("用户不存在");
 
+        // 审查修复（P1-2）：账号级失败锁定与登录共享，防暴力确认旧密码/枚举手机号。
+        // 锁定分支底层抛 InvalidCredentialsException（与登录静默口径一致），改密场景
+        // 转为 400 明确提示，避免 401 触发前端拦截器的会话失效自动登出。
+        try
+        {
+            _passwordResetService.CheckRateLimit(user.Username, clientIp);
+        }
+        catch (InvalidCredentialsException)
+        {
+            throw new BusinessException("尝试过于频繁，请稍后再试", "RATE_LIMITED");
+        }
+
         if (!_passwordService.Verify(request.OldPassword, user.PasswordHash))
         {
-            // 与登录失败同口径：固定时延，避免时序侧信道。
+            // 与登录失败同口径：固定时延 + 失败计数（5 次锁定 15 分钟）。
             // 注意：返回 400 而非 401——已认证上下文中的"旧密码错误"是业务校验失败，
             // 若返回 401 会触发前端拦截器的会话失效自动登出，体验异常。
+            _passwordResetService.RecordFailure(user.Username, clientIp);
             await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
             throw new BusinessException("当前密码不正确", "WRONG_OLD_PASSWORD");
+        }
+
+        // 审查修复（P1-2）：手机号校验移到"新旧相同"之前，避免 SAME_PASSWORD 成为旧密码 oracle；
+        // 失败同样固定时延。有档案账号必须与档案手机号一致；无档案账号（admin/manager）跳过。
+        var employee = await _dbContext.Employees.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.EmployeeNo == user.Username && x.StoreId == user.StoreId && x.Status == 1, cancellationToken);
+        if (employee is not null)
+        {
+            var verifyPhone = request.VerifyInfo?.Trim();
+            if (string.IsNullOrWhiteSpace(employee.Phone))
+            {
+                // 审查修复（P2-5）：档案未登记手机号 → 无法自助验证，给出明确指引而非笼统失败
+                throw new BusinessException("该账号未登记手机号，无法自助修改密码，请联系管理员", "PHONE_NOT_REGISTERED");
+            }
+
+            if (string.IsNullOrWhiteSpace(verifyPhone) || employee.Phone != verifyPhone)
+            {
+                _passwordResetService.RecordFailure(user.Username, clientIp);
+                await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
+                throw new BusinessException("手机号验证失败，请使用注册手机号", "PHONE_MISMATCH");
+            }
         }
 
         if (_passwordService.Verify(request.NewPassword, user.PasswordHash))
@@ -252,22 +292,12 @@ public sealed class AuthService : IAuthService
             throw new BusinessException("新密码不能与当前密码相同", "SAME_PASSWORD");
         }
 
-        // 手机号验证（用户要求）：具备员工档案的账号需与档案手机号一致；
-        // 无员工档案的账号（admin/manager）没有手机号可验证，跳过（仍受旧密码保护）
-        var employee = await _dbContext.Employees.AsNoTracking()
-            .FirstOrDefaultAsync(x => x.EmployeeNo == user.Username && x.StoreId == user.StoreId && x.Status == 1, cancellationToken);
-        if (employee is not null)
-        {
-            if (string.IsNullOrWhiteSpace(request.VerifyInfo) || employee.Phone != request.VerifyInfo.Trim())
-            {
-                throw new BusinessException("手机号验证失败，请使用注册手机号", "PHONE_MISMATCH");
-            }
-        }
-
         user.PasswordHash = _passwordService.Hash(request.NewPassword);
         user.PasswordVersion++;  // 使旧 JWT 令牌失效，前端改密后引导重新登录
         user.UpdatedAt = DateTime.UtcNow;
         await _dbContext.SaveChangesAsync(cancellationToken);
+
+        _passwordResetService.RecordSuccess(user.Username, clientIp);
 
         await _auditLogService.WriteAsync(
             user.StoreId ?? 1,
@@ -277,7 +307,7 @@ public sealed class AuthService : IAuthService
             "USER",
             user.Id,
             null,
-            $"用户 {user.Username} 自助修改了密码",
+            $"用户 {user.Username} 自助修改了密码（来源 IP：{clientIp ?? "未知"}）",
             "修改密码",
             cancellationToken);
     }
