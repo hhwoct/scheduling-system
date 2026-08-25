@@ -492,6 +492,88 @@ public sealed class ScheduleServiceTests
     }
 
     [Fact]
+    public async Task RemoveSlotAsync_RemovesSlotsAndRecomputesSummary()
+    {
+        await SeedStoreDataAsync();
+        var service = CreateService();
+        var generated = await service.GenerateAsync(new GenerateScheduleRequest(Start, End), 1, 9, "管理员", CancellationToken.None);
+
+        var db = _factory.CreateDbContext();
+        var e1 = await db.Employees.AsNoTracking().FirstAsync(x => x.EmployeeNo == "E001");
+        var ws = await db.Workstations.AsNoTracking().FirstAsync(x => x.Code == "SVC");
+        var four = new List<TimeSpan> { new(14, 0, 0), new(14, 30, 0), new(15, 0, 0), new(15, 30, 0) };
+        await service.AddSlotAsync(generated.PlanId,
+            new AddScheduleSlotRequest(e1.Id, Start, four, ws.Id), 1, 9, "管理员", CancellationToken.None);
+
+        // 撤回其中 2 段
+        await service.RemoveSlotAsync(generated.PlanId,
+            new AddScheduleSlotRequest(e1.Id, Start, new List<TimeSpan> { new(14, 0, 0), new(14, 30, 0) }, ws.Id),
+            1, 9, "管理员", CancellationToken.None);
+
+        var db2 = _factory.CreateDbContext();
+        var remaining = (await db2.ScheduleResults.AsNoTracking()
+            .Where(x => x.PlanId == generated.PlanId && x.EmployeeId == e1.Id && x.WorkDate == Start)
+            .ToListAsync())
+            .Where(x => x.TimeSlot >= new TimeSpan(14, 0, 0) && x.TimeSlot <= new TimeSpan(15, 30, 0))
+            .ToList();
+        Assert.Equal(2, remaining.Count);
+        Assert.All(remaining, r => Assert.True(r.TimeSlot >= new TimeSpan(15, 0, 0)));
+
+        var summary = await db2.ScheduleSummaries.AsNoTracking()
+            .FirstAsync(x => x.PlanId == generated.PlanId && x.EmployeeId == e1.Id && x.WorkDate == Start);
+        Assert.Equal(0, summary.IsRestDay);
+        Assert.Equal(new TimeSpan(15, 0, 0), summary.StartTime);
+        Assert.Contains("REMOVE_SCHEDULE_SLOT", _audit.Entries.Select(x => x.ActionType));
+    }
+
+    [Fact]
+    public async Task RemoveSlotAsync_RemoveAll_RevertsToRestDay()
+    {
+        await SeedStoreDataAsync();
+        var service = CreateService();
+        var generated = await service.GenerateAsync(new GenerateScheduleRequest(Start, End), 1, 9, "管理员", CancellationToken.None);
+
+        var db = _factory.CreateDbContext();
+        var e1 = await db.Employees.AsNoTracking().FirstAsync(x => x.EmployeeNo == "E001");
+        var ws = await db.Workstations.AsNoTracking().FirstAsync(x => x.Code == "SVC");
+        var two = new List<TimeSpan> { new(14, 0, 0), new(14, 30, 0) };
+        await service.AddSlotAsync(generated.PlanId,
+            new AddScheduleSlotRequest(e1.Id, Start, two, ws.Id), 1, 9, "管理员", CancellationToken.None);
+
+        await service.RemoveSlotAsync(generated.PlanId,
+            new AddScheduleSlotRequest(e1.Id, Start, two, ws.Id), 1, 9, "管理员", CancellationToken.None);
+
+        var db2 = _factory.CreateDbContext();
+        var rows = await db2.ScheduleResults.AsNoTracking()
+            .Where(x => x.PlanId == generated.PlanId && x.EmployeeId == e1.Id && x.WorkDate == Start)
+            .ToListAsync();
+        Assert.Empty(rows);
+        var summary = await db2.ScheduleSummaries.AsNoTracking()
+            .FirstAsync(x => x.PlanId == generated.PlanId && x.EmployeeId == e1.Id && x.WorkDate == Start);
+        Assert.Equal(1, summary.IsRestDay);
+        Assert.Equal(0, summary.WorkHours);
+        Assert.Null(summary.StartTime);
+    }
+
+    [Fact]
+    public async Task RemoveSlotAsync_NotFound_Throws()
+    {
+        await SeedStoreDataAsync();
+        var service = CreateService();
+        var generated = await service.GenerateAsync(new GenerateScheduleRequest(Start, End), 1, 9, "管理员", CancellationToken.None);
+
+        var db = _factory.CreateDbContext();
+        var e1 = await db.Employees.AsNoTracking().FirstAsync(x => x.EmployeeNo == "E001");
+        var ws = await db.Workstations.AsNoTracking().FirstAsync(x => x.Code == "SVC");
+
+        var ex = await Assert.ThrowsAsync<BusinessException>(() =>
+            service.RemoveSlotAsync(generated.PlanId,
+                new AddScheduleSlotRequest(e1.Id, Start, new List<TimeSpan> { new(10, 0, 0) }, ws.Id),
+                1, 9, "管理员", CancellationToken.None));
+        Assert.Equal("SLOT_NOT_FOUND", ex.ErrorCode);
+    }
+
+    [Fact]
     public async Task GetAddSlotCandidatesAsync_FiltersBySkillScheduledAndLeave()
     {
         await SeedStoreDataAsync();

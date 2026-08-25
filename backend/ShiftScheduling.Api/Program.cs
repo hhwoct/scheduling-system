@@ -1149,6 +1149,30 @@ api.MapPut("/schedules/{planId:long}/add-slot", async (
     return ApiResponse.Ok(result, "添加成功");
 }).RequireAuthorization("AdminOnly");
 
+// 撤回空位加人：删除指定时段明细并按剩余时段重算汇总（草稿/已发布均允许）
+api.MapPut("/schedules/{planId:long}/remove-slot", async (
+    long planId,
+    AddScheduleSlotRequest request,
+    ICurrentUser currentUser,
+    IScheduleService scheduleService,
+    CancellationToken cancellationToken) =>
+{
+    if (request is null)
+    {
+        throw new BusinessException("请求参数不能为空", "INVALID_REQUEST");
+    }
+
+    var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
+    await scheduleService.RemoveSlotAsync(
+        planId,
+        request,
+        storeId,
+        currentUser.UserId ?? 0,
+        currentUser.Nickname ?? currentUser.Username ?? "匿名",
+        cancellationToken);
+    return ApiResponse.Ok(true, "已移除所选时段");
+}).RequireAuthorization("AdminOnly");
+
 // 空位加人候选列表：技能/兼职岗位限制/请假/当天已排班过滤
 api.MapGet("/schedules/{planId:long}/add-candidates", async (
     long planId,

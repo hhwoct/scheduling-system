@@ -1696,6 +1696,163 @@ public sealed class ScheduleService : IScheduleService
         return request;
     }
 
+    /// <summary>
+    /// 移除空位加人的上班段（撤回操作）：删除指定员工/日期/时段/工作站的明细，
+    /// 并按剩余时段重算汇总；全部移除后汇总回退为休息日。草稿与已发布均允许。
+    /// </summary>
+    public async Task RemoveSlotAsync(
+        long planId,
+        AddScheduleSlotRequest request,
+        long storeId,
+        long operatorUserId,
+        string operatorName,
+        CancellationToken cancellationToken)
+    {
+        var plan = await GetPlanAsync(planId, storeId, cancellationToken);
+
+        if (request.TimeSlots is null || request.TimeSlots.Count == 0 || request.TimeSlots.Count > 68)
+        {
+            throw new BusinessException("时段列表不能为空且单次最多 68 段（34 小时）", "INVALID_TIME_SLOT");
+        }
+
+        var timeSlots = request.TimeSlots.Distinct().OrderBy(t => t).ToList();
+        foreach (var t in timeSlots)
+        {
+            if (t < TimeSpan.Zero || t >= TimeSpan.FromHours(24) || t.Seconds != 0 || t.Minutes % 30 != 0)
+            {
+                throw new BusinessException("时段必须为 30 分钟对齐的合法时间（00:00~23:30）", "INVALID_TIME_SLOT");
+            }
+        }
+
+        var workstation = await _dbContext.Workstations.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == request.WorkstationId && x.StoreId == storeId && x.Status == 1, cancellationToken)
+            ?? throw new BusinessException("工作站不存在或已停用", "WORKSTATION_NOT_FOUND");
+
+        await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
+
+        var deleted = await _dbContext.ScheduleResults
+            .Where(x => x.PlanId == planId && x.EmployeeId == request.EmployeeId &&
+                        x.WorkDate == request.WorkDate && x.WorkstationId == request.WorkstationId &&
+                        timeSlots.Contains(x.TimeSlot))
+            .ExecuteDeleteAsync(cancellationToken);
+        if (deleted == 0)
+        {
+            throw new BusinessException("未找到对应时段的排班记录，无法移除", "SLOT_NOT_FOUND");
+        }
+
+        // 汇总：按剩余时段重算；无剩余则回退为休息日
+        double timelineMin(TimeSpan t) => t.TotalMinutes < 13 * 60 ? t.TotalMinutes + 1440 : t.TotalMinutes;
+
+        var summary = await _dbContext.ScheduleSummaries
+            .FirstOrDefaultAsync(x => x.PlanId == planId && x.EmployeeId == request.EmployeeId && x.WorkDate == request.WorkDate, cancellationToken);
+
+        var daySlots = await _dbContext.ScheduleResults.AsNoTracking()
+            .Where(x => x.PlanId == planId && x.EmployeeId == request.EmployeeId && x.WorkDate == request.WorkDate)
+            .Select(x => new { x.TimeSlot, x.WorkstationId })
+            .ToListAsync(cancellationToken);
+
+        if (daySlots.Count == 0)
+        {
+            if (summary is not null)
+            {
+                summary.IsRestDay = 1;
+                summary.ShiftTemplateId = null;
+                summary.StartTime = null;
+                summary.EndTime = null;
+                summary.WorkHours = 0;
+                summary.CoveredWorkstations = null;
+                summary.BreakStartTime = null;
+                summary.BreakEndTime = null;
+                summary.BreakCoverEmployeeId = null;
+                summary.BreakWorkstationId = null;
+                summary.UpdatedAt = DateTime.UtcNow;
+            }
+        }
+        else
+        {
+            var orderedAll = daySlots.OrderBy(x => timelineMin(x.TimeSlot)).ToList();
+            var startTime = orderedAll.First().TimeSlot;
+            var endTime = TimeSpan.FromMinutes((timelineMin(orderedAll.Last().TimeSlot) + 30) % 1440);
+            var covered = string.Join(",", daySlots.Select(x => x.WorkstationId).Distinct().OrderBy(x => x));
+
+            if (summary is null)
+            {
+                _dbContext.ScheduleSummaries.Add(new ScheduleSummaryEntity
+                {
+                    PlanId = planId,
+                    StoreId = storeId,
+                    EmployeeId = request.EmployeeId,
+                    WorkDate = request.WorkDate,
+                    IsRestDay = 0,
+                    ShiftTemplateId = null,
+                    StartTime = startTime,
+                    EndTime = endTime,
+                    WorkHours = daySlots.Count * 0.5m,
+                    CoveredWorkstations = covered,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
+                });
+            }
+            else
+            {
+                summary.IsRestDay = 0;
+                summary.StartTime = startTime;
+                summary.EndTime = endTime;
+                summary.WorkHours = daySlots.Count * 0.5m;
+                summary.CoveredWorkstations = covered;
+                summary.UpdatedAt = DateTime.UtcNow;
+            }
+        }
+
+        // 已发布计划：通知员工排班变更撤销
+        if (plan.Status == "PUBLISHED")
+        {
+            _dbContext.Notifications.Add(new NotificationEntity
+            {
+                StoreId = storeId,
+                ReceiverEmployeeId = request.EmployeeId,
+                NotificationType = "SCHEDULE_CHANGED",
+                Title = "排班变更",
+                Content = $"{request.WorkDate:yyyy-MM-dd} {timeSlots[0]:hh\\:mm} 起共 {deleted} 段「{workstation.Name}」上班安排已撤销，请查看最新班表",
+                IsRead = 0,
+                CreatedAt = DateTime.UtcNow
+            });
+        }
+
+        // 调整明细（REMOVE_SLOT，供偏好学习识别为撤销，不产生纠错信号）
+        _dbContext.ScheduleAdjustments.Add(new ScheduleAdjustmentEntity
+        {
+            StoreId = storeId,
+            PlanId = planId,
+            EmployeeId = request.EmployeeId,
+            WorkDate = request.WorkDate,
+            TimeSlot = timeSlots[0],
+            ActionType = "REMOVE_SLOT",
+            BeforeJson = JsonSerializer.Serialize(new { request.WorkstationId, SlotCount = timeSlots.Count }),
+            AfterJson = null,
+            OperatorUserId = operatorUserId,
+            OperatorName = operatorName,
+            CreatedAt = DateTime.UtcNow
+        });
+
+        _auditLogService.AddAuditEntity(
+            _dbContext,
+            storeId,
+            operatorUserId,
+            operatorName,
+            "REMOVE_SCHEDULE_SLOT",
+            "SCHEDULE_RESULT",
+            planId,
+            null,
+            $"{request.WorkDate:yyyy-MM-dd} 员工 {request.EmployeeId} 移除「{workstation.Name}」{deleted} 段（撤销加人）",
+            "撤回空位加人",
+            DateTime.UtcNow);
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        await transaction.CommitAsync(cancellationToken);
+    }
+
     /// <summary>空位加人候选：具备工作站技能、当天未排班、无已批准请假；兼职仅限低技能岗位。</summary>
     public async Task<IReadOnlyList<AddSlotCandidateItem>> GetAddSlotCandidatesAsync(
         long planId,

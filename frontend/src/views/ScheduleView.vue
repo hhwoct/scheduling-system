@@ -266,7 +266,7 @@ import { onMounted, onBeforeUnmount, ref, reactive, computed, nextTick, watch } 
 import * as echarts from 'echarts'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { getMonthView, getWeekView, getDailyView, getScheduleIssues, getScheduleRationality, getSchedules, setSlotStatus, moveScheduleSegment, getAddSlotCandidates, addScheduleSlot } from '../api/schedules'
+import { getMonthView, getWeekView, getDailyView, getScheduleIssues, getScheduleRationality, getSchedules, setSlotStatus, moveScheduleSegment, getAddSlotCandidates, addScheduleSlot, removeScheduleSlot } from '../api/schedules'
 import { getPreferenceMatrix } from '../api/preferences'
 
 const route = useRoute()
@@ -620,12 +620,30 @@ async function handleUndo() {
         isRest: 0
       }))
       await setSlotStatus(planId.value, { items: reverseItems })
+    } else if (entry.type === 'add-slot') {
+      // 撤回空位加人：删除所加时段并按剩余时段重算
+      await removeScheduleSlot(planId.value, {
+        employeeId: entry.payload.employeeId,
+        workDate: entry.payload.workDate,
+        timeSlots: entry.payload.timeSlots,
+        workstationId: entry.payload.workstationId
+      })
     }
     ElMessage.success('已撤销')
     await loadDay(selectedDate.value || dayDate.value)
   } catch {
     // 撤销失败：拦截器已提示，保留后续撤销机会
   }
+}
+
+// Ctrl+Z / Cmd+Z 撤销最近一次调整（输入框内不拦截，保留原生文本撤销）
+function onUndoKeydown(e) {
+  if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey) return
+  if (e.key !== 'z' && e.key !== 'Z') return
+  const tag = e.target?.tagName || ''
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target?.isContentEditable) return
+  e.preventDefault()
+  handleUndo()
 }
 
 // ===== P2 交互：批量模式（框选多格 → 批量改为休息） =====
@@ -1198,6 +1216,17 @@ async function submitAddSlot() {
       workstationId: addSlotDialog.wsId
     })
     ElMessage.success(`添加成功（${addSlotDialog.timeSlots.length} 段）`)
+    // 入撤销栈：支持撤销条 / Ctrl+Z（Cmd+Z）撤回
+    pushUndo({
+      type: 'add-slot',
+      text: `已添加 ${addSlotSelected.value?.name || ''}（${addSlotDialog.wsName} ${addSlotDialog.rangeText}）`,
+      payload: {
+        employeeId: addSlotDialog.employeeId,
+        workDate: addSlotDialog.workDate,
+        timeSlots: [...addSlotDialog.timeSlots],
+        workstationId: addSlotDialog.wsId
+      }
+    })
     addSlotDialog.visible = false
     // 刷新日明细与缺口标记
     await loadDay(addSlotDialog.workDate)
@@ -1407,11 +1436,13 @@ onMounted(() => {
   nextTick(() => renderRationalityChart())
   window.addEventListener('mousemove', onDragMove)
   window.addEventListener('mouseup', onDragEnd)
+  window.addEventListener('keydown', onUndoKeydown)
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('mousemove', onDragMove)
   window.removeEventListener('mouseup', onDragEnd)
+  window.removeEventListener('keydown', onUndoKeydown)
   document.removeEventListener('mousemove', onRangeMouseMove)
   document.removeEventListener('mouseup', onRangeMouseUp)
   if (rationalityChart) {

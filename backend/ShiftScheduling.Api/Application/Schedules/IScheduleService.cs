@@ -111,4 +111,13 @@ public interface IScheduleService
         TimeSpan timeSlot,
         long workstationId,
         CancellationToken cancellationToken);
+
+    /// <summary>移除空位加人的上班段（撤回操作）：删除指定时段明细并按剩余时段重算汇总。</summary>
+    Task RemoveSlotAsync(
+        long planId,
+        AddScheduleSlotRequest request,
+        long storeId,
+        long operatorUserId,
+        string operatorName,
+        CancellationToken cancellationToken);
 }

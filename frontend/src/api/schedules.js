@@ -70,9 +70,14 @@ export function unpublishSchedule(planId) {
   return request.post(API_ROUTES.SCHEDULES.UNPUBLISH(planId)).then(res => res.data)
 }
 
-// 空位加人：给员工新增一个 30 分钟上班段（草稿/已发布均可）
+// 空位加人：给员工新增连续 30 分钟上班段（草稿/已发布均可）
 export function addScheduleSlot(planId, data) {
   return request.put(API_ROUTES.SCHEDULES.ADD_SLOT(planId), data).then(res => res.data)
+}
+
+// 撤回空位加人：删除指定时段明细并按剩余时段重算汇总
+export function removeScheduleSlot(planId, data) {
+  return request.put(API_ROUTES.SCHEDULES.REMOVE_SLOT(planId), data).then(res => res.data)
 }
 
 // 空位加人候选员工列表
