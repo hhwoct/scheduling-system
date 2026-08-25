@@ -70,6 +70,16 @@ export function unpublishSchedule(planId) {
   return request.post(API_ROUTES.SCHEDULES.UNPUBLISH(planId)).then(res => res.data)
 }
 
+// 空位加人：给员工新增一个 30 分钟上班段（草稿/已发布均可）
+export function addScheduleSlot(planId, data) {
+  return request.put(API_ROUTES.SCHEDULES.ADD_SLOT(planId), data).then(res => res.data)
+}
+
+// 空位加人候选员工列表
+export function getAddSlotCandidates(planId, params) {
+  return request.get(API_ROUTES.SCHEDULES.ADD_CANDIDATES(planId), { params }).then(res => res.data)
+}
+
 // 发布前调整摘要（P0 交互）：对比生成快照返回改休/换班统计
 export function getAdjustmentSummary(planId) {
   return request.get(`/schedules/${planId}/adjustment-summary`).then(res => res.data)

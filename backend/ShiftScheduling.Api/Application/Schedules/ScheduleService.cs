@@ -1500,6 +1500,239 @@ public sealed class ScheduleService : IScheduleService
         await transaction.CommitAsync(cancellationToken);
     }
 
+    /// <summary>
+    /// 空位加人（P3）：给员工在指定日期/时段/工作站新增一个 30 分钟上班段（不挂班次模板）。
+    /// 草稿与已发布计划均允许；已发布时额外通知该员工「排班变更」。
+    /// </summary>
+    public async Task<AddScheduleSlotRequest> AddSlotAsync(
+        long planId,
+        AddScheduleSlotRequest request,
+        long storeId,
+        long operatorUserId,
+        string operatorName,
+        CancellationToken cancellationToken)
+    {
+        var plan = await GetPlanAsync(planId, storeId, cancellationToken);
+
+        if (request.TimeSlot < TimeSpan.Zero || request.TimeSlot >= TimeSpan.FromHours(24) || request.TimeSlot.Seconds != 0 || request.TimeSlot.Minutes % 30 != 0)
+        {
+            throw new BusinessException("时段必须为 30 分钟对齐的合法时间（00:00~23:30）", "INVALID_TIME_SLOT");
+        }
+
+        var employee = await _dbContext.Employees.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == request.EmployeeId && x.StoreId == storeId && x.Status == 1, cancellationToken)
+            ?? throw new BusinessException("员工不存在或已停用", "EMPLOYEE_NOT_FOUND");
+
+        var workstation = await _dbContext.Workstations.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == request.WorkstationId && x.StoreId == storeId && x.Status == 1, cancellationToken)
+            ?? throw new BusinessException("工作站不存在或已停用", "WORKSTATION_NOT_FOUND");
+
+        // 兼职仅可排低技能岗位（与排班算法口径一致）
+        if (employee.IsParttime == 1 && workstation.IsLowSkill != 1)
+        {
+            throw new BusinessException("兼职员工仅可安排低技能岗位（保洁/咨客/传送/服务）", "PARTTIME_LOW_SKILL_ONLY");
+        }
+
+        var skillScore = await _dbContext.EmployeeSkills.AsNoTracking()
+            .Where(x => x.EmployeeId == request.EmployeeId && x.WorkstationId == request.WorkstationId && x.Status == 1 && x.SkillScore > 0)
+            .Select(x => (int?)x.SkillScore)
+            .FirstOrDefaultAsync(cancellationToken)
+            ?? throw new BusinessException("员工不具备该工作站技能，无法安排", "INVALID_ADJUST");
+
+        // 当天已批准的请假不可安排（提前返岗记录以缩短后的 EndDate 为准）
+        var onLeave = await _dbContext.LeaveRequests.AsNoTracking()
+            .AnyAsync(x => x.EmployeeId == request.EmployeeId && x.StoreId == storeId && x.Status == "APPROVED" &&
+                           x.StartDate <= request.WorkDate && request.WorkDate <= x.EndDate, cancellationToken);
+        if (onLeave)
+        {
+            throw new BusinessException("该员工当天处于已批准的请假中，无法安排", "ON_LEAVE");
+        }
+
+        await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
+
+        var duplicated = await _dbContext.ScheduleResults.AsNoTracking()
+            .AnyAsync(x => x.PlanId == planId && x.EmployeeId == request.EmployeeId &&
+                           x.WorkDate == request.WorkDate && x.TimeSlot == request.TimeSlot, cancellationToken);
+        if (duplicated)
+        {
+            throw new BusinessException("该员工在该时段已有排班记录", "SLOT_ALREADY_ASSIGNED");
+        }
+
+        _dbContext.ScheduleResults.Add(new ScheduleResultEntity
+        {
+            PlanId = planId,
+            StoreId = storeId,
+            EmployeeId = request.EmployeeId,
+            WorkDate = request.WorkDate,
+            ShiftTemplateId = null,
+            TimeSlot = request.TimeSlot,
+            WorkstationId = request.WorkstationId,
+            SkillScore = skillScore,
+            Status = plan.Status,
+            Version = 1,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        });
+
+        // 汇总：按当天全部时段重算起止/工时/覆盖工作站（支持同一员工多次加时）
+        var summary = await _dbContext.ScheduleSummaries
+            .FirstOrDefaultAsync(x => x.PlanId == planId && x.EmployeeId == request.EmployeeId && x.WorkDate == request.WorkDate, cancellationToken);
+
+        var daySlots = await _dbContext.ScheduleResults.AsNoTracking()
+            .Where(x => x.PlanId == planId && x.EmployeeId == request.EmployeeId && x.WorkDate == request.WorkDate)
+            .Select(x => new { x.TimeSlot, x.WorkstationId })
+            .ToListAsync(cancellationToken);
+        daySlots.Add(new { TimeSlot = request.TimeSlot, WorkstationId = (long?)request.WorkstationId });
+
+        var startTime = daySlots.Min(x => x.TimeSlot);
+        var endTime = daySlots.Max(x => x.TimeSlot) + TimeSpan.FromMinutes(30);
+        var covered = string.Join(",", daySlots.Select(x => x.WorkstationId).Distinct().OrderBy(x => x));
+
+        if (summary is null)
+        {
+            _dbContext.ScheduleSummaries.Add(new ScheduleSummaryEntity
+            {
+                PlanId = planId,
+                StoreId = storeId,
+                EmployeeId = request.EmployeeId,
+                WorkDate = request.WorkDate,
+                IsRestDay = 0,
+                ShiftTemplateId = null,
+                StartTime = startTime,
+                EndTime = endTime,
+                WorkHours = daySlots.Count * 0.5m,
+                CoveredWorkstations = covered,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            });
+        }
+        else
+        {
+            summary.IsRestDay = 0;
+            summary.StartTime = startTime;
+            summary.EndTime = endTime;
+            summary.WorkHours = daySlots.Count * 0.5m;
+            summary.CoveredWorkstations = covered;
+            summary.UpdatedAt = DateTime.UtcNow;
+        }
+
+        // 已发布计划：通知员工排班变更（草稿阶段员工端不可见，无需通知）
+        if (plan.Status == "PUBLISHED")
+        {
+            _dbContext.Notifications.Add(new NotificationEntity
+            {
+                StoreId = storeId,
+                ReceiverEmployeeId = request.EmployeeId,
+                NotificationType = "SCHEDULE_CHANGED",
+                Title = "排班变更",
+                Content = $"{request.WorkDate:yyyy-MM-dd} {request.TimeSlot:hh\\:mm} 您被新增安排到「{workstation.Name}」上班（30 分钟），请查看班表",
+                IsRead = 0,
+                CreatedAt = DateTime.UtcNow
+            });
+        }
+
+        // 调整明细（偏好学习纠错信号）
+        _dbContext.ScheduleAdjustments.Add(new ScheduleAdjustmentEntity
+        {
+            StoreId = storeId,
+            PlanId = planId,
+            EmployeeId = request.EmployeeId,
+            WorkDate = request.WorkDate,
+            TimeSlot = request.TimeSlot,
+            ActionType = "ADD_SLOT",
+            BeforeJson = null,
+            AfterJson = JsonSerializer.Serialize(new { request.WorkstationId, SkillScore = skillScore }),
+            OperatorUserId = operatorUserId,
+            OperatorName = operatorName,
+            CreatedAt = DateTime.UtcNow
+        });
+
+        _auditLogService.AddAuditEntity(
+            _dbContext,
+            storeId,
+            operatorUserId,
+            operatorName,
+            "ADD_SCHEDULE_SLOT",
+            "SCHEDULE_RESULT",
+            planId,
+            null,
+            $"{request.WorkDate:yyyy-MM-dd} {request.TimeSlot:hh\\:mm} 员工 {employee.EmployeeNo} 加到「{workstation.Name}」",
+            "空位加人",
+            DateTime.UtcNow);
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        await transaction.CommitAsync(cancellationToken);
+
+        return request;
+    }
+
+    /// <summary>空位加人候选：具备工作站技能、当天未排班、无已批准请假；兼职仅限低技能岗位。</summary>
+    public async Task<IReadOnlyList<AddSlotCandidateItem>> GetAddSlotCandidatesAsync(
+        long planId,
+        long storeId,
+        DateOnly workDate,
+        TimeSpan timeSlot,
+        long workstationId,
+        CancellationToken cancellationToken)
+    {
+        await GetPlanAsync(planId, storeId, cancellationToken);
+
+        var workstation = await _dbContext.Workstations.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == workstationId && x.StoreId == storeId && x.Status == 1, cancellationToken)
+            ?? throw new BusinessException("工作站不存在或已停用", "WORKSTATION_NOT_FOUND");
+
+        var employees = await _dbContext.Employees.AsNoTracking()
+            .Where(x => x.StoreId == storeId && x.Status == 1)
+            .Select(x => new { x.Id, x.EmployeeNo, x.Name, x.Department, x.PrimaryPosition, x.IsParttime })
+            .ToListAsync(cancellationToken);
+
+        // 兼职仅限低技能岗位
+        if (workstation.IsLowSkill != 1)
+        {
+            employees = employees.Where(x => x.IsParttime != 1).ToList();
+        }
+
+        var candidateIds = employees.Select(x => x.Id).ToHashSet();
+        var skillScores = await _dbContext.EmployeeSkills.AsNoTracking()
+            .Where(x => x.WorkstationId == workstationId && x.Status == 1 && x.SkillScore > 0 && candidateIds.Contains(x.EmployeeId))
+            .ToDictionaryAsync(x => x.EmployeeId, x => x.SkillScore, cancellationToken);
+
+        // 当天已有排班明细的排除（含休息汇总的员工则标记 IsRestDay，供前端提示「休息转上班」）
+        var scheduledIds = (await _dbContext.ScheduleResults.AsNoTracking()
+            .Where(x => x.PlanId == planId && x.WorkDate == workDate)
+            .Select(x => x.EmployeeId)
+            .Distinct()
+            .ToListAsync(cancellationToken)).ToHashSet();
+
+        var restIds = (await _dbContext.ScheduleSummaries.AsNoTracking()
+            .Where(x => x.PlanId == planId && x.WorkDate == workDate && x.IsRestDay == 1)
+            .Select(x => x.EmployeeId)
+            .Distinct()
+            .ToListAsync(cancellationToken)).ToHashSet();
+
+        var leaveIds = (await _dbContext.LeaveRequests.AsNoTracking()
+            .Where(x => x.StoreId == storeId && x.Status == "APPROVED" && x.StartDate <= workDate && workDate <= x.EndDate)
+            .Select(x => x.EmployeeId)
+            .Distinct()
+            .ToListAsync(cancellationToken)).ToHashSet();
+
+        return employees
+            .Where(x => skillScores.ContainsKey(x.Id) && !scheduledIds.Contains(x.Id) && !leaveIds.Contains(x.Id))
+            .OrderByDescending(x => skillScores[x.Id])
+            .ThenBy(x => x.EmployeeNo)
+            .Select(x => new AddSlotCandidateItem(
+                x.Id,
+                x.EmployeeNo,
+                x.Name,
+                x.Department,
+                x.IsParttime,
+                restIds.Contains(x.Id) ? 1 : 0,
+                skillScores[x.Id],
+                x.PrimaryPosition))
+            .ToList();
+    }
+
     private async Task<SchedulePlanEntity> GetPlanAsync(long planId, long storeId, CancellationToken cancellationToken)
     {
         var plan = await _dbContext.SchedulePlans

@@ -135,7 +135,7 @@
         <el-date-picker v-model="dayDate" type="date" value-format="YYYY-MM-DD" style="width: 150px; margin-bottom: 12px" placeholder="选择日期" :disabled-date="disabledDate" @change="loadDay" />
         <div v-if="dayDate" class="matrix-wrap"><div class="matrix" :class="{ 'has-chip-highlight': highlightedEmpId }" @click="highlightedEmpId = null">
           <div class="m-row m-header"><div class="m-ws-col">工作站</div><div v-for="slot in slots" :key="slot.key" class="m-slot-col" :title="slot.display"><span v-if="isHour(slot)">{{ slot.display }}</span></div></div>
-          <div v-for="ws in dailyWorkstations" :key="ws" class="m-row"><div class="m-ws-col">{{ ws }}<el-tag v-if="wsLowSkill(ws)" type="success" size="small" style="margin-left:4px">兼</el-tag></div><div v-for="(slot, si) in slots" :key="slot.key" class="m-slot-col" :class="[cellClass(ws, slot), snapTarget.ws === ws && snapTarget.slotIdx === si ? 'snap-target' : '', batchSelected(ws, si) ? 'batch-selected' : '']" :data-slot="slot.key"><div v-if="dailySlotIssues(ws, slot).length" class="gap-flag" :class="{ 'gap-flag-low': lowSkillGapIssues(ws, slot).length > 0 }" :title="gapTooltip(ws, slot)">{{ lowSkillGapIssues(ws, slot).length > 0 ? '兼' : '缺' }}</div><div v-for="emp in dailyCellUsers(ws, slot)" :key="emp.employeeId" class="emp-chip" :class="{ 'is-parttime': emp.isParttime === 1, 'pt-first': isFirstPartTimeChip(emp, ws, slot), 'is-break': inBreak(emp, slot), 'is-highlighted': highlightedEmpId === emp.employeeId }" :title="'单击高亮该员工当天全部色块；双击切换休息/上班；按住拖动可移动半小时'" @mousedown.prevent.stop="onChipMouseDown($event, emp, ws, slot)" @click.stop="onChipClick(emp, slot)" @dblclick.stop="onChipDblClick(emp, slot)"><div class="emp-name">{{ emp.employeeName }}<span v-if="prefMatch(emp, ws)" class="pref-dot" title="与店长历史偏好一致" /> <span v-if="inBreak(emp, slot)" class="break-flag" :title="breakTip(emp)">休</span></div><div v-if="!inBreak(emp, slot)" class="emp-shift">{{ emp.shiftCode || '--' }}</div><div v-else class="emp-shift break-info" :title="breakTip(emp)">休息</div></div></div></div>
+          <div v-for="ws in dailyWorkstations" :key="ws" class="m-row"><div class="m-ws-col">{{ ws }}<el-tag v-if="wsLowSkill(ws)" type="success" size="small" style="margin-left:4px">兼</el-tag></div><div v-for="(slot, si) in slots" :key="slot.key" class="m-slot-col" :class="[cellClass(ws, slot), { 'is-empty': dailyCellUsers(ws, slot).length === 0 }, snapTarget.ws === ws && snapTarget.slotIdx === si ? 'snap-target' : '', batchSelected(ws, si) ? 'batch-selected' : '']" :data-slot="slot.key" :title="dailyCellUsers(ws, slot).length === 0 ? '点击添加人员' : slot.display" @click="onCellClick(ws, slot)"><div v-if="dailySlotIssues(ws, slot).length" class="gap-flag" :class="{ 'gap-flag-low': lowSkillGapIssues(ws, slot).length > 0 }" :title="gapTooltip(ws, slot)">{{ lowSkillGapIssues(ws, slot).length > 0 ? '兼' : '缺' }}</div><div v-for="emp in dailyCellUsers(ws, slot)" :key="emp.employeeId" class="emp-chip" :class="{ 'is-parttime': emp.isParttime === 1, 'pt-first': isFirstPartTimeChip(emp, ws, slot), 'is-break': inBreak(emp, slot), 'is-highlighted': highlightedEmpId === emp.employeeId }" :title="'单击高亮该员工当天全部色块；双击切换休息/上班；按住拖动可移动半小时'" @mousedown.prevent.stop="onChipMouseDown($event, emp, ws, slot)" @click.stop="onChipClick(emp, slot)" @dblclick.stop="onChipDblClick(emp, slot)"><div class="emp-name">{{ emp.employeeName }}<span v-if="prefMatch(emp, ws)" class="pref-dot" title="与店长历史偏好一致" /> <span v-if="inBreak(emp, slot)" class="break-flag" :title="breakTip(emp)">休</span></div><div v-if="!inBreak(emp, slot)" class="emp-shift">{{ emp.shiftCode || '--' }}</div><div v-else class="emp-shift break-info" :title="breakTip(emp)">休息</div></div></div></div>
         </div></div>
       </div>
 
@@ -217,6 +217,39 @@
       </template>
     </el-dialog>
 
+    <!-- P3 空位加人：日明细点击空格子，给未排班员工补 30 分钟上班段 -->
+    <el-dialog v-model="addSlotDialog.visible" title="添加人员" width="460px" destroy-on-close>
+      <div class="ds-info">
+        <div><span class="ds-label">日期：</span>{{ addSlotDialog.workDate }}　<span class="ds-label">工作站：</span>{{ addSlotDialog.wsName }}</div>
+        <div><span class="ds-label">时段：</span>{{ addSlotDialog.slotDisplay }}（30 分钟）</div>
+      </div>
+      <el-select
+        v-model="addSlotDialog.employeeId"
+        placeholder="请选择员工"
+        filterable
+        style="width: 100%; margin-top: 10px"
+        :loading="addSlotDialog.loading"
+        @change="onAddSlotCandidateChange"
+      >
+        <el-option v-for="c in addSlotDialog.candidates" :key="c.employeeId" :value="c.employeeId" :label="c.name + '（' + c.employeeNo + '）'">
+          <span>{{ c.name }}（{{ c.employeeNo }}）</span>
+          <span style="float: right; color: #909399; font-size: 12px">{{ c.department }} · {{ c.skillScore }}分</span>
+        </el-option>
+      </el-select>
+      <div v-if="addSlotDialog.selected" style="margin-top: 10px">
+        <el-tag v-if="addSlotDialog.selected.isRestDay === 1" type="info" size="small" style="margin-right: 6px">当天休息 · 将自动转上班</el-tag>
+        <el-tag v-if="addSlotDialog.selected.isParttime === 1" type="success" size="small" style="margin-right: 6px">兼职</el-tag>
+        <el-tag size="small" style="margin-right: 6px">技能 {{ addSlotDialog.selected.skillScore }} 分</el-tag>
+      </div>
+      <div style="margin-top: 10px; font-size: 12px; color: #909399">
+        仅添加所选时段（不挂班次模板）{{ currentPlan && currentPlan.status === 'PUBLISHED' ? '；已发布计划添加后会通知该员工' : '' }}。候选已按技能、兼职岗位限制、当天请假与已排班过滤。
+      </div>
+      <template #footer>
+        <el-button @click="addSlotDialog.visible = false">取消</el-button>
+        <el-button type="primary" :loading="addSlotDialog.saving" :disabled="!addSlotDialog.employeeId" @click="submitAddSlot">确定添加</el-button>
+      </template>
+    </el-dialog>
+
     <!-- P0 交互：调整撤销条（5 秒窗口，误操作可回退） -->
     <transition name="el-fade-in">
       <div v-if="undoBar.visible" class="undo-bar">
@@ -232,7 +265,7 @@ import { onMounted, onBeforeUnmount, ref, reactive, computed, nextTick, watch } 
 import * as echarts from 'echarts'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { getMonthView, getWeekView, getDailyView, getScheduleIssues, getScheduleRationality, getSchedules, setSlotStatus, moveScheduleSegment } from '../api/schedules'
+import { getMonthView, getWeekView, getDailyView, getScheduleIssues, getScheduleRationality, getSchedules, setSlotStatus, moveScheduleSegment, getAddSlotCandidates, addScheduleSlot } from '../api/schedules'
 import { getPreferenceMatrix } from '../api/preferences'
 
 const route = useRoute()
@@ -982,6 +1015,101 @@ async function loadDay(date) {
 
 async function selectDate(date) { selectedDate.value = date; highlightedEmpId.value = null; await loadDay(date) }
 
+// ===== P3 空位加人：点击日明细空格子 → 选择员工补 30 分钟上班段 =====
+const addSlotDialog = reactive({
+  visible: false,
+  loading: false,
+  saving: false,
+  wsName: '',
+  wsId: null,
+  slotKey: '',
+  slotDisplay: '',
+  workDate: '',
+  employeeId: null,
+  candidates: []
+})
+
+// 工作站名称 → id 映射（来源：日明细行 + 缺口问题行）
+const wsNameToId = computed(() => {
+  const map = new Map()
+  dailyRows.value.forEach(r => { if (r.workstationName && r.workstationId) map.set(r.workstationName, r.workstationId) })
+  dailyIssues.value.forEach(i => { if (i.workstationName && i.workstationId) map.set(i.workstationName, i.workstationId) })
+  return map
+})
+
+const addSlotSelected = computed(() =>
+  addSlotDialog.candidates.find(c => c.employeeId === addSlotDialog.employeeId) || null)
+
+// 点击格子：空位打开添加人员弹窗；非空仅清除高亮（与原行为一致）
+function onCellClick(ws, slot) {
+  if (dailyCellUsers(ws, slot).length === 0) {
+    openAddSlot(ws, slot)
+  } else {
+    highlightedEmpId.value = null
+  }
+}
+
+async function openAddSlot(ws, slot) {
+  const wsId = wsNameToId.value.get(ws)
+  if (!wsId || !dayDate.value) {
+    ElMessage.warning('无法识别该工作站或日期，请刷新后重试')
+    return
+  }
+  addSlotDialog.wsName = ws
+  addSlotDialog.wsId = wsId
+  addSlotDialog.slotKey = slot.key
+  addSlotDialog.slotDisplay = slot.display
+  addSlotDialog.workDate = dayDate.value
+  addSlotDialog.employeeId = null
+  addSlotDialog.candidates = []
+  addSlotDialog.visible = true
+  await loadAddSlotCandidates()
+}
+
+async function loadAddSlotCandidates() {
+  addSlotDialog.loading = true
+  try {
+    const res = await getAddSlotCandidates(planId.value, {
+      workDate: addSlotDialog.workDate,
+      timeSlot: addSlotDialog.slotKey,
+      workstationId: addSlotDialog.wsId
+    })
+    addSlotDialog.candidates = Array.isArray(res) ? res : []
+    if (addSlotDialog.candidates.length === 0) {
+      ElMessage.info('没有符合条件的候选员工（需具备该岗位技能、当天未排班且无已批准请假）')
+    }
+  } catch (e) {
+    /* 拦截器已提示 */
+  } finally {
+    addSlotDialog.loading = false
+  }
+}
+
+function onAddSlotCandidateChange() {
+  // 选中变化时无需额外动作（提示标签由 addSlotSelected 计算）
+}
+
+async function submitAddSlot() {
+  if (!addSlotDialog.employeeId) return
+  addSlotDialog.saving = true
+  try {
+    await addScheduleSlot(planId.value, {
+      employeeId: addSlotDialog.employeeId,
+      workDate: addSlotDialog.workDate,
+      timeSlot: addSlotDialog.slotKey,
+      workstationId: addSlotDialog.wsId
+    })
+    ElMessage.success('添加成功')
+    addSlotDialog.visible = false
+    // 刷新日明细与缺口标记
+    await loadDay(addSlotDialog.workDate)
+  } catch (e) {
+    /* 拦截器已提示 */
+  } finally {
+    addSlotDialog.saving = false
+  }
+}
+
 function onModeChange() {
   selectedDate.value = ''
   dailyRows.value = []
@@ -1237,6 +1365,10 @@ onBeforeUnmount(() => {
 .m-header .m-ws-col { background: #f5f7fa; z-index: 5; }
 .m-slot-col { width: 72px; min-height: 48px; flex-shrink: 0; padding: 2px 3px; border-right: 1px solid #f5f7fa; font-size: 11px; text-align: center; position: relative; }
 .m-slot-col:last-child { border-right: none; }
+/* P3 空位加人：空格子可点击，悬停显示 + 提示 */
+.m-slot-col.is-empty { cursor: pointer; }
+.m-slot-col.is-empty:hover { background: rgba(64, 158, 255, 0.08); }
+.m-slot-col.is-empty:hover::after { content: '+'; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #409eff; font-size: 16px; font-weight: 600; pointer-events: none; }
 .has-employee { background: #ecf5ff; }
 .next-day { background: #fdf6ec; }
 .has-gap { box-shadow: inset 0 0 0 2px #f56c6c; }

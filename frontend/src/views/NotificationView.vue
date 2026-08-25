@@ -70,6 +70,8 @@ const pageSize = ref(20)
 function typeName(t) {
   return {
     SCHEDULE_PUBLISHED: '排班发布',
+    SCHEDULE_UNPUBLISHED: '排班取消',
+    SCHEDULE_CHANGED: '排班变更',
     LEAVE_APPROVED: '请假审批',
     LEAVE_REJECTED: '请假驳回',
     SWAP_APPROVED: '换班批准',

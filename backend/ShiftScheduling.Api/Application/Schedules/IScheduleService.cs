@@ -93,4 +93,22 @@ public interface IScheduleService
         long operatorUserId,
         string operatorName,
         CancellationToken cancellationToken);
+
+    /// <summary>空位加人：给员工新增一个 30 分钟上班段（草稿/已发布均可；已发布时通知员工）。</summary>
+    Task<AddScheduleSlotRequest> AddSlotAsync(
+        long planId,
+        AddScheduleSlotRequest request,
+        long storeId,
+        long operatorUserId,
+        string operatorName,
+        CancellationToken cancellationToken);
+
+    /// <summary>空位加人候选员工列表（技能/兼职岗位限制/请假/当天已排班过滤）。</summary>
+    Task<IReadOnlyList<AddSlotCandidateItem>> GetAddSlotCandidatesAsync(
+        long planId,
+        long storeId,
+        DateOnly workDate,
+        TimeSpan timeSlot,
+        long workstationId,
+        CancellationToken cancellationToken);
 }

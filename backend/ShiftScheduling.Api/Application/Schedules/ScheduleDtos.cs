@@ -148,3 +148,24 @@ public sealed record SetSlotStatusItem(
     int IsRest);
 
 public sealed record SetSlotStatusRequest(IReadOnlyList<SetSlotStatusItem> Items);
+
+/// <summary>
+/// 空位加人：给员工在指定日期/时段/工作站新增一个 30 分钟上班段（不挂班次模板）。
+/// 草稿与已发布计划均允许（已发布时额外通知该员工排班变更）。
+/// </summary>
+public sealed record AddScheduleSlotRequest(
+    long EmployeeId,
+    DateOnly WorkDate,
+    TimeSpan TimeSlot,
+    long WorkstationId);
+
+/// <summary>空位加人候选（按技能/兼职岗位限制/请假/当天已排班过滤）。</summary>
+public sealed record AddSlotCandidateItem(
+    long EmployeeId,
+    string EmployeeNo,
+    string Name,
+    string Department,
+    int IsParttime,
+    int IsRestDay,
+    int SkillScore,
+    string? PrimaryPosition);

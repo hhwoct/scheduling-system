@@ -308,6 +308,178 @@ public sealed class ScheduleServiceTests
     }
 
     [Fact]
+    public async Task AddSlotAsync_CreatesSlotAndUpdatesSummary()
+    {
+        await SeedStoreDataAsync();
+        var service = CreateService();
+        var generated = await service.GenerateAsync(new GenerateScheduleRequest(Start, End), 1, 9, "管理员", CancellationToken.None);
+
+        var db = _factory.CreateDbContext();
+        var e1 = await db.Employees.AsNoTracking().FirstAsync(x => x.EmployeeNo == "E001");
+        var ws = await db.Workstations.AsNoTracking().FirstAsync(x => x.Code == "SVC");
+
+        await service.AddSlotAsync(
+            generated.PlanId,
+            new AddScheduleSlotRequest(e1.Id, Start, new TimeSpan(10, 0, 0), ws.Id),
+            1, 9, "管理员", CancellationToken.None);
+
+        var db2 = _factory.CreateDbContext();
+        var row = await db2.ScheduleResults.AsNoTracking()
+            .FirstAsync(x => x.PlanId == generated.PlanId && x.EmployeeId == e1.Id && x.WorkDate == Start && x.TimeSlot == new TimeSpan(10, 0, 0));
+        Assert.Null(row.ShiftTemplateId);
+        Assert.Equal(ws.Id, row.WorkstationId);
+        Assert.Equal("DRAFT", row.Status);
+
+        var summary = await db2.ScheduleSummaries.AsNoTracking()
+            .FirstAsync(x => x.PlanId == generated.PlanId && x.EmployeeId == e1.Id && x.WorkDate == Start);
+        Assert.Equal(0, summary.IsRestDay);
+        Assert.Equal(new TimeSpan(10, 0, 0), summary.StartTime);
+        Assert.Contains(ws.Id.ToString(), summary.CoveredWorkstations);
+        Assert.Contains("ADD_SCHEDULE_SLOT", _audit.Entries.Select(x => x.ActionType));
+    }
+
+    [Fact]
+    public async Task AddSlotAsync_PublishedPlan_NotifiesEmployee()
+    {
+        await SeedStoreDataAsync();
+        var service = CreateService();
+        var generated = await service.GenerateAsync(new GenerateScheduleRequest(Start, End), 1, 9, "管理员", CancellationToken.None);
+        await service.PublishAsync(generated.PlanId, 1, 9, "管理员", force: false, CancellationToken.None);
+
+        var db = _factory.CreateDbContext();
+        var e1 = await db.Employees.AsNoTracking().FirstAsync(x => x.EmployeeNo == "E001");
+        var ws = await db.Workstations.AsNoTracking().FirstAsync(x => x.Code == "SVC");
+
+        await service.AddSlotAsync(
+            generated.PlanId,
+            new AddScheduleSlotRequest(e1.Id, Start, new TimeSpan(12, 0, 0), ws.Id),
+            1, 9, "管理员", CancellationToken.None);
+
+        var db2 = _factory.CreateDbContext();
+        Assert.True(await db2.Notifications.AsNoTracking().AnyAsync(x =>
+            x.NotificationType == "SCHEDULE_CHANGED" && x.ReceiverEmployeeId == e1.Id));
+        // 已发布计划新增的明细状态应为 PUBLISHED
+        var row = await db2.ScheduleResults.AsNoTracking()
+            .FirstAsync(x => x.PlanId == generated.PlanId && x.EmployeeId == e1.Id && x.WorkDate == Start && x.TimeSlot == new TimeSpan(12, 0, 0));
+        Assert.Equal("PUBLISHED", row.Status);
+    }
+
+    [Fact]
+    public async Task AddSlotAsync_NoSkill_Throws()
+    {
+        await SeedStoreDataAsync();
+        var service = CreateService();
+        var generated = await service.GenerateAsync(new GenerateScheduleRequest(Start, End), 1, 9, "管理员", CancellationToken.None);
+
+        var db = _factory.CreateDbContext();
+        var e2 = await db.Employees.AsNoTracking().FirstAsync(x => x.EmployeeNo == "E002");
+        var ws = await db.Workstations.AsNoTracking().FirstAsync(x => x.Code == "SVC");
+
+        var ex = await Assert.ThrowsAsync<BusinessException>(() =>
+            service.AddSlotAsync(generated.PlanId,
+                new AddScheduleSlotRequest(e2.Id, Start, new TimeSpan(10, 0, 0), ws.Id),
+                1, 9, "管理员", CancellationToken.None));
+        Assert.Equal("INVALID_ADJUST", ex.ErrorCode);
+    }
+
+    [Fact]
+    public async Task AddSlotAsync_ApprovedLeave_Throws()
+    {
+        await SeedStoreDataAsync();
+        var service = CreateService();
+        var generated = await service.GenerateAsync(new GenerateScheduleRequest(Start, End), 1, 9, "管理员", CancellationToken.None);
+
+        var db = _factory.CreateDbContext();
+        var e1 = await db.Employees.AsNoTracking().FirstAsync(x => x.EmployeeNo == "E001");
+        var ws = await db.Workstations.AsNoTracking().FirstAsync(x => x.Code == "SVC");
+        db.LeaveRequests.Add(new LeaveRequestEntity
+        {
+            StoreId = 1, EmployeeId = e1.Id, LeaveType = "PERSONAL",
+            StartDate = Start, EndDate = Start.AddDays(1), Status = "APPROVED",
+            CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var ex = await Assert.ThrowsAsync<BusinessException>(() =>
+            service.AddSlotAsync(generated.PlanId,
+                new AddScheduleSlotRequest(e1.Id, Start, new TimeSpan(10, 0, 0), ws.Id),
+                1, 9, "管理员", CancellationToken.None));
+        Assert.Equal("ON_LEAVE", ex.ErrorCode);
+    }
+
+    [Fact]
+    public async Task AddSlotAsync_ParttimeNonLowSkill_Throws()
+    {
+        await SeedStoreDataAsync();
+        var service = CreateService();
+        var generated = await service.GenerateAsync(new GenerateScheduleRequest(Start, End), 1, 9, "管理员", CancellationToken.None);
+
+        var db = _factory.CreateDbContext();
+        var ws = await db.Workstations.AsNoTracking().FirstAsync(x => x.Code == "SVC");
+        var pt = new EmployeeEntity
+        {
+            StoreId = 1, EmployeeNo = "E101", Name = "兼测试", Department = "楼面", PrimaryPosition = "服务员",
+            MaxWeeklyHours = 20, IsParttime = 1, Status = 1, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
+        };
+        db.Employees.Add(pt);
+        await db.SaveChangesAsync();
+        db.EmployeeSkills.Add(new EmployeeSkillEntity
+        {
+            EmployeeId = pt.Id, WorkstationId = ws.Id, SkillScore = 3, IsPrimarySkill = 0, Status = 1,
+            CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var ex = await Assert.ThrowsAsync<BusinessException>(() =>
+            service.AddSlotAsync(generated.PlanId,
+                new AddScheduleSlotRequest(pt.Id, Start, new TimeSpan(10, 0, 0), ws.Id),
+                1, 9, "管理员", CancellationToken.None));
+        Assert.Equal("PARTTIME_LOW_SKILL_ONLY", ex.ErrorCode);
+    }
+
+    [Fact]
+    public async Task GetAddSlotCandidatesAsync_FiltersBySkillScheduledAndLeave()
+    {
+        await SeedStoreDataAsync();
+        var service = CreateService();
+        var generated = await service.GenerateAsync(new GenerateScheduleRequest(Start, End), 1, 9, "管理员", CancellationToken.None);
+
+        var db = _factory.CreateDbContext();
+        var e1 = await db.Employees.AsNoTracking().FirstAsync(x => x.EmployeeNo == "E001");
+        var ws = await db.Workstations.AsNoTracking().FirstAsync(x => x.Code == "SVC");
+
+        // 找一天 E001 无排班（休息日）→ 应出现在候选且 IsRestDay=1
+        var restDate = Start;
+        for (var d = Start; d <= End; d = d.AddDays(1))
+        {
+            var hasRows = await db.ScheduleResults.AsNoTracking()
+                .AnyAsync(x => x.PlanId == generated.PlanId && x.EmployeeId == e1.Id && x.WorkDate == d);
+            if (!hasRows) { restDate = d; break; }
+        }
+
+        var candidates = await service.GetAddSlotCandidatesAsync(
+            generated.PlanId, 1, restDate, new TimeSpan(10, 0, 0), ws.Id, CancellationToken.None);
+
+        var c = candidates.FirstOrDefault(x => x.EmployeeId == e1.Id);
+        Assert.NotNull(c);
+        Assert.Equal(1, c.IsRestDay);
+        Assert.Equal(5, c.SkillScore);
+
+        // E002 无 SVC 技能 → 不在候选
+        var e2 = await db.Employees.AsNoTracking().FirstAsync(x => x.EmployeeNo == "E002");
+        Assert.DoesNotContain(candidates, x => x.EmployeeId == e2.Id);
+
+        // 当天已排班的日期 → E001 不在候选
+        var workDate = Enumerable.Range(0, 7)
+            .Select(i => Start.AddDays(i))
+            .First(d => db.ScheduleResults.AsNoTracking()
+                .Any(x => x.PlanId == generated.PlanId && x.EmployeeId == e1.Id && x.WorkDate == d));
+        var candidatesOnWork = await service.GetAddSlotCandidatesAsync(
+            generated.PlanId, 1, workDate, new TimeSpan(10, 0, 0), ws.Id, CancellationToken.None);
+        Assert.DoesNotContain(candidatesOnWork, x => x.EmployeeId == e1.Id);
+    }
+
+    [Fact]
     public async Task GenerateAsync_NoDateParameters_ThrowsBusinessException()
     {
         await SeedStoreDataAsync();

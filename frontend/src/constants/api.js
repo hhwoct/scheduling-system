@@ -34,7 +34,9 @@ export const API_ROUTES = {
     DAY_STATUS: (planId) => `/schedules/${encodeURIComponent(planId)}/day-status`,
     SLOT_STATUS: (planId) => `/schedules/${encodeURIComponent(planId)}/slot-status`,
     PUBLISH: (planId) => `/schedules/${encodeURIComponent(planId)}/publish`,
-    UNPUBLISH: (planId) => `/schedules/${encodeURIComponent(planId)}/unpublish`
+    UNPUBLISH: (planId) => `/schedules/${encodeURIComponent(planId)}/unpublish`,
+    ADD_SLOT: (planId) => `/schedules/${encodeURIComponent(planId)}/add-slot`,
+    ADD_CANDIDATES: (planId) => `/schedules/${encodeURIComponent(planId)}/add-candidates`
   },
   LEAVE: {
     BASE: '/leave-requests',

@@ -1125,6 +1125,51 @@ api.MapPost("/schedules/{planId:long}/unpublish", async (
     return ApiResponse.Ok(true, "已取消发布，排班退回草稿");
 }).RequireAuthorization("AdminOnly");
 
+// 空位加人（P3）：日明细空格子点选后给员工新增 30 分钟上班段（草稿/已发布均允许）
+api.MapPut("/schedules/{planId:long}/add-slot", async (
+    long planId,
+    AddScheduleSlotRequest request,
+    ICurrentUser currentUser,
+    IScheduleService scheduleService,
+    CancellationToken cancellationToken) =>
+{
+    if (request is null)
+    {
+        throw new BusinessException("请求参数不能为空", "INVALID_REQUEST");
+    }
+
+    var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
+    var result = await scheduleService.AddSlotAsync(
+        planId,
+        request,
+        storeId,
+        currentUser.UserId ?? 0,
+        currentUser.Nickname ?? currentUser.Username ?? "匿名",
+        cancellationToken);
+    return ApiResponse.Ok(result, "添加成功");
+}).RequireAuthorization("AdminOnly");
+
+// 空位加人候选列表：技能/兼职岗位限制/请假/当天已排班过滤
+api.MapGet("/schedules/{planId:long}/add-candidates", async (
+    long planId,
+    DateOnly workDate,
+    TimeSpan timeSlot,
+    long workstationId,
+    ICurrentUser currentUser,
+    IScheduleService scheduleService,
+    CancellationToken cancellationToken) =>
+{
+    var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
+    var result = await scheduleService.GetAddSlotCandidatesAsync(
+        planId,
+        storeId,
+        workDate,
+        timeSlot,
+        workstationId,
+        cancellationToken);
+    return ApiResponse.Ok(result, "获取候选员工成功");
+}).RequireAuthorization("AdminOnly");
+
 // 复制上周（P2）：以最近一期已发布排班为起点生成草稿
 api.MapPost("/schedules/{planId:long}/copy-previous", async (
     long planId,
