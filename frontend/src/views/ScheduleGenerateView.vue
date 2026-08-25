@@ -132,7 +132,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { generateSchedule, getSchedules, publishSchedule, deleteSchedule, getScheduleIssues, getAdjustmentSummary, getScheduleAdjustments, copyPreviousWeek } from '../api/schedules'
