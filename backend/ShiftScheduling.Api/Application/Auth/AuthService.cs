@@ -155,7 +155,9 @@ public sealed class AuthService : IAuthService
             ?? throw new InvalidCredentialsException("用户名或验证信息不正确");
 
         // 验证信息校验（防任意重置 + 防用户枚举）：
-        if (user.Role != "EMPLOYEE" && user.Role != "STORE_MANAGER")
+        // 放行「具备员工档案」的管理账号（如 SYSTEM_ADMIN 角色的 E001 店长）按用户名+手机号找回；
+        // 无员工档案的账号（admin/manager）仍会被下方员工档案校验拒绝，安全边界不变。
+        if (user.Role is not ("EMPLOYEE" or "STORE_MANAGER" or "SYSTEM_ADMIN"))
         {
             _passwordResetService.RecordFailure(username, clientIp);
             throw new InvalidCredentialsException("用户名或验证信息不正确");

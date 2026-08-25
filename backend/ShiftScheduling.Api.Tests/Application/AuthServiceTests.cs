@@ -199,9 +199,9 @@ public sealed class AuthServiceTests
     }
 
     [Fact]
-    public async Task ForgotPasswordAsync_SystemAdminRole_Throws()
+    public async Task ForgotPasswordAsync_SystemAdminWithoutProfile_Throws()
     {
-        // 忘记密码仅支持 EMPLOYEE/STORE_MANAGER；SYSTEM_ADMIN 账号必须走人工改密
+        // 无员工档案的管理账号（admin）仍禁止自助重置——由员工档案校验兜底
         var db = _factory.CreateDbContext();
         db.Users.Add(NewUser(username: "admin", role: "SYSTEM_ADMIN"));
         await db.SaveChangesAsync();
@@ -213,6 +213,26 @@ public sealed class AuthServiceTests
                 "127.0.0.1",
                 CancellationToken.None));
         Assert.Equal("INVALID_CREDENTIALS", ex.ErrorCode);
+    }
+
+    [Fact]
+    public async Task ForgotPasswordAsync_SystemAdminWithProfile_Resets()
+    {
+        // 有员工档案的管理账号（如 E001 店长，SYSTEM_ADMIN 角色）允许按用户名+手机号找回
+        var db = _factory.CreateDbContext();
+        db.Users.Add(NewUser(username: "E001", role: "SYSTEM_ADMIN"));
+        await db.SaveChangesAsync();
+        await SeedEmployeeAsync(_factory, no: "E001", phone: "13800000001");
+
+        var service = CreateService();
+        await service.ForgotPasswordAsync(
+            new ForgotPasswordRequest("E001", "NewPassw0rd", "NewPassw0rd", "13800000001"),
+            "127.0.0.1",
+            CancellationToken.None);
+
+        var reloaded = await db.Users.AsNoTracking().FirstAsync(x => x.Username == "E001");
+        var passwordService = new BcryptPasswordService();
+        Assert.True(passwordService.Verify("NewPassw0rd", reloaded.PasswordHash));
     }
 
     [Fact]
