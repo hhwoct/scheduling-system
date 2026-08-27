@@ -1640,9 +1640,10 @@ api.MapPut("/notifications/read-all", async (
     }
     else
     {
-        // 管理端默认列表只展示门店级通知，全部已读也只作用于门店级通知，
-        // 避免连带清掉员工个人通知的未读状态
-        query = query.Where(x => x.ReceiverEmployeeId == null && x.ReceiverUserId == null);
+        // 管理端口径与列表/未读数一致：门店级通知 + 发给当前管理员本人的通知
+        //（如「排班已发布」ReceiverUserId=本人），否则一键已读后这些个人通知仍显示未读。
+        // 不含员工的个人通知（ReceiverEmployeeId != null），不会连带清掉员工未读。
+        query = query.Where(x => x.ReceiverEmployeeId == null && (x.ReceiverUserId == null || x.ReceiverUserId == currentUser.UserId));
     }
 
     var now = DateTime.UtcNow;
