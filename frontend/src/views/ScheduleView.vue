@@ -149,7 +149,7 @@
             <el-button size="small" link @click="clearRangeSel">✕</el-button>
           </div>
           <div class="m-row m-header"><div class="m-ws-col">工作站</div><div v-for="slot in slots" :key="slot.key" class="m-slot-col" :title="slot.display"><span v-if="isHour(slot)">{{ slot.display }}</span></div></div>
-          <div v-for="ws in dailyWorkstations" :key="ws" class="m-row"><div class="m-ws-col">{{ ws }}<el-tag v-if="wsLowSkill(ws)" type="success" size="small" style="margin-left:4px">兼</el-tag></div><div v-for="(slot, si) in slots" :key="slot.key" class="m-slot-col" :class="[cellClass(ws, slot), { 'is-empty': dailyCellUsers(ws, slot).length === 0 }, (rangeSelected(ws, slot) || rangeSelSelected(ws, slot)) ? 'range-selected' : '', snapTarget.ws === ws && snapTarget.slotIdx === si ? 'snap-target' : '', batchSelected(ws, si) ? 'batch-selected' : '']" :data-slot="slot.key" :title="dailyCellUsers(ws, slot).length === 0 ? '点击添加人员，按住滑动可选多个时段' : '按住滑动可选择范围后操作（加人/换人/平移/休息）'" @mousedown="onCellMouseDown(ws, slot, $event)" @click="onCellClick(ws, slot)"><div v-if="dailySlotIssues(ws, slot).length" class="gap-flag" :class="{ 'gap-flag-low': lowSkillGapIssues(ws, slot).length > 0 }" :title="gapTooltip(ws, slot)">{{ lowSkillGapIssues(ws, slot).length > 0 ? '兼' : '缺' }}</div><div v-for="emp in dailyCellUsers(ws, slot)" :key="emp.employeeId" class="emp-chip" :class="{ 'is-parttime': emp.isParttime === 1, 'pt-first': isFirstPartTimeChip(emp, ws, slot), 'is-break': inBreak(emp, slot), 'is-highlighted': highlightedEmpId === emp.employeeId }" :title="'单击高亮该员工当天全部色块；双击切换休息/上班；按住滑动可选择范围'" @click.stop="onChipClick(emp, slot)" @dblclick.stop="onChipDblClick(emp, slot)"><div class="emp-name">{{ emp.employeeName }}<span v-if="prefMatch(emp, ws)" class="pref-dot" title="与店长历史偏好一致" /> <span v-if="inBreak(emp, slot)" class="break-flag" :title="breakTip(emp)">休</span></div><div v-if="!inBreak(emp, slot)" class="emp-shift">{{ emp.shiftCode || '--' }}</div><div v-else class="emp-shift break-info" :title="breakTip(emp)">休息</div></div></div></div>
+          <div v-for="ws in dailyWorkstations" :key="ws" class="m-row"><div class="m-ws-col">{{ ws }}<el-tag v-if="wsLowSkill(ws)" type="success" size="small" style="margin-left:4px">兼</el-tag></div><div v-for="(slot, si) in slots" :key="slot.key" class="m-slot-col" :class="[cellClass(ws, slot), { 'is-empty': dailyCellUsers(ws, slot).length === 0 }, (rangeSelected(ws, slot) || rangeSelSelected(ws, slot)) ? 'range-selected' : '', snapTarget.ws === ws && snapTarget.slotIdx === si ? 'snap-target' : '', batchSelected(ws, si) ? 'batch-selected' : '']" :data-slot="slot.key" :title="dailyCellUsers(ws, slot).length === 0 ? '点击添加人员，按住滑动可选多个时段' : '按住滑动可选择范围后操作（加人/换人/平移/休息）'" @mousedown="onCellMouseDown(ws, slot, $event)" @click="onCellClick(ws, slot)"><div v-if="dailySlotIssues(ws, slot).length" class="gap-flag" :class="{ 'gap-flag-low': lowSkillGapIssues(ws, slot).length > 0 }" :title="gapTooltip(ws, slot)">{{ lowSkillGapIssues(ws, slot).length > 0 ? '兼' : '缺' }}</div><div v-for="lane in cellLanes(ws, slot)" :key="'lane-' + lane.employeeId" class="emp-lane"><div v-if="lane.row" class="emp-chip" :class="{ 'is-parttime': lane.row.isParttime === 1, 'pt-first': lane.isFirstPtLane, 'is-break': inBreak(lane.row, slot), 'is-highlighted': highlightedEmpId === lane.row.employeeId }" :title="'单击高亮该员工当天全部色块；双击切换休息/上班；按住滑动可选择范围'" @click.stop="onChipClick(lane.row, slot)" @dblclick.stop="onChipDblClick(lane.row, slot)"><div class="emp-name">{{ lane.row.employeeName }}<span v-if="prefMatch(lane.row, ws)" class="pref-dot" title="与店长历史偏好一致" /> <span v-if="inBreak(lane.row, slot)" class="break-flag" :title="breakTip(lane.row)">休</span></div><div v-if="!inBreak(lane.row, slot)" class="emp-shift">{{ lane.row.shiftCode || '--' }}</div><div v-else class="emp-shift break-info" :title="breakTip(lane.row)">休息</div></div></div></div></div>
         </div></div>
       </div>
 
@@ -400,6 +400,30 @@ function dailyCellUsers(ws, slot) {
   return dailyRows.value
     .filter(r => r.workstationName === ws && String(r.timeSlot).substring(0,5) === slot.key)
     .sort((a, b) => (Number(a.isParttime ?? 0) - Number(b.isParttime ?? 0)) || (Number(a.employeeId) - Number(b.employeeId)))
+}
+// 泳道对齐：工作站行内员工顺序固定（全职在前、兼职在后，各按 employeeId），
+// 同一员工在各时段的色块固定在同一横向行；该时段不在场的格子留空占位
+const wsLaneMap = computed(() => {
+  const map = new Map()
+  dailyRows.value.forEach(r => {
+    if (!r.workstationName || !r.employeeId) return
+    if (!map.has(r.workstationName)) map.set(r.workstationName, new Map())
+    const emps = map.get(r.workstationName)
+    if (!emps.has(r.employeeId)) emps.set(r.employeeId, r)
+  })
+  const result = new Map()
+  for (const [ws, emps] of map) {
+    const list = [...emps.values()].sort((a, b) => (Number(a.isParttime ?? 0) - Number(b.isParttime ?? 0)) || (Number(a.employeeId) - Number(b.employeeId)))
+    const firstPt = list.findIndex(x => Number(x.isParttime) === 1)
+    result.set(ws, list.map((e, i) => ({ employeeId: e.employeeId, isFirstPtLane: firstPt >= 0 && i === firstPt && i > 0 })))
+  }
+  return result
+})
+// 单元格渲染列表：lane 顺序固定；该格在场的员工携带 row（用于色块内容），其余留空占位
+function cellLanes(ws, slot) {
+  const byId = new Map()
+  dailyCellUsers(ws, slot).forEach(u => byId.set(u.employeeId, u))
+  return (wsLaneMap.value.get(ws) || []).map(lane => ({ ...lane, row: byId.get(lane.employeeId) || null }))
 }
 // 是否为该单元格第一个兼职色块（且其前有全职色块）→ 显示虚线间隔
 function isFirstPartTimeChip(emp, ws, slot) {
@@ -1862,6 +1886,10 @@ onBeforeUnmount(() => {
 .matrix.has-chip-highlight .emp-chip:not(.is-highlighted):hover { opacity: 0.75; }
 .emp-chip { cursor: grab; }
 .emp-chip:hover { opacity: 0.85; }
+/* 泳道对齐：同一员工在同一工作站行内固定同一横向行（37px = 色块原行高 851→888） */
+.emp-lane { height: 37px; }
+.emp-lane .emp-chip { margin-bottom: 0; height: 100%; box-sizing: border-box; display: flex; flex-direction: column; justify-content: center; }
+.emp-lane .emp-chip.pt-first { margin-top: 0; padding-top: 0; }
 
 /* ============ 拖动移动工作段 ============ */
 .drag-ghost {
