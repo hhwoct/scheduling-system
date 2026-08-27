@@ -137,7 +137,8 @@
           <div v-if="rangeSelect.active" class="range-hint">{{ rangeHint }}</div>
           <div v-if="rangeSel.visible" class="range-toolbar" @click.stop>
             <span class="rt-info">{{ rangeSel.ws }} {{ rangeSelStart }} ~ {{ rangeSelEnd }}（{{ rangeSelCount }} 段）</span>
-            <el-button size="small" type="primary" @click="openReplaceDialog">换人</el-button>
+            <el-button size="small" type="primary" @click="openAddDialog">加人</el-button>
+            <el-button size="small" type="primary" plain @click="openReplaceDialog">换人</el-button>
             <el-button size="small" @click="moveRangeBy(-30)">◀ 左移</el-button>
             <el-button size="small" @click="moveRangeBy(30)">右移 ▶</el-button>
             <el-select v-model="rangeSel.restEmployeeId" size="small" placeholder="员工" style="width: 110px">
@@ -148,7 +149,7 @@
             <el-button size="small" link @click="clearRangeSel">✕</el-button>
           </div>
           <div class="m-row m-header"><div class="m-ws-col">工作站</div><div v-for="slot in slots" :key="slot.key" class="m-slot-col" :title="slot.display"><span v-if="isHour(slot)">{{ slot.display }}</span></div></div>
-          <div v-for="ws in dailyWorkstations" :key="ws" class="m-row"><div class="m-ws-col">{{ ws }}<el-tag v-if="wsLowSkill(ws)" type="success" size="small" style="margin-left:4px">兼</el-tag></div><div v-for="(slot, si) in slots" :key="slot.key" class="m-slot-col" :class="[cellClass(ws, slot), { 'is-empty': dailyCellUsers(ws, slot).length === 0 }, (rangeSelected(ws, slot) || rangeSelSelected(ws, slot)) ? 'range-selected' : '', snapTarget.ws === ws && snapTarget.slotIdx === si ? 'snap-target' : '', batchSelected(ws, si) ? 'batch-selected' : '']" :data-slot="slot.key" :title="dailyCellUsers(ws, slot).length === 0 ? '点击添加人员，按住滑动可选多个时段' : '按住滑动可选择范围后修改（换人/平移/休息）'" @mousedown="onCellMouseDown(ws, slot, $event)" @click="onCellClick(ws, slot)"><div v-if="dailySlotIssues(ws, slot).length" class="gap-flag" :class="{ 'gap-flag-low': lowSkillGapIssues(ws, slot).length > 0 }" :title="gapTooltip(ws, slot)">{{ lowSkillGapIssues(ws, slot).length > 0 ? '兼' : '缺' }}</div><div v-for="emp in dailyCellUsers(ws, slot)" :key="emp.employeeId" class="emp-chip" :class="{ 'is-parttime': emp.isParttime === 1, 'pt-first': isFirstPartTimeChip(emp, ws, slot), 'is-break': inBreak(emp, slot), 'is-highlighted': highlightedEmpId === emp.employeeId }" :title="'单击高亮该员工当天全部色块；双击切换休息/上班；按住滑动可选择范围'" @click.stop="onChipClick(emp, slot)" @dblclick.stop="onChipDblClick(emp, slot)"><div class="emp-name">{{ emp.employeeName }}<span v-if="prefMatch(emp, ws)" class="pref-dot" title="与店长历史偏好一致" /> <span v-if="inBreak(emp, slot)" class="break-flag" :title="breakTip(emp)">休</span></div><div v-if="!inBreak(emp, slot)" class="emp-shift">{{ emp.shiftCode || '--' }}</div><div v-else class="emp-shift break-info" :title="breakTip(emp)">休息</div></div></div></div>
+          <div v-for="ws in dailyWorkstations" :key="ws" class="m-row"><div class="m-ws-col">{{ ws }}<el-tag v-if="wsLowSkill(ws)" type="success" size="small" style="margin-left:4px">兼</el-tag></div><div v-for="(slot, si) in slots" :key="slot.key" class="m-slot-col" :class="[cellClass(ws, slot), { 'is-empty': dailyCellUsers(ws, slot).length === 0 }, (rangeSelected(ws, slot) || rangeSelSelected(ws, slot)) ? 'range-selected' : '', snapTarget.ws === ws && snapTarget.slotIdx === si ? 'snap-target' : '', batchSelected(ws, si) ? 'batch-selected' : '']" :data-slot="slot.key" :title="dailyCellUsers(ws, slot).length === 0 ? '点击添加人员，按住滑动可选多个时段' : '按住滑动可选择范围后操作（加人/换人/平移/休息）'" @mousedown="onCellMouseDown(ws, slot, $event)" @click="onCellClick(ws, slot)"><div v-if="dailySlotIssues(ws, slot).length" class="gap-flag" :class="{ 'gap-flag-low': lowSkillGapIssues(ws, slot).length > 0 }" :title="gapTooltip(ws, slot)">{{ lowSkillGapIssues(ws, slot).length > 0 ? '兼' : '缺' }}</div><div v-for="emp in dailyCellUsers(ws, slot)" :key="emp.employeeId" class="emp-chip" :class="{ 'is-parttime': emp.isParttime === 1, 'pt-first': isFirstPartTimeChip(emp, ws, slot), 'is-break': inBreak(emp, slot), 'is-highlighted': highlightedEmpId === emp.employeeId }" :title="'单击高亮该员工当天全部色块；双击切换休息/上班；按住滑动可选择范围'" @click.stop="onChipClick(emp, slot)" @dblclick.stop="onChipDblClick(emp, slot)"><div class="emp-name">{{ emp.employeeName }}<span v-if="prefMatch(emp, ws)" class="pref-dot" title="与店长历史偏好一致" /> <span v-if="inBreak(emp, slot)" class="break-flag" :title="breakTip(emp)">休</span></div><div v-if="!inBreak(emp, slot)" class="emp-shift">{{ emp.shiftCode || '--' }}</div><div v-else class="emp-shift break-info" :title="breakTip(emp)">休息</div></div></div></div>
         </div></div>
       </div>
 
@@ -254,6 +255,9 @@
         <el-tag v-if="addSlotDialog.selected.isRestDay === 1" type="info" size="small" style="margin-right: 6px">当天休息 · 将自动转上班</el-tag>
         <el-tag v-if="addSlotDialog.selected.isParttime === 1" type="success" size="small" style="margin-right: 6px">兼职</el-tag>
         <el-tag size="small" style="margin-right: 6px">技能 {{ addSlotDialog.selected.skillScore }} 分</el-tag>
+      </div>
+      <div v-if="addSlotDialog.mode === 'add' && addSlotDialog.existingCount > 0" style="margin-top: 10px; font-size: 12px; color: #e6a23c">
+        所选范围现有 {{ addSlotDialog.existingCount }} 人次在岗，新员工将与其<b>并存</b>（不会替换现有人员）。
       </div>
       <div style="margin-top: 10px; font-size: 12px; color: #909399">
         仅添加所选时段（不挂班次模板）{{ currentPlan && currentPlan.status === 'PUBLISHED' ? '；已发布计划添加后会通知该员工' : '' }}。候选已按技能、兼职岗位限制、当天请假与已排班过滤。
@@ -1110,6 +1114,7 @@ const addSlotDialog = reactive({
   loading: false,
   saving: false,
   mode: 'add',      // add=空位加人；replace=范围换人（移除范围内现有安排）
+  existingCount: 0, // 所选范围现有在岗人次（add 模式下提示并存）
   wsName: '',
   wsId: null,
   timeSlots: [],   // 所选连续时段（'HH:mm' 数组）
@@ -1298,6 +1303,13 @@ function openReplaceDialog() {
   openAddSlot(rangeSel.ws, keys, 'replace')
 }
 
+// 加人：满员/有人时段也能再加人——新员工与现有人员并存（不替换）
+function openAddDialog() {
+  const keys = [...rangeSelKeys.value]
+  if (!keys.length) return
+  openAddSlot(rangeSel.ws, keys, 'add')
+}
+
 // 左移/右移 30 分钟
 async function moveRangeBy(offset) {
   const keys = [...rangeSelKeys.value]
@@ -1466,6 +1478,11 @@ async function openAddSlot(ws, slotKeys, mode = 'add') {
   addSlotDialog.timeSlots = slotKeys
   const startSlot = slots.value[slotIndex(slotKeys[0])]
   addSlotDialog.rangeText = `${startSlot.display} ~ ${slotEndDisplay(slotKeys[slotKeys.length - 1])}（${slotKeys.length} 段）`
+  // 所选范围现有在岗人次（add 模式下提示「并存」，replace 模式下提示「将被替换」）
+  addSlotDialog.existingCount = slotKeys.reduce((n, k) => {
+    const s = slots.value[slotIndex(k)]
+    return n + (s ? dailyCellUsers(ws, s).length : 0)
+  }, 0)
   addSlotDialog.workDate = dayDate.value
   addSlotDialog.employeeId = null
   addSlotDialog.candidates = []
