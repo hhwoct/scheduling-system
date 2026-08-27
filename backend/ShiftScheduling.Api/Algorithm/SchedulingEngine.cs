@@ -25,6 +25,17 @@ public sealed class SchedulingEngine
 
     public SchedulingOutput Execute(SchedulingInput input)
     {
+        // 输入净化：闭店空窗（打烊后 06:00 ~ 开门前 13:00）不参与任何需求计算。
+        // 班表时间轴为 13:00 开门 → 次日 06:00 打烊（05:30 为最后一格），06:00 起属于闭店时段；
+        // 若人数需求数据误配了该时段需求（历史曾导致 06:00 出现 D 临时班次、
+        // 界面不可见的幽灵时段），在此统一剔除，防止复发。
+        input = input with
+        {
+            StaffingRequirements = input.StaffingRequirements
+                .Where(r => r.TimeSlot < TimeSpan.FromHours(6) || r.TimeSlot >= TimeSpan.FromHours(13))
+                .ToList()
+        };
+
         var restDayAllocator = new RestDayAllocator();
         var shiftAllocator = new ShiftAllocator();
         var workstationAllocator = new WorkstationAllocator();
