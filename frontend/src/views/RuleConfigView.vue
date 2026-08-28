@@ -17,7 +17,7 @@
               :controls="false"
               size="small"
               :disabled="!isSystemAdmin"
-              style="width: 52px"
+              style="width: 50px"
               title="取值范围 0~1（0 = 只看技能，1 = 完全按店长偏好）"
               @update:model-value="v => (row.ruleValue = v != null ? String(v) : '')"
             />
