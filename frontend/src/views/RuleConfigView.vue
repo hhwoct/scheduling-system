@@ -19,11 +19,12 @@
                 :controls="false"
                 size="small"
                 :disabled="!isSystemAdmin"
+                class="center-input"
                 style="width: 65px"
                 title="取值范围 0~1（0 = 只看技能，1 = 完全按店长偏好）"
                 @update:model-value="v => (row.ruleValue = v != null ? String(v) : '')"
               />
-              <el-input v-else v-model="row.ruleValue" size="small" style="width: 65px" :disabled="!isSystemAdmin" />
+              <el-input v-else v-model="row.ruleValue" size="small" class="center-input" style="width: 65px" :disabled="!isSystemAdmin" />
             </div>
           </template>
         </el-table-column>
@@ -98,3 +99,10 @@ async function handleSave() {
 
 onMounted(loadData)
 </script>
+
+<style scoped>
+/* 值列输入框内部文字居中 */
+.center-input :deep(input) {
+  text-align: center;
+}
+</style>
