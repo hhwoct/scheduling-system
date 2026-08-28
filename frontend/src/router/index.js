@@ -88,6 +88,12 @@ const routes = [
         meta: { title: '人数需求' }
       },
       {
+        path: 'date-parameters',
+        name: 'DateParameters',
+        component: () => import('../views/DateParametersView.vue'),
+        meta: { title: '日期参数' }
+      },
+      {
         path: 'skill-matrix',
         name: 'SkillMatrix',
         component: () => import('../views/SkillMatrixView.vue'),

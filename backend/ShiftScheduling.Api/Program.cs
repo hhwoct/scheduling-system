@@ -10,6 +10,7 @@ using ShiftScheduling.Api.Algorithm;
 using ShiftScheduling.Api.Application.Ai;
 using ShiftScheduling.Api.Application.Auth;
 using ShiftScheduling.Api.Application.Common;
+using ShiftScheduling.Api.Application.DateParameters;
 using ShiftScheduling.Api.Application.Employees;
 using ShiftScheduling.Api.Application.EmployeeSkills;
 using ShiftScheduling.Api.Application.PeakHours;
@@ -45,6 +46,7 @@ builder.Services.AddScoped<SchedulingEngine>();
 builder.Services.AddScoped<IScheduleService, ScheduleService>();
 builder.Services.AddScoped<IPeakHourService, PeakHourService>();
 builder.Services.AddScoped<IStaffingRequirementService, StaffingRequirementService>();
+builder.Services.AddScoped<IDateParametersService, DateParametersService>();
 builder.Services.AddScoped<IAiConfigService, AiConfigService>();
 builder.Services.AddScoped<IDocumentAiService, DocumentAiService>();
 builder.Services.AddScoped<IPreferenceService, PreferenceService>();
@@ -857,6 +859,69 @@ api.MapGet("/staffing-requirements/preview", async (
         TotalMinHours = Math.Round(aggregates.Values.Sum(x => x.MinHours), 1),
         TotalIdealHours = Math.Round(aggregates.Values.Sum(x => x.IdealHours), 1)
     }, "获取人数需求预览成功");
+}).RequireAuthorization("AdminOnly");
+
+// ============ 日期参数（节假日/工作日配置） ============
+api.MapGet("/date-parameters", async (
+    string month,
+    ICurrentUser currentUser,
+    IDateParametersService dateParametersService,
+    CancellationToken cancellationToken) =>
+{
+    var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
+
+    if (!System.Text.RegularExpressions.Regex.IsMatch(month ?? string.Empty, @"^\d{4}-\d{2}$"))
+    {
+        throw new BusinessException("月份参数格式无效（应为 yyyy-MM）", "INVALID_MONTH");
+    }
+
+    var parts = month.Split('-');
+    var year = int.Parse(parts[0]);
+    var monthValue = int.Parse(parts[1]);
+    var result = await dateParametersService.GetMonthAsync(storeId, year, monthValue, cancellationToken);
+    return ApiResponse.Ok(result, "获取日期参数成功");
+}).RequireAuthorization("AdminOnly");
+
+api.MapPut("/date-parameters", async (
+    DateParameterSaveRequest request,
+    ICurrentUser currentUser,
+    IDateParametersService dateParametersService,
+    CancellationToken cancellationToken) =>
+{
+    if (request is null)
+    {
+        throw new BusinessException("请求参数不能为空", "INVALID_REQUEST");
+    }
+
+    var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
+    var result = await dateParametersService.SaveAsync(
+        storeId,
+        request.Items,
+        currentUser.UserId,
+        currentUser.Nickname ?? currentUser.Username,
+        cancellationToken);
+    return ApiResponse.Ok(result, "保存日期参数成功");
+}).RequireAuthorization("AdminOnly");
+
+api.MapPost("/date-parameters/generate", async (
+    DateParameterGenerateRequest request,
+    ICurrentUser currentUser,
+    IDateParametersService dateParametersService,
+    CancellationToken cancellationToken) =>
+{
+    if (request is null)
+    {
+        throw new BusinessException("请求参数不能为空", "INVALID_REQUEST");
+    }
+
+    var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
+    var result = await dateParametersService.GenerateAsync(
+        storeId,
+        request.Months,
+        currentUser.UserId,
+        currentUser.Nickname ?? currentUser.Username,
+        cancellationToken);
+    return ApiResponse.Ok(result, "补全日期参数成功");
 }).RequireAuthorization("AdminOnly");
 
 // ============ AI 文档识别 ============

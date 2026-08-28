@@ -27,6 +27,7 @@
 - **一键生成排班**：自动完成四阶段分配（休息日 → 班次 → 工作站 → 班中休息），支持周视图/月视图/日明细
 - **并发峰值需求计算**：按 (工作站, 时段) 并发需求排班，需求满足后多余员工（兼职）当天空闲
 - **人数需求矩阵**：平日/周末/节假日 × 最少/最好人数两档，甘特图编辑 + 框选批量 + 格子备注 + Excel 导入导出 + AI 识别导入
+- **日期参数（节假日/工作日）**：基础数据 → 日期参数页，按月日历在线维护 平日/周末/节假日，一键按规则补全未来 N 个月（已配置不覆盖），排班引擎严格按配置取日期类型
 - **连续工作约束**：执行 `max_consecutive_work_days` 规则，连续工作达上限自动强制休息打断
 - **班中休息**：30 分钟固定休息（<4 小时班不休息、避开高峰禁休时段），冗余不足借调顶岗（每人每天 ≤2 次），无人顶岗告警
 - **高峰禁休时段**：门店可配多条（默认 20:00-22:00），班中休息不得与其重叠
@@ -153,7 +154,7 @@ dotnet test
 curl http://localhost:5059/api/health
 ```
 
-## 已实现 API（共 82 个端点，详见 docs/接口文档.md v1.2）
+## 已实现 API（共 85 个端点，详见 docs/接口文档.md v1.3）
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
@@ -188,6 +189,9 @@ curl http://localhost:5059/api/health
 | GET | /api/staffing-requirements | 人数需求查询（三档 × 最少/最好） |
 | PUT | /api/staffing-requirements | 批量保存人数需求 |
 | GET | /api/staffing-requirements/preview | 周期需求预览 |
+| GET | /api/date-parameters | 查询某月日期参数（节假日/工作日） |
+| PUT | /api/date-parameters | 批量保存日期参数 |
+| POST | /api/date-parameters/generate | 按周末规则补全未来 N 个月 |
 | GET | /api/ai/config | 获取 AI 配置（Key 掩码） |
 | PUT | /api/ai/config | 保存 AI 配置 |
 | POST | /api/ai/test | AI 连通性测试 |
