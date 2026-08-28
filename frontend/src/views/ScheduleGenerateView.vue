@@ -138,6 +138,8 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { generateSchedule, getSchedules, publishSchedule, unpublishSchedule, deleteSchedule, getScheduleIssues, getAdjustmentSummary, getScheduleAdjustments, copyPreviousWeek, getDemandInsights } from '../api/schedules'
 import { getStaffingRequirementPreview } from '../api/staffingRequirements'
+import { getWorkstations } from '../api/workstations'
+import { getShiftTemplates } from '../api/shiftTemplates'
 
 function getToday() {
   const d = new Date()
@@ -304,12 +306,24 @@ const ADJUST_LABELS = {
   MOVE_SEGMENT: '移动工作段',
   SET_REST: '改为休息',
   SET_WORK: '恢复上班',
-  ADJUST: '调整'
+  ADD_SLOT: '空位加人',
+  REMOVE_SLOT: '撤回加人',
+  MOVE_RANGE: '范围平移',
+  REPLACE_SLOT: '范围换人',
+  CLEAR_RANGE: '取消排班',
+  COPY_PREVIOUS: '复制上周',
+  ADJUST: '手动调整'
 }
 const ADJUST_TAG_TYPES = {
   MOVE_SEGMENT: 'warning',
   SET_REST: 'danger',
   SET_WORK: 'success',
+  ADD_SLOT: 'success',
+  REMOVE_SLOT: 'danger',
+  MOVE_RANGE: 'warning',
+  REPLACE_SLOT: 'warning',
+  CLEAR_RANGE: 'danger',
+  COPY_PREVIOUS: 'info',
   ADJUST: 'info'
 }
 const actionLabel = (t) => ADJUST_LABELS[t] || t
@@ -320,16 +334,107 @@ function formatAdjTime(t) {
   return String(t).replace('T', ' ').slice(0, 19)
 }
 
-function describeAdjustment(row) {
-  if (row.actionType === 'MOVE_SEGMENT') {
+// 工作站 / 班次名称映射（打开调整记录时加载，用于把 JSON 里的 ID 翻译成人话）
+const wsMap = ref({})
+const shiftMap = ref({})
+async function ensureDicts() {
+  if (Object.keys(wsMap.value).length === 0) {
     try {
-      const before = JSON.parse(row.beforeJson || '{}')
-      const after = JSON.parse(row.afterJson || '{}')
-      return (before.WorkstationId ? '站' + before.WorkstationId + ' ' : '') + (before.TimeSlot || '') +
-        ' → ' + (after.WorkstationId ? '站' + after.WorkstationId + ' ' : '') + (after.TimeSlot || '')
-    } catch { return row.afterJson || '' }
+      const ws = await getWorkstations({ status: 1 })
+      wsMap.value = Object.fromEntries((ws || []).map(x => [x.id, x.name]))
+      const shifts = await getShiftTemplates()
+      shiftMap.value = Object.fromEntries((shifts || []).map(x => [x.id, x.code || x.name]))
+    } catch { /* 字典加载失败时退回显示 ID */ }
   }
-  return row.afterJson || ''
+}
+const wsName = (id) => (id != null && wsMap.value[id]) || (id != null ? `站${id}` : '')
+const shiftCode = (id) => (id != null && shiftMap.value[id]) || (id != null ? `班次${id}` : '')
+
+// 半小时段数 → 结束时间（timeSlot 为起点）
+function endOfSlots(start, slotCount) {
+  if (!start || !slotCount) return ''
+  const [h, m] = String(start).split(':').map(Number)
+  const total = h * 60 + m + 30 * slotCount
+  const hh = String(Math.floor(total / 60) % 24).padStart(2, '0')
+  const mm = String(total % 60).padStart(2, '0')
+  return `${hh}:${mm}`
+}
+
+function describeAdjustment(row) {
+  try {
+    const before = row.beforeJson ? JSON.parse(row.beforeJson) : null
+    const after = row.afterJson ? JSON.parse(row.afterJson) : null
+    const emp = row.employeeName || ''
+    const ts = row.timeSlot ? String(row.timeSlot).slice(0, 5) : ''
+
+    switch (row.actionType) {
+      case 'MOVE_SEGMENT': {
+        // 移动工作段：从 站A 16:00 → 站B 14:30（换站/换时间）
+        const b = before || {}
+        const a = after || {}
+        const bWs = wsName(b.WorkstationId)
+        const aWs = wsName(a.WorkstationId)
+        const bT = (b.TimeSlot || '').slice(0, 5)
+        const aT = (a.TimeSlot || '').slice(0, 5)
+        if (bWs === aWs) return `${emp} 在${aWs}的工作段 ${bT} → ${aT}`
+        return `${emp} 工作段：${bWs} ${bT} → ${aWs} ${aT}`
+      }
+      case 'SET_REST':
+        return `${emp} ${ts} 起改为休息（半小时）`
+      case 'SET_WORK':
+        return `${emp} ${ts} 恢复上班`
+      case 'ADD_SLOT': {
+        const a = after || {}
+        const start = (a.StartTime || ts || '').slice(0, 5)
+        const end = (a.EndTime || endOfSlots(start, a.SlotCount) || '').slice(0, 5)
+        return `${emp} 空位加人：${wsName(a.WorkstationId)} ${start}-${end}（${a.SlotCount ?? '?'} 段）`
+      }
+      case 'REMOVE_SLOT': {
+        const b = before || {}
+        return `${emp} 撤回加人：${wsName(b.WorkstationId)} ${ts} 起 ${b.SlotCount ?? '?'} 段`
+      }
+      case 'MOVE_RANGE': {
+        const b = before || {}
+        const a = after || {}
+        const slots = (b.TimeSlots || []).map(s => String(s).slice(0, 5))
+        const range = slots.length ? `${slots[0]}-${slots[slots.length - 1]}` : ''
+        const dir = a.OffsetMinutes > 0 ? `右移 ${a.OffsetMinutes} 分钟` : `左移 ${-a.OffsetMinutes} 分钟`
+        return `${wsName(b.WorkstationId)} ${range} 共 ${a.MovedRows ?? slots.length} 条明细，整体${dir}`
+      }
+      case 'REPLACE_SLOT': {
+        const b = before || {}
+        const a = after || {}
+        const removed = (b.RemovedEmployeeIds || []).length
+        return `${wsName(a.WorkstationId)} ${ts} 起 ${a.SlotCount ?? '?'} 段：原 ${removed} 人 → 换成 ${emp}`
+      }
+      case 'CLEAR_RANGE': {
+        const b = before || {}
+        const slots = (b.TimeSlots || []).map(s => String(s).slice(0, 5))
+        const range = slots.length ? `${slots[0]}-${slots[slots.length - 1]}` : ts
+        return `取消排班：${wsName(b.WorkstationId)} ${range}（${(b.AffectedEmployeeIds || []).length} 人受影响）`
+      }
+      case 'COPY_PREVIOUS': {
+        const a = after || {}
+        return `从「${a.SourcePlanName || '上周排班'}」复制，按星期几对齐，共 ${a.CopiedDays ?? '?'} 条`
+      }
+      case 'ADJUST': {
+        const a = after || {}
+        const shift = shiftCode(a.ShiftTemplateId)
+        const ws = wsName(a.WorkstationId)
+        const parts = [shift, ws].filter(Boolean)
+        return `${emp} ${ts}：${parts.join(' · ') || '调整安排'}`
+      }
+      default:
+        // 未知类型：尝试显示 afterJson 中的关键字段，避免直接抛原始 JSON
+        if (after && typeof after === 'object') {
+          const keys = Object.keys(after).filter(k => !['EmployeeId', 'WorkDate', 'TimeSlot'].includes(k))
+          return keys.map(k => `${k}=${typeof after[k] === 'object' ? JSON.stringify(after[k]) : after[k]}`).join('，') || row.afterJson || ''
+        }
+        return row.afterJson || ''
+    }
+  } catch {
+    return row.afterJson || ''
+  }
 }
 
 async function loadAdjustments(page) {
@@ -351,6 +456,7 @@ function openAdjustments(row) {
   adjustDialog.planId = row.id
   adjustDialog.planName = row.planName
   adjustDialog.visible = true
+  ensureDicts()
   loadAdjustments(1)
 }
 
