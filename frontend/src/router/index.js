@@ -76,12 +76,6 @@ const routes = [
         meta: { title: '规则配置' }
       },
       {
-        path: 'peak-hours',
-        name: 'PeakHours',
-        component: () => import('../views/PeakHoursView.vue'),
-        meta: { title: '高峰时段' }
-      },
-      {
         path: 'staffing-requirements',
         name: 'StaffingRequirements',
         component: () => import('../views/StaffingRequirementsView.vue'),

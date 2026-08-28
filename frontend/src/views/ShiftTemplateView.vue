@@ -37,6 +37,9 @@
       </div>
     </el-card>
 
+    <!-- 高峰禁休时段设置（原独立页面迁入：泳道图下方、班次表格上方） -->
+    <PeakHoursSection />
+
     <el-card>
       <el-table :data="list" v-loading="loading" border stripe>
         <el-table-column prop="code" label="班次" width="80" />
@@ -102,6 +105,7 @@
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getShiftTemplates, updateShiftTemplate } from '../api/shiftTemplates'
+import PeakHoursSection from '../components/PeakHoursSection.vue'
 
 const loading = ref(false)
 const list = ref([])
