@@ -17,7 +17,7 @@
     init_shift_mvp.sql         建库建表 + 模拟数据
     migrations/                增量迁移脚本
     backups/                   备份文件
-  docs/                    项目文档（交接/功能清单/接口文档/测试计划/测试报告/集成测试报告/安全审查）
+  docs/                    项目文档（交接/功能清单/接口文档/测试计划/测试报告/集成测试报告/全量测试报告/排班调整交互与偏好学习设计/安全审查）
   README.md                项目启动说明
 ```
 
@@ -34,6 +34,9 @@
 - **合理度趋势**：`/schedules/{planId}/rationality` 基于真实覆盖÷需求计算每日合理度（修复后 87%→97%，无人顶岗休息时段扣减覆盖）
 - **问题诊断**：岗位缺口（含低技能兼职建议）/技能不匹配/工时超限/连续工作超限
 - **发布确认**：存在 ERROR 问题时二次确认强制发布（force=true）
+- **排班调整交互**（08-24/25）：日明细滑动选择范围 → 换人/左右平移/按人改休/取消排班；空位加人/撤加人（草稿与已发布均可，已发布自动通知员工）、满员行加人并存；全部操作支持撤销条 + Ctrl+Z/Cmd+Z 回退；同一员工当天泳道对齐固定行展示
+- **发布前调整摘要 + 取消发布**：发布前对比生成快照差异（系统将学习什么）；已发布计划可退回草稿并通知员工
+- **排班偏好学习**（默认关闭）：以店长手动调整后发布的排班为认可样本聚合偏好，`preference_learning_weight` 0-1 权重混合技能分与偏好分；管理端「偏好学习」页查看统计/矩阵/趋势，可重建聚合
 
 ### 员工与权限
 - **全职 + 兼职**：员工标记 `is_parttime`，兼职仅可分配低技能岗位（保洁/咨客/传送/服务）
@@ -44,10 +47,10 @@
 - **员工自助**：员工端查看班表（含班中休息与「我顶岗的记录」）、提交请假、申请换班、**提前返岗**（缩短已批准请假）
 
 ### 安全加固（代码审查 P0/P1）
-- 密码重置 OTP 验证码 + 按 IP 限流 + 失败锁定
+- 忘记密码「员工姓名 + 注册手机号」双验证直接重置（无短信/OTP 通道）+ 按 IP 限流 + 失败锁定（按姓名维度）；登录后右上角「修改密码」自助改密（手机号验证、旧密码错误固定时延、同密码拒绝）
 - JWT 有效期默认 1440 分钟（24 小时，可在 Jwt:ExpireMinutes 配置 5~1440），前端另有 15 分钟无操作自动登出
 - JWT 绑定 password_version：改密码后旧 Token 全部失效
-- 员工手机号脱敏与格式校验；OTP 验证码不进响应体（生产不落日志）
+- 员工手机号脱敏与格式校验；初始密码统一 `工号@123456`（已知明文，首登后须修改）
 - 审计日志事务原子化
 - 多租户 StoreId 隔离 + 并发唯一索引
 
@@ -150,14 +153,14 @@ dotnet test
 curl http://localhost:5059/api/health
 ```
 
-## 已实现 API（共 66 个端点，详见 docs/接口文档.md v1.1）
+## 已实现 API（共 82 个端点，详见 docs/接口文档.md v1.2）
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET | /api/health | 健康检查（无需认证） |
 | POST | /api/auth/login | 登录（限流 5 次/分） |
-| POST | /api/auth/send-reset-otp | 发送密码重置验证码（验证码不进响应体） |
-| POST | /api/auth/forgot-password | 忘记密码重置 |
+| POST | /api/auth/forgot-password | 忘记密码（姓名+手机号双验证重置） |
+| POST | /api/auth/change-password | 登录后自助修改密码（旧 Token 全失效） |
 | GET | /api/auth/me | 当前用户（需登录） |
 | GET | /api/stores/current | 当前门店（需登录） |
 | GET | /api/dashboard/stats | 仪表盘统计（AdminOnly） |
@@ -203,6 +206,22 @@ curl http://localhost:5059/api/health
 | PUT | /api/schedules/{planId}/move-segment | 拖动移动工作段 |
 | PUT | /api/schedules/{planId}/slot-status | 批量设置半小时休息状态 |
 | POST | /api/schedules/{planId}/publish | 发布排班（force 强制） |
+| POST | /api/schedules/{planId}/unpublish | 取消发布（退回草稿并通知员工） |
+| GET | /api/schedules/{planId}/add-candidates | 空位加人候选 |
+| PUT | /api/schedules/{planId}/add-slot | 空位加人（草稿/已发布） |
+| PUT | /api/schedules/{planId}/remove-slot | 撤加人（已发布自动通知） |
+| PUT | /api/schedules/{planId}/replace-slot | 范围换人（仅草稿） |
+| PUT | /api/schedules/{planId}/move-range | 范围平移（仅草稿，±30 分钟） |
+| PUT | /api/schedules/{planId}/clear-range | 取消排班（仅草稿） |
+| POST | /api/schedules/{planId}/copy-previous | 复制上周（仅草稿，按星期几对齐） |
+| GET | /api/schedules/{planId}/adjustments | 调整明细列表 |
+| GET | /api/schedules/{planId}/adjustment-summary | 发布前调整摘要 |
+| GET | /api/schedules/{planId}/demand-insights | 需求联动建议 |
+| GET | /api/preferences/stats | 偏好统计（AdminOnly） |
+| GET | /api/preferences/matrix | 偏好矩阵（AdminOnly） |
+| GET | /api/preferences/top | 偏好排行（AdminOnly） |
+| GET | /api/preferences/trends | 偏好趋势（AdminOnly） |
+| POST | /api/preferences/rebuild | 重建偏好聚合（AdminOnly） |
 | POST | /api/leave-requests | 提交请假 |
 | GET | /api/leave-requests/mine | 我的请假列表 |
 | GET | /api/leave-requests/review | 请假审批列表 |
@@ -235,3 +254,6 @@ curl http://localhost:5059/api/health
 - [x] 步骤 13（08-18）：人数需求三档两档（平日/周末/节假日 × 最少/最好）、人数需求甘特图页、通岗、技能矩阵总览、AI 文档识别（DeepSeek）、按需临时班次 D1/D2
 - [x] 步骤 14（08-18/19）：二/三轮代码审查修复、引擎修复（选站丢员工、合理度 87%→97%、需求上限、OTP 绑定手机号）、测试套件扩展至 186 用例、WORKDAY 需求回填迁移
 - [x] 步骤 15（08-25）：店长工作站（BOSS + 店长班 S10，E001 专职化、E002/E003 副手顶班）、残差补班段式裁剪修复、第四轮审查修复（员工编辑手机号脱敏回环、FORBIDDEN→403、超管用户名配置化、排班查看次日缺口漏标）、测试套件修复（编译恢复 + 190 用例全绿）
+- [x] 步骤 16（08-24/25）：排班偏好学习（店长习惯学习，默认关闭、0-1 连续权重）+ 排班调整交互 P0~P2（撤销条/Ctrl+Z、发布前调整摘要、调整明细落库、需求联动建议、复制上周、批量改休、偏好角标）+ 范围操作接口（add/remove/replace-slot、move/clear-range）+ 取消发布 + 侧边栏可收起
+- [x] 步骤 17（08-25）：自助修改密码（安全审查 P1-1，旧 Token 全失效）+ 忘记密码改「姓名+手机号」双验证 + 员工初始密码统一 `工号@123456` + 第三/四轮全项目审查修复（234 测试全绿 + E2E）
+- [x] 步骤 18（08-27）：日明细员工泳道对齐 + 满员行加人 + 通知「一键已读」口径修复（read-all）+ 06:00 幽灵时段修复（引擎输入净化 + 迁移清理，235 测试全绿）+ 全量测试报告（234 单测 + 34 接口冒烟 + 56 浏览器 E2E 全部通过）
