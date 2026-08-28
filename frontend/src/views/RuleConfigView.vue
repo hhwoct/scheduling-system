@@ -6,22 +6,25 @@
         <el-table-column prop="ruleKey" label="规则 Key" width="320" show-overflow-tooltip />
         <el-table-column label="值" width="75" header-align="center">
           <template #default="{ row }">
-            <!-- 偏好学习权重：0~1 两位小数数字输入，禁止任意字符串 -->
-            <el-input-number
-              v-if="row.ruleKey === 'preference_learning_weight'"
-              :model-value="Number(row.ruleValue)"
-              :min="0"
-              :max="1"
-              :step="0.1"
-              :precision="2"
-              :controls="false"
-              size="small"
-              :disabled="!isSystemAdmin"
-              style="width: 50px"
-              title="取值范围 0~1（0 = 只看技能，1 = 完全按店长偏好）"
-              @update:model-value="v => (row.ruleValue = v != null ? String(v) : '')"
-            />
-            <el-input v-else v-model="row.ruleValue" size="small" style="width: 50px" :disabled="!isSystemAdmin" />
+            <!-- 统一 65px 并水平居中 -->
+            <div style="display: flex; justify-content: center">
+              <!-- 偏好学习权重：0~1 两位小数数字输入，禁止任意字符串 -->
+              <el-input-number
+                v-if="row.ruleKey === 'preference_learning_weight'"
+                :model-value="Number(row.ruleValue)"
+                :min="0"
+                :max="1"
+                :step="0.1"
+                :precision="2"
+                :controls="false"
+                size="small"
+                :disabled="!isSystemAdmin"
+                style="width: 65px"
+                title="取值范围 0~1（0 = 只看技能，1 = 完全按店长偏好）"
+                @update:model-value="v => (row.ruleValue = v != null ? String(v) : '')"
+              />
+              <el-input v-else v-model="row.ruleValue" size="small" style="width: 65px" :disabled="!isSystemAdmin" />
+            </div>
           </template>
         </el-table-column>
         <el-table-column prop="remark" label="说明" />
