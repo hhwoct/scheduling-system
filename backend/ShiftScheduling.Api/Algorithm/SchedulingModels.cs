@@ -68,14 +68,23 @@ public sealed record SchedulingInput(
     IReadOnlyDictionary<long, bool> LowSkillWorkstationIds,
     IReadOnlyDictionary<long, string> WarnOnlyGapWorkstations,
     int DefaultMonthlyRestDays,
-    decimal MaxWeeklyHours,
     int MaxConsecutiveWorkDays,
     int MinRestHoursAfterNightShift,
     decimal MinDailyWorkHours,
     IReadOnlyDictionary<(long EmployeeId, string DayType), IReadOnlyDictionary<string, int>>? PreferenceShiftScores = null,
     IReadOnlyDictionary<(long EmployeeId, string DayType), IReadOnlyDictionary<long, int>>? PreferenceWsScores = null,
     IReadOnlyDictionary<(long EmployeeId, string DayType), int>? PreferenceRestScores = null,
-    decimal PreferenceWeight = 0m);
+    decimal PreferenceWeight = 0m,
+    decimal MaxDailyWorkHours = 0m,
+    IReadOnlyDictionary<string, decimal>? MaxDailyWorkHoursByDepartment = null)
+{
+    /// <summary>单日工时上限：优先岗位配置，缺省回退全局默认（0 = 不限制）。</summary>
+    public decimal GetMaxDailyWorkHours(string department)
+        => MaxDailyWorkHoursByDepartment is not null
+           && MaxDailyWorkHoursByDepartment.TryGetValue(department, out var v)
+            ? v
+            : MaxDailyWorkHours;
+}
 
 public sealed record RestDayAssignment(long EmployeeId, DateOnly WorkDate);
 

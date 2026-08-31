@@ -20,6 +20,9 @@ public sealed class EmployeeEntity
 
     public decimal MaxWeeklyHours { get; set; } = 48;
 
+    /// <summary>周工时上限是否跟随全局规则（1=跟随默认，0=个人自定义）。</summary>
+    public int WeeklyHoursFollowDefault { get; set; } = 1;
+
     public int Status { get; set; }
 
     public int IsParttime { get; set; }

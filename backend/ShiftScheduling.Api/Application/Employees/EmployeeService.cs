@@ -59,6 +59,7 @@ public sealed class EmployeeService : IEmployeeService
                 x.HireDate,
                 x.PrimaryPosition,
                 x.MaxWeeklyHours,
+                x.WeeklyHoursFollowDefault,
                 x.IsParttime,
                 x.Status))
             .ToListAsync(cancellationToken))
@@ -102,6 +103,11 @@ public sealed class EmployeeService : IEmployeeService
             throw new BusinessException($"员工工号 {normalizedEmployeeNo} 已存在", "EMPLOYEE_NO_EXISTS");
         }
 
+        var followDefault = request.WeeklyHoursFollowDefault == 1;
+        var effectiveMaxWeeklyHours = followDefault
+            ? await GetGlobalMaxWeeklyHoursAsync(storeId, cancellationToken)
+            : request.MaxWeeklyHours;
+
         var employee = new EmployeeEntity
         {
             StoreId = storeId,
@@ -111,7 +117,8 @@ public sealed class EmployeeService : IEmployeeService
             Department = request.Department.Trim(),
             HireDate = request.HireDate,
             PrimaryPosition = request.PrimaryPosition,
-            MaxWeeklyHours = request.MaxWeeklyHours,
+            MaxWeeklyHours = effectiveMaxWeeklyHours,
+            WeeklyHoursFollowDefault = followDefault ? 1 : 0,
             Status = 1,
             IsParttime = 0,
             CreatedAt = DateTime.UtcNow,
@@ -131,7 +138,7 @@ public sealed class EmployeeService : IEmployeeService
             "EMPLOYEE",
             null,
             null,
-            System.Text.Json.JsonSerializer.Serialize(new { employee.EmployeeNo, employee.Name, employee.Department }),
+            System.Text.Json.JsonSerializer.Serialize(new { employee.EmployeeNo, employee.Name, employee.Department, employee.MaxWeeklyHours, employee.WeeklyHoursFollowDefault }),
             "新增员工",
             DateTime.UtcNow);
 
@@ -186,7 +193,7 @@ public sealed class EmployeeService : IEmployeeService
             throw new BusinessException($"员工工号 {normalizedEmployeeNo} 已被其他员工使用", "EMPLOYEE_NO_EXISTS");
         }
 
-        var beforeContent = System.Text.Json.JsonSerializer.Serialize(new { employee.EmployeeNo, employee.Name, employee.Department, employee.MaxWeeklyHours });
+        var beforeContent = System.Text.Json.JsonSerializer.Serialize(new { employee.EmployeeNo, employee.Name, employee.Department, employee.MaxWeeklyHours, employee.WeeklyHoursFollowDefault });
 
         employee.EmployeeNo = normalizedEmployeeNo;
         employee.Name = request.Name.Trim();
@@ -194,7 +201,11 @@ public sealed class EmployeeService : IEmployeeService
         employee.Department = request.Department.Trim();
         employee.HireDate = request.HireDate;
         employee.PrimaryPosition = request.PrimaryPosition;
-        employee.MaxWeeklyHours = request.MaxWeeklyHours;
+        var followDefault = request.WeeklyHoursFollowDefault == 1;
+        employee.MaxWeeklyHours = followDefault
+            ? await GetGlobalMaxWeeklyHoursAsync(storeId, cancellationToken)
+            : request.MaxWeeklyHours;
+        employee.WeeklyHoursFollowDefault = followDefault ? 1 : 0;
         employee.UpdatedAt = DateTime.UtcNow;
 
         // 修复：审计与业务数据在同一事务内提交
@@ -207,7 +218,7 @@ public sealed class EmployeeService : IEmployeeService
             "EMPLOYEE",
             employee.Id,
             beforeContent,
-            System.Text.Json.JsonSerializer.Serialize(new { employee.EmployeeNo, employee.Name, employee.Department, employee.MaxWeeklyHours }),
+            System.Text.Json.JsonSerializer.Serialize(new { employee.EmployeeNo, employee.Name, employee.Department, employee.MaxWeeklyHours, employee.WeeklyHoursFollowDefault }),
             "编辑员工",
             DateTime.UtcNow);
 
@@ -283,7 +294,7 @@ public sealed class EmployeeService : IEmployeeService
             throw new BusinessException("部门不能为空", "INVALID_EMPLOYEE");
         }
 
-        if (request.MaxWeeklyHours <= 0 || request.MaxWeeklyHours > 168)
+        if (request.WeeklyHoursFollowDefault == 0 && (request.MaxWeeklyHours <= 0 || request.MaxWeeklyHours > 168))
         {
             throw new BusinessException("最大周工时必须在 1 到 168 之间", "INVALID_EMPLOYEE");
         }
@@ -306,10 +317,28 @@ public sealed class EmployeeService : IEmployeeService
             employee.HireDate,
             employee.PrimaryPosition,
             employee.MaxWeeklyHours,
+            employee.WeeklyHoursFollowDefault,
             employee.IsParttime,
             employee.Status,
             employee.CreatedAt,
             employee.UpdatedAt);
+
+    /// <summary>
+    /// 读取门店当前「最大周工时」全局规则值；缺省或非法时回退 48。
+    /// </summary>
+    private async Task<decimal> GetGlobalMaxWeeklyHoursAsync(long storeId, CancellationToken cancellationToken)
+    {
+        var ruleValue = await _dbContext.RuleConfigs
+            .AsNoTracking()
+            .Where(x => x.StoreId == storeId && x.RuleKey == "max_weekly_hours" && x.Status == 1)
+            .Select(x => x.RuleValue)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        return decimal.TryParse(ruleValue, System.Globalization.NumberStyles.Number,
+                   System.Globalization.CultureInfo.InvariantCulture, out var value) && value > 0
+            ? value
+            : 48m;
+    }
 
     /// <summary>
     /// 判断手机号是否为脱敏值（MaskPhone 的输出含 ****）。

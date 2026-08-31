@@ -92,6 +92,13 @@ if (string.IsNullOrWhiteSpace(superAdminUsername))
     superAdminUsername = "admin";
 }
 
+// 店长账号用户名（请假/换班审批等仅该账号可用，与角色无关；须与前端 STORE_MANAGER_USERNAME 一致）
+var storeManagerUsername = builder.Configuration["StoreManagerUsername"]?.Trim();
+if (string.IsNullOrWhiteSpace(storeManagerUsername))
+{
+    storeManagerUsername = "E001";
+}
+
 var signingKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtOptions.SigningKey));
 
 builder.Services
@@ -868,6 +875,12 @@ api.MapGet("/date-parameters", async (
     IDateParametersService dateParametersService,
     CancellationToken cancellationToken) =>
 {
+    // 日期参数仅超管账号可维护（与审计日志一致；用户名由 SuperAdminUsername 配置）
+    if (currentUser.Username != superAdminUsername)
+    {
+        throw new BusinessException("没有权限执行此操作", "FORBIDDEN");
+    }
+
     var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
 
     if (!System.Text.RegularExpressions.Regex.IsMatch(month ?? string.Empty, @"^\d{4}-\d{2}$"))
@@ -880,7 +893,7 @@ api.MapGet("/date-parameters", async (
     var monthValue = int.Parse(parts[1]);
     var result = await dateParametersService.GetMonthAsync(storeId, year, monthValue, cancellationToken);
     return ApiResponse.Ok(result, "获取日期参数成功");
-}).RequireAuthorization("AdminOnly");
+}).RequireAuthorization();
 
 api.MapPut("/date-parameters", async (
     DateParameterSaveRequest request,
@@ -893,6 +906,12 @@ api.MapPut("/date-parameters", async (
         throw new BusinessException("请求参数不能为空", "INVALID_REQUEST");
     }
 
+    // 日期参数仅超管账号可维护（与审计日志一致；用户名由 SuperAdminUsername 配置）
+    if (currentUser.Username != superAdminUsername)
+    {
+        throw new BusinessException("没有权限执行此操作", "FORBIDDEN");
+    }
+
     var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
     var result = await dateParametersService.SaveAsync(
         storeId,
@@ -901,7 +920,7 @@ api.MapPut("/date-parameters", async (
         currentUser.Nickname ?? currentUser.Username,
         cancellationToken);
     return ApiResponse.Ok(result, "保存日期参数成功");
-}).RequireAuthorization("AdminOnly");
+}).RequireAuthorization();
 
 api.MapPost("/date-parameters/generate", async (
     DateParameterGenerateRequest request,
@@ -914,6 +933,12 @@ api.MapPost("/date-parameters/generate", async (
         throw new BusinessException("请求参数不能为空", "INVALID_REQUEST");
     }
 
+    // 日期参数仅超管账号可维护（与审计日志一致；用户名由 SuperAdminUsername 配置）
+    if (currentUser.Username != superAdminUsername)
+    {
+        throw new BusinessException("没有权限执行此操作", "FORBIDDEN");
+    }
+
     var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
     var result = await dateParametersService.GenerateAsync(
         storeId,
@@ -922,7 +947,7 @@ api.MapPost("/date-parameters/generate", async (
         currentUser.Nickname ?? currentUser.Username,
         cancellationToken);
     return ApiResponse.Ok(result, "补全日期参数成功");
-}).RequireAuthorization("AdminOnly");
+}).RequireAuthorization();
 
 // ============ AI 文档识别 ============
 api.MapGet("/ai/config", async (
@@ -2127,7 +2152,8 @@ api.MapGet("/leave-requests/review", async (
     string? status = null,
     CancellationToken ct = default) =>
 {
-    if (currentUser.Role == "EMPLOYEE")
+    // 请假审批仅店长账号可用（按用户名判定，与角色无关）
+    if (currentUser.Username != storeManagerUsername)
         throw new BusinessException("无权限", "FORBIDDEN");
 
     var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
@@ -2164,7 +2190,8 @@ api.MapPut("/leave-requests/{id:long}/review", async (
         throw new BusinessException("请求参数不能为空", "INVALID_REQUEST");
     }
 
-    if (currentUser.Role == "EMPLOYEE")
+    // 请假审批仅店长账号可用（按用户名判定，与角色无关）
+    if (currentUser.Username != storeManagerUsername)
         throw new BusinessException("无权限", "FORBIDDEN");
 
     var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
@@ -2413,7 +2440,8 @@ api.MapGet("/shift-swaps/review", async (
     string? status = null,
     CancellationToken ct = default) =>
 {
-    if (currentUser.Role == "EMPLOYEE")
+    // 换班审批仅店长账号可用（按用户名判定，与角色无关）
+    if (currentUser.Username != storeManagerUsername)
         throw new BusinessException("无权限", "FORBIDDEN");
 
     var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
@@ -2451,7 +2479,8 @@ api.MapPut("/shift-swaps/{id:long}/review", async (
         throw new BusinessException("请求参数不能为空", "INVALID_REQUEST");
     }
 
-    if (currentUser.Role == "EMPLOYEE")
+    // 换班审批仅店长账号可用（按用户名判定，与角色无关）
+    if (currentUser.Username != storeManagerUsername)
         throw new BusinessException("无权限", "FORBIDDEN");
 
     var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");

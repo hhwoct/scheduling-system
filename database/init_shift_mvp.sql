@@ -71,6 +71,7 @@ CREATE TABLE employees (
   hire_date DATE NULL,
   primary_position VARCHAR(100) NULL,
   max_weekly_hours DECIMAL(5,2) NOT NULL DEFAULT 48.00,
+  weekly_hours_follow_default TINYINT NOT NULL DEFAULT 1 COMMENT '周工时上限是否跟随全局规则（1=跟随默认，0=个人自定义）',
   is_parttime TINYINT NOT NULL DEFAULT 0 COMMENT '是否兼职人员',
   is_generalist TINYINT NOT NULL DEFAULT 0 COMMENT '是否通岗（楼面低技能岗位通用）',
   status TINYINT NOT NULL DEFAULT 1,
@@ -512,14 +513,15 @@ WHERE e.store_id = 1 AND w.store_id = 1
 
 INSERT INTO rule_configs (store_id, rule_key, rule_name, rule_value, value_type, remark, status) VALUES
 (1, 'default_monthly_rest_days', '默认每月休息天数', '4', 'number', 'MVP 默认每人每月休息 4 天', 1),
-(1, 'max_weekly_hours', '最大周工时', '48', 'number', '默认最大周工时', 1),
+(1, 'max_weekly_hours', '最大周工时', '48', 'number', '默认最大周工时（修改后自动同步「跟随默认」的员工）', 1),
 (1, 'max_consecutive_work_days', '最大连续工作天数', '6', 'number', '连续工作超过该天数产生预警', 1),
 (1, 'min_rest_hours_after_night_shift', '夜班后最小休息小时数', '10', 'number', '跨天夜班后的休息要求', 1),
 (1, 'skill_match_weight', '技能匹配权重', '40', 'number', '算法软约束权重', 1),
 (1, 'work_hour_balance_weight', '工时均衡权重', '30', 'number', '算法软约束权重', 1),
 (1, 'preference_weight', '员工偏好权重', '10', 'number', 'MVP 预留', 1),
 (1, 'station_continuity_weight', '工作站连续性权重', '20', 'number', '减少同日频繁换岗', 1),
-(1, 'min_daily_work_hours', '正式员工每日最低工时', '6.5', 'number', '正式员工上班当天工时不得低于该值（小时），0 表示不限制', 1);
+(1, 'min_daily_work_hours', '正式员工每日最低工时', '6.5', 'number', '正式员工上班当天工时不得低于该值（小时），0 表示不限制', 1),
+(1, 'max_daily_work_hours', '单日最大工时', '12', 'json', '按岗位设置单日工时上限（小时），0 表示不限制', 1);
 
 -- 8 月日期参数。week_day 存 MySQL DAYOFWEEK 值（Sunday=1，Saturday=7）。
 -- 业务口径（与 20260818 及算法 RestDayAllocator.IsPeakDay 一致）：

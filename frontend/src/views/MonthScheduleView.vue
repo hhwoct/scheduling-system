@@ -194,7 +194,7 @@ async function selectDate(date) {
       getDailyView(planId.value, date),
       getScheduleIssues(planId.value)
     ])
-    dailyRows.value = res || []
+    dailyRows.value = res?.rows || []
     dailyIssues.value = iss || []
   } catch (e) {
     dailyRows.value = []

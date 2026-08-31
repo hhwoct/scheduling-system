@@ -69,20 +69,99 @@ public sealed class ShiftAllocatorTests
     [Fact]
     public void Allocate_DoesNotExceedWeeklyHourLimit()
     {
-        // 每个班次 10 小时，input 级周上限 20 小时 → 最多 2 个班次/周
+        // 每个班次 10 小时，员工级周上限 20 小时 → 最多 2 个班次/周
         var shift = AlgorithmTestData.Shift(1, "S4", "长班", new TimeSpan(9, 0, 0), new TimeSpan(19, 0, 0), 0, 7, 10);
         var input = AlgorithmTestData.Build(
-            new List<EmployeeInput> { AlgorithmTestData.Employee(1, "E001", "甲", "楼面") },
+            new List<EmployeeInput> { AlgorithmTestData.Employee(1, "E001", "甲", "楼面", maxWeeklyHours: 20) },
             new List<SkillInput> { AlgorithmTestData.Skill(1, 10) },
             AlgorithmTestData.Days(Start, 7),
             new List<ShiftTemplateInput> { shift },
-            AlgorithmTestData.ReqsForShift("WORKDAY", shift, 1),
-            maxWeeklyHours: 20);
+            AlgorithmTestData.ReqsForShift("WORKDAY", shift, 1));
 
         var result = new ShiftAllocator().Allocate(input, new List<RestDayAssignment>());
 
         // 10h/班、上限 20h → 每周最多 2 班
         Assert.True(result.Count <= 2, $"实际排了 {result.Count} 班，超出周工时上限约束");
+    }
+
+    [Fact]
+    public void Allocate_RespectsMaxDailyWorkHours()
+    {
+        // 12 小时班 + 单日上限 10h → 员工当日无法排该班
+        var shift = AlgorithmTestData.Shift(1, "S9", "长班", new TimeSpan(10, 0, 0), new TimeSpan(22, 0, 0), 0, 9, 8);
+        var input = AlgorithmTestData.Build(
+            new List<EmployeeInput> { AlgorithmTestData.Employee(1, "E001", "甲", "厨房") },
+            new List<SkillInput> { AlgorithmTestData.Skill(1, 8) },
+            AlgorithmTestData.Days(Start, 1),
+            new List<ShiftTemplateInput> { shift },
+            AlgorithmTestData.ReqsForShift("WORKDAY", shift, 1))
+            with { MaxDailyWorkHours = 10m };
+
+        var result = new ShiftAllocator().Allocate(input, new List<RestDayAssignment>());
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public void Allocate_AllowsShiftWithinMaxDailyWorkHours()
+    {
+        // 12 小时班 + 单日上限 12h → 恰好可排
+        var shift = AlgorithmTestData.Shift(1, "S9", "长班", new TimeSpan(10, 0, 0), new TimeSpan(22, 0, 0), 0, 9, 8);
+        var input = AlgorithmTestData.Build(
+            new List<EmployeeInput> { AlgorithmTestData.Employee(1, "E001", "甲", "厨房") },
+            new List<SkillInput> { AlgorithmTestData.Skill(1, 8) },
+            AlgorithmTestData.Days(Start, 1),
+            new List<ShiftTemplateInput> { shift },
+            AlgorithmTestData.ReqsForShift("WORKDAY", shift, 1))
+            with { MaxDailyWorkHours = 12m };
+
+        var result = new ShiftAllocator().Allocate(input, new List<RestDayAssignment>());
+
+        Assert.Single(result);
+    }
+
+    [Fact]
+    public void Allocate_RespectsDepartmentDailyWorkHours()
+    {
+        // 厨房岗位单日上限 10h：12 小时班 → 厨房员工当日无法排该班
+        var shift = AlgorithmTestData.Shift(1, "S9", "长班", new TimeSpan(10, 0, 0), new TimeSpan(22, 0, 0), 0, 9, 8);
+        var input = AlgorithmTestData.Build(
+            new List<EmployeeInput> { AlgorithmTestData.Employee(1, "E001", "甲", "厨房") },
+            new List<SkillInput> { AlgorithmTestData.Skill(1, 8) },
+            AlgorithmTestData.Days(Start, 1),
+            new List<ShiftTemplateInput> { shift },
+            AlgorithmTestData.ReqsForShift("WORKDAY", shift, 1))
+            with
+            {
+                MaxDailyWorkHours = 12m,
+                MaxDailyWorkHoursByDepartment = new Dictionary<string, decimal> { ["厨房"] = 10m }
+            };
+
+        var result = new ShiftAllocator().Allocate(input, new List<RestDayAssignment>());
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public void Allocate_DepartmentWithoutConfig_FallsBackToDefaultDailyHours()
+    {
+        // 楼面岗位未单独配置：回退全局默认 12h → 12 小时班可排
+        var shift = AlgorithmTestData.Shift(1, "S9", "长班", new TimeSpan(10, 0, 0), new TimeSpan(22, 0, 0), 0, 9, 8);
+        var input = AlgorithmTestData.Build(
+            new List<EmployeeInput> { AlgorithmTestData.Employee(1, "E001", "甲", "楼面") },
+            new List<SkillInput> { AlgorithmTestData.Skill(1, 8) },
+            AlgorithmTestData.Days(Start, 1),
+            new List<ShiftTemplateInput> { shift },
+            AlgorithmTestData.ReqsForShift("WORKDAY", shift, 1))
+            with
+            {
+                MaxDailyWorkHours = 12m,
+                MaxDailyWorkHoursByDepartment = new Dictionary<string, decimal> { ["厨房"] = 10m }
+            };
+
+        var result = new ShiftAllocator().Allocate(input, new List<RestDayAssignment>());
+
+        Assert.Single(result);
     }
 
     [Fact]
@@ -149,5 +228,44 @@ public sealed class ShiftAllocatorTests
         // 缺口应生成 D1 临时班次并被排班
         Assert.Contains(generatedTemplates, t => t.Code == "D1");
         Assert.Contains(result, a => a.ShiftCode == "D1");
+    }
+
+    /// <summary>
+    /// 复现：保洁岗（S9，16:00-04:00 跨天 10h）需求每天 2 人，存在全职保洁 2 人（5 分）
+    /// + 兼职保洁 1 人（4 分）。按「全职优先」全职应被优先排班；兼职仅作补充。
+    /// 用于定位生产环境「周保洁/赵保洁整月几乎无班、兼保洁A天天顶班」的现象。
+    /// </summary>
+    [Fact]
+    public void Allocate_PrefersFulltimeOverParttime_ForCleaningS9()
+    {
+        // workstationId 100 视为 CLEANING 保洁岗
+        var shift = AlgorithmTestData.Shift(9, "S9", "保洁班", new TimeSpan(16, 0, 0), new TimeSpan(4, 0, 0), 1, 9, 100);
+        var input = AlgorithmTestData.Build(
+            new List<EmployeeInput>
+            {
+                AlgorithmTestData.Employee(1, "E007", "周保洁", "保洁", "保洁岗", maxWeeklyHours: 60), // 全职保洁 5 分
+                AlgorithmTestData.Employee(2, "E023", "赵保洁", "保洁", "保洁岗", maxWeeklyHours: 60), // 全职保洁 5 分
+                AlgorithmTestData.Employee(3, "E101", "兼保洁A", "兼职", "保洁岗", maxWeeklyHours: 60, isParttime: 1) // 兼职保洁 4 分
+            },
+            new List<SkillInput>
+            {
+                AlgorithmTestData.Skill(1, 100, 5),
+                AlgorithmTestData.Skill(2, 100, 5),
+                AlgorithmTestData.Skill(3, 100, 4)
+            },
+            AlgorithmTestData.Days(Start, 7),
+            new List<ShiftTemplateInput> { shift },
+            AlgorithmTestData.ReqsForShift("WORKDAY", shift, 2), // 每天 2 人需求
+            minDailyWorkHours: 6.5m)
+            with { MaxDailyWorkHours = 10m, MaxDailyWorkHoursByDepartment = new Dictionary<string, decimal> { ["兼职"] = 0m } };
+
+        var result = new ShiftAllocator().Allocate(input, new List<RestDayAssignment>());
+
+        var fulltime = result.Count(a => a.EmployeeId == 1 || a.EmployeeId == 2);
+        var parttime = result.Count(a => a.EmployeeId == 3);
+
+        // 全职应被优先排班：全职排班次数应 >= 兼职
+        Assert.True(fulltime >= parttime,
+            $"全职保洁排班 {fulltime} 次，兼职排班 {parttime} 次——兼职不应优先于全职");
     }
 }

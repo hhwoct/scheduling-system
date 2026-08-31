@@ -16,8 +16,8 @@ public sealed class ShiftAllocatorPartTimeTests
         var employees = new List<EmployeeInput>
         {
             new(1, "E001", "全职无技能", "楼面", "服务岗", 48m, 0),
-            new(101, "E101", "兼传送A", "兼职", "传送岗", 32m, 1),
-            new(102, "E102", "兼传送B", "兼职", "传送岗", 32m, 1)
+            new(101, "E101", "兼传送A", "兼职", "传送岗", 70m, 1),
+            new(102, "E102", "兼传送B", "兼职", "传送岗", 70m, 1)
         };
 
         var skills = new List<SkillInput>
@@ -57,7 +57,6 @@ public sealed class ShiftAllocatorPartTimeTests
             new Dictionary<long, bool> { [workstationId] = true },
             new Dictionary<long, string>(),
             4,
-            70m, // 周工时上限足够高，不阻碍兼职集中排班
             14,
             10,
             0m);

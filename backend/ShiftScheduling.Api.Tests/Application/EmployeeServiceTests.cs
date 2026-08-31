@@ -43,7 +43,7 @@ public sealed class EmployeeServiceTests
     {
         var service = CreateService();
         var ex = await Assert.ThrowsAsync<BusinessException>(() =>
-            service.CreateAsync(new EmployeeUpsertRequest("E001", "张三", null, "楼面", null, null, 200), 1, 9, "a", CancellationToken.None));
+            service.CreateAsync(new EmployeeUpsertRequest("E001", "张三", null, "楼面", null, null, 200, 0), 1, 9, "a", CancellationToken.None));
         Assert.Equal("INVALID_EMPLOYEE", ex.ErrorCode);
     }
 
@@ -65,6 +65,27 @@ public sealed class EmployeeServiceTests
             new EmployeeUpsertRequest("E102", "张三", "13800001234", "楼面", null, null, 48), 1, 9, "a", CancellationToken.None);
         Assert.NotNull(result);
         Assert.Equal("E102", result.EmployeeNo);
+    }
+
+    [Fact]
+    public async Task CreateAsync_FollowDefault_UsesGlobalRuleValue()
+    {
+        // 种子：全局最大周工时 = 60；跟随默认时个人周工时上限取规则值而非表单值
+        var db = _factory.CreateDbContext();
+        db.RuleConfigs.Add(new RuleConfigEntity
+        {
+            StoreId = 1, RuleKey = "max_weekly_hours", RuleName = "最大周工时", RuleValue = "60", ValueType = "number",
+            Status = 1, Version = 1, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var service = CreateService();
+        var result = await service.CreateAsync(
+            new EmployeeUpsertRequest("E103", "张三", null, "楼面", null, null, 999, 1),
+            1, 9, "管理员", CancellationToken.None);
+
+        Assert.Equal(60m, result.MaxWeeklyHours);
+        Assert.Equal(1, result.WeeklyHoursFollowDefault);
     }
 
     [Fact]

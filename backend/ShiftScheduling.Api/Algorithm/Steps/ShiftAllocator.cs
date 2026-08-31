@@ -59,6 +59,8 @@ public sealed class ShiftAllocator
         // 整个排班周期内的累计工时（跨周不清零）。
         // 兼职员工按“周期累计工时从高到低”优先复用，用更少的兼职人员。
         var periodHours = new Dictionary<long, decimal>();
+        // 单日工时（按班次起始日 workDate 累计）：单日最大工时硬约束
+        var dailyHours = new Dictionary<(long EmployeeId, DateOnly WorkDate), decimal>();
         foreach (var employee in input.Employees)
         {
             weeklyHours[employee.Id] = 0m;
@@ -103,7 +105,9 @@ public sealed class ShiftAllocator
                     .Where(e => !assignedToday.Contains(e.Id))
                     .Where(e => !HasOverlap(busySlotsByEmployee, e.Id, shift, date.WorkDate))
                     // 周工时硬约束：排完该班后周累计不得超过上限（不再允许"分配前未超、排完超限"）
-                    .Where(e => weeklyHours.GetValueOrDefault(e.Id) + shiftHoursForCap <= input.MaxWeeklyHours)
+                    .Where(e => weeklyHours.GetValueOrDefault(e.Id) + shiftHoursForCap <= e.MaxWeeklyHours)
+                    // 单日最大工时硬约束（0 = 不限制；按岗位配置，缺省回退全局默认）
+                    .Where(e => input.GetMaxDailyWorkHours(e.Department) <= 0m || dailyHours.GetValueOrDefault((e.Id, date.WorkDate)) + shiftHoursForCap <= input.GetMaxDailyWorkHours(e.Department))
                     .Where(e => HasSkillForShift(e.Id, shift, skillsByEmployee))
                     .Where(e => RespectsMinDailyHours(e, shift, assignedToday, input))
                     .OrderBy(e => e.IsParttime)  // 全职优先，兼职靠后
@@ -133,6 +137,7 @@ public sealed class ShiftAllocator
                     var shiftHours = SchedulingTimeHelper.GetShiftHours(shift.StartTime, shift.EndTime, shift.IsCrossDay);
                     weeklyHours[employee.Id] = weeklyHours.GetValueOrDefault(employee.Id) + shiftHours;
                     periodHours[employee.Id] = periodHours.GetValueOrDefault(employee.Id) + shiftHours;
+                    dailyHours[(employee.Id, date.WorkDate)] = dailyHours.GetValueOrDefault((employee.Id, date.WorkDate)) + shiftHours;
 
                     DecrementRemaining(shift, targetWs, date.WorkDate, remaining);
                     IncrementCoverage(shift, targetWs, date.WorkDate, coverage);
@@ -156,7 +161,7 @@ public sealed class ShiftAllocator
 
                 // 修复：周工时上限在硬性/软性阶段都必须遵守（硬性阶段不再突破上限），
                 // 无法排班的缺口由 WorkstationAllocator 的 STAFFING_GAP 问题报告提示。
-                if (weeklyHours.GetValueOrDefault(employee.Id) >= input.MaxWeeklyHours)
+                if (weeklyHours.GetValueOrDefault(employee.Id) >= employee.MaxWeeklyHours)
                 {
                     continue;
                 }
@@ -175,7 +180,12 @@ public sealed class ShiftAllocator
                     // 周工时硬约束：排完该班后周累计不得超过上限
                     .Where(s => weeklyHours.GetValueOrDefault(employee.Id)
                                 + SchedulingTimeHelper.GetShiftHours(s.StartTime, s.EndTime, s.IsCrossDay)
-                                <= input.MaxWeeklyHours)
+                                <= employee.MaxWeeklyHours)
+                    // 单日最大工时硬约束（0 = 不限制；按岗位配置，缺省回退全局默认）
+                    .Where(s => input.GetMaxDailyWorkHours(employee.Department) <= 0m
+                                || dailyHours.GetValueOrDefault((employee.Id, date.WorkDate))
+                                   + SchedulingTimeHelper.GetShiftHours(s.StartTime, s.EndTime, s.IsCrossDay)
+                                   <= input.GetMaxDailyWorkHours(employee.Department))
                     .Where(s => RespectsMinDailyHours(employee, s, assignedToday, input))
                     .OrderByDescending(s => ShiftDemandScore(s, demand, date.WorkDate))
                     .ThenBy(s => SchedulingTimeHelper.GetShiftHours(s.StartTime, s.EndTime, s.IsCrossDay))
@@ -210,6 +220,7 @@ public sealed class ShiftAllocator
                 var bestShiftHours = SchedulingTimeHelper.GetShiftHours(bestShift.StartTime, bestShift.EndTime, bestShift.IsCrossDay);
                 weeklyHours[employee.Id] = weeklyHours.GetValueOrDefault(employee.Id) + bestShiftHours;
                 periodHours[employee.Id] = periodHours.GetValueOrDefault(employee.Id) + bestShiftHours;
+                dailyHours[(employee.Id, date.WorkDate)] = dailyHours.GetValueOrDefault((employee.Id, date.WorkDate)) + bestShiftHours;
 
                 var beforeSum = demandSum;
                 DecrementRemaining(bestShift, targetWs, date.WorkDate, demand);
@@ -253,6 +264,7 @@ public sealed class ShiftAllocator
                     assignedToday,
                     weeklyHours,
                     periodHours,
+                    dailyHours,
                     assignments,
                     generatedTemplates,
                     busySlotsByEmployee,
@@ -396,6 +408,7 @@ public sealed class ShiftAllocator
         HashSet<long> assignedToday,
         Dictionary<long, decimal> weeklyHours,
         Dictionary<long, decimal> periodHours,
+        Dictionary<(long EmployeeId, DateOnly WorkDate), decimal> dailyHours,
         List<ShiftAssignment> assignments,
         List<ShiftTemplateInput> generatedTemplates,
         Dictionary<long, HashSet<(DateOnly Date, TimeSpan Slot)>> busySlotsByEmployee,
@@ -491,7 +504,12 @@ public sealed class ShiftAllocator
                     // 周工时硬约束：排完该班后周累计不得超过上限
                     .Where(e => weeklyHours.GetValueOrDefault(e.Id)
                                 + SchedulingTimeHelper.GetShiftHours(template.StartTime, template.EndTime, template.IsCrossDay)
-                                <= input.MaxWeeklyHours)
+                                <= e.MaxWeeklyHours)
+                    // 单日最大工时硬约束（0 = 不限制；按岗位配置，缺省回退全局默认）
+                    .Where(e => input.GetMaxDailyWorkHours(e.Department) <= 0m
+                                || dailyHours.GetValueOrDefault((e.Id, workDate))
+                                   + SchedulingTimeHelper.GetShiftHours(template.StartTime, template.EndTime, template.IsCrossDay)
+                                   <= input.GetMaxDailyWorkHours(e.Department))
                     .Where(e => HasSkillForShift(e.Id, template, skillsByEmployee))
                     .Where(e => RespectsMinDailyHours(e, template, assignedToday, input))
                     .OrderBy(e => e.IsParttime)
@@ -531,6 +549,7 @@ public sealed class ShiftAllocator
                 var hours = SchedulingTimeHelper.GetShiftHours(template.StartTime, template.EndTime, template.IsCrossDay);
                 weeklyHours[candidate.Id] = weeklyHours.GetValueOrDefault(candidate.Id) + hours;
                 periodHours[candidate.Id] = periodHours.GetValueOrDefault(candidate.Id) + hours;
+                dailyHours[(candidate.Id, workDate)] = dailyHours.GetValueOrDefault((candidate.Id, workDate)) + hours;
                 DecrementRemaining(template, targetWs, workDate, remaining);
                 IncrementCoverage(template, targetWs, workDate, coverage);
                 usedThisBlock++;

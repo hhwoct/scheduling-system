@@ -28,7 +28,13 @@
         <el-table-column prop="department" label="部门" width="100" />
         <el-table-column prop="primaryPosition" label="主岗" />
         <el-table-column prop="phone" label="手机号" width="140" />
-        <el-table-column prop="maxWeeklyHours" label="周工时上限" width="100" />
+        <el-table-column label="周工时上限" width="130">
+          <template #default="{ row }">
+            {{ row.maxWeeklyHours }}h
+            <el-tag v-if="row.weeklyHoursFollowDefault === 1" size="small" type="info" style="margin-left:4px">默认</el-tag>
+            <el-tag v-else size="small" type="warning" style="margin-left:4px">自定义</el-tag>
+          </template>
+        </el-table-column>
         <el-table-column label="状态" width="80">
           <template #default="{ row }">
             <el-tag :type="row.status === 1 ? 'success' : 'info'">{{ row.status === 1 ? '启用' : '停用' }}</el-tag>
@@ -82,8 +88,13 @@
         <el-form-item label="手机号">
           <el-input v-model="form.phone" />
         </el-form-item>
+        <el-form-item label="跟随默认">
+          <el-switch v-model="form.weeklyHoursFollowDefault" :active-value="1" :inactive-value="0" />
+          <span class="follow-hint">跟随全局「最大周工时」{{ globalMaxWeeklyHours }}h</span>
+        </el-form-item>
         <el-form-item label="周工时上限" prop="maxWeeklyHours">
-          <el-input-number v-model="form.maxWeeklyHours" :min="1" :max="168" />
+          <el-input-number v-model="form.maxWeeklyHours" :min="1" :max="168" :disabled="form.weeklyHoursFollowDefault === 1" />
+          <span v-if="form.weeklyHoursFollowDefault === 1" class="follow-hint">保存后自动取 {{ globalMaxWeeklyHours }}h</span>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -120,12 +131,15 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { createEmployee, deactivateEmployee, getEmployeeSkills, getEmployees, saveEmployeeSkills, updateEmployee } from '../api/employees'
 import { getWorkstations } from '../api/workstations'
 import { getLeaveReviewList } from '../api/leave'
+import { getRules } from '../api/rules'
 
 const departments = ['管理', '行政', '工程', '保洁', '楼面', '厨房', '吧台']
 
 const loading = ref(false)
 const list = ref([])
 const total = ref(0)
+// 全局「最大周工时」默认值（来自规则配置），用于员工表单「跟随默认」展示
+const globalMaxWeeklyHours = ref(60)
 const query = reactive({
   page: 1,
   pageSize: 10,
@@ -220,7 +234,8 @@ const form = reactive({
   phone: '',
   department: '',
   primaryPosition: '',
-  maxWeeklyHours: 48
+  maxWeeklyHours: 48,
+  weeklyHoursFollowDefault: 1
 })
 const rules = {
   employeeNo: [{ required: true, message: '请输入工号', trigger: 'blur' }],
@@ -236,7 +251,8 @@ function resetForm() {
   form.phone = ''
   form.department = ''
   form.primaryPosition = ''
-  form.maxWeeklyHours = 48
+  form.maxWeeklyHours = globalMaxWeeklyHours.value
+  form.weeklyHoursFollowDefault = 1
   editing.value = false
   nextTick(() => {
     formRef.value?.clearValidate?.()
@@ -257,6 +273,7 @@ function openEdit(row) {
   form.department = row.department
   form.primaryPosition = row.primaryPosition || ''
   form.maxWeeklyHours = Number(row.maxWeeklyHours)
+  form.weeklyHoursFollowDefault = Number(row.weeklyHoursFollowDefault ?? 1)
   dialogVisible.value = true
   nextTick(() => {
     formRef.value?.clearValidate?.()
@@ -382,10 +399,31 @@ async function handleSaveSkills() {
   }
 }
 
-onMounted(loadData)
+// 加载全局「最大周工时」默认值
+async function loadGlobalMaxWeeklyHours() {
+  try {
+    const rules = await getRules()
+    const rule = (rules || []).find(r => r.ruleKey === 'max_weekly_hours')
+    if (rule && !Number.isNaN(Number(rule.ruleValue))) {
+      globalMaxWeeklyHours.value = Number(rule.ruleValue)
+    }
+  } catch {
+    // 加载失败沿用默认 60，不影响员工列表
+  }
+}
+
+onMounted(() => {
+  loadData()
+  loadGlobalMaxWeeklyHours()
+})
 </script>
 
 <style scoped>
+.follow-hint {
+  margin-left: 8px;
+  color: #909399;
+  font-size: 12px;
+}
 .leave-line {
   font-size: 12px;
   line-height: 1.7;

@@ -52,7 +52,7 @@ public sealed class CrossDayDemandTests
             new List<PeakRestrictedHourInput>(),
             new Dictionary<long, bool>(),
             new Dictionary<long, string>(),
-            4, 48m, 6, 10, 0m);
+            4, 6, 10, 0m);
     }
 
     [Fact]

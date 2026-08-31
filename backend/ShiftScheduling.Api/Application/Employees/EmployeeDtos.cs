@@ -9,6 +9,7 @@ public sealed record EmployeeListItem(
     DateTime? HireDate,
     string? PrimaryPosition,
     decimal MaxWeeklyHours,
+    int WeeklyHoursFollowDefault,
     int IsParttime,
     int Status);
 
@@ -21,6 +22,7 @@ public sealed record EmployeeDetail(
     DateTime? HireDate,
     string? PrimaryPosition,
     decimal MaxWeeklyHours,
+    int WeeklyHoursFollowDefault,
     int IsParttime,
     int Status,
     DateTime CreatedAt,
@@ -33,7 +35,8 @@ public sealed record EmployeeUpsertRequest(
     string Department,
     DateTime? HireDate,
     string? PrimaryPosition,
-    decimal MaxWeeklyHours);
+    decimal MaxWeeklyHours,
+    int WeeklyHoursFollowDefault = 1);
 
 public sealed record EmployeeQueryRequest(
     int Page = 1,

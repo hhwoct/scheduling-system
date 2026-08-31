@@ -86,6 +86,23 @@ public sealed record DailyViewItem(
     TimeSpan? BreakEndTime,
     string? BreakCoverEmployeeName);
 
+/// <summary>
+/// 日明细需求单元格：某个工作站某个时段的最少/最好需求人数及是否低技能岗位。
+/// 供前端日明细矩阵按「实际人数 vs 最少需求」实时判定缺口（不再依赖生成时快照）。
+/// </summary>
+public sealed record DailyDemandCell(
+    long WorkstationId,
+    string WorkstationName,
+    TimeSpan TimeSlot,
+    int RequiredMin,
+    int RequiredIdeal,
+    int IsLowSkill);
+
+/// <summary>日明细视图返回：排班行 + 当日需求映射（营业日 12:00~次日 06:00 口径）。</summary>
+public sealed record DailyViewResult(
+    IReadOnlyList<DailyViewItem> Rows,
+    IReadOnlyList<DailyDemandCell> Demand);
+
 public sealed record ScheduleSummaryDto(
     long PlanId,
     int EmployeeCount,

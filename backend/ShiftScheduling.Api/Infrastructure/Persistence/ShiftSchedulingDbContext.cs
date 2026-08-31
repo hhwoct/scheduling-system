@@ -101,6 +101,7 @@ public sealed class ShiftSchedulingDbContext : DbContext
             entity.Property(x => x.HireDate).HasColumnName("hire_date");
             entity.Property(x => x.PrimaryPosition).HasColumnName("primary_position");
             entity.Property(x => x.MaxWeeklyHours).HasColumnName("max_weekly_hours").HasPrecision(5, 2);
+            entity.Property(x => x.WeeklyHoursFollowDefault).HasColumnName("weekly_hours_follow_default");
             entity.Property(x => x.Status).HasColumnName("status");
             entity.Property(x => x.IsParttime).HasColumnName("is_parttime");
             entity.Property(x => x.IsGeneralist).HasColumnName("is_generalist");

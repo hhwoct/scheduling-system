@@ -86,6 +86,8 @@ public sealed class ResidualGapFiller
         }
 
         var weeklyHours = input.Employees.ToDictionary(e => e.Id, _ => 0m);
+        // 单日工时（按班次起始日 workDate 累计）：单日最大工时硬约束
+        var dailyHours = new Dictionary<(long EmployeeId, DateOnly WorkDate), decimal>();
         var blocksUsedPerDay = new Dictionary<DateOnly, int>();
 
         foreach (var date in dates)
@@ -187,7 +189,7 @@ public sealed class ResidualGapFiller
                         FillBlock(
                             input, workDate, workstationId, template, block,
                             residual, skillsByEmployee, lowSkill, restSet, busySlots,
-                            weeklyHours, assignedToday, shiftAssignments, workstationAssignments,
+                            weeklyHours, dailyHours, assignedToday, shiftAssignments, workstationAssignments,
                             residualTemplates,
                             fullTimeOnly: true, maxHeadcount: MaxHeadcountPerBlock);
                     }
@@ -196,7 +198,7 @@ public sealed class ResidualGapFiller
                     FillBlock(
                         input, workDate, workstationId, template, block,
                         residual, skillsByEmployee, lowSkill, restSet, busySlots,
-                        weeklyHours, assignedToday, shiftAssignments, workstationAssignments,
+                        weeklyHours, dailyHours, assignedToday, shiftAssignments, workstationAssignments,
                         residualTemplates,
                         fullTimeOnly: false, maxHeadcount: MaxHeadcountPerBlock);
                 }
@@ -301,6 +303,7 @@ public sealed class ResidualGapFiller
         HashSet<RestDayAssignment> restSet,
         Dictionary<long, HashSet<(DateOnly Date, TimeSpan Slot)>> busySlots,
         Dictionary<long, decimal> weeklyHours,
+        Dictionary<(long EmployeeId, DateOnly WorkDate), decimal> dailyHours,
         HashSet<long> assignedToday,
         List<ShiftAssignment> shiftAssignments,
         List<WorkstationAssignment> workstationAssignments,
@@ -325,6 +328,9 @@ public sealed class ResidualGapFiller
                 // 只要求块内存在至少一个可接槽位，重叠部分在分配时裁剪。
                 .Where(e => HasAnyAvailableSlot(busySlots, e.Id, template, workDate))
                 .Where(e => weeklyHours.GetValueOrDefault(e.Id) + blockHours <= e.MaxWeeklyHours)
+                // 单日最大工时硬约束（0 = 不限制；按岗位配置，缺省回退全局默认）
+                .Where(e => input.GetMaxDailyWorkHours(e.Department) <= 0m
+                            || dailyHours.GetValueOrDefault((e.Id, workDate)) + blockHours <= input.GetMaxDailyWorkHours(e.Department))
                 .Where(e => HasStationSkill(e.Id, workstationId, skillsByEmployee, lowSkill))
                 .Where(e => e.IsParttime == 1
                             || assignedToday.Contains(e.Id)
@@ -373,6 +379,7 @@ public sealed class ResidualGapFiller
             MarkBusy(busySlots, candidate.Id, segTemplate.StartTime, segTemplate.EndTime, segTemplate.IsCrossDay, workDate);
             assignedToday.Add(candidate.Id);
             weeklyHours[candidate.Id] = weeklyHours.GetValueOrDefault(candidate.Id) + segHours;
+            dailyHours[(candidate.Id, workDate)] = dailyHours.GetValueOrDefault((candidate.Id, workDate)) + segHours;
 
             var score = StationSkillScore(candidate.Id, workstationId, skillsByEmployee);
             foreach (var slot in slotList)

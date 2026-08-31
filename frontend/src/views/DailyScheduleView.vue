@@ -211,7 +211,7 @@ async function loadData() {
       getDailyView(planId.value, workDate.value),
       getScheduleIssues(planId.value)
     ])
-    rows.value = r || []
+    rows.value = r?.rows || []
     issues.value = iss || []
   } catch (e) {
     rows.value = []

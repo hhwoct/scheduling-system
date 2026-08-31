@@ -125,8 +125,22 @@
             <el-button v-if="batchMode" size="small" link @click="clearBatchSelect">清除选区</el-button>
           </div>
           <div v-loading="dailyLoading" class="matrix-wrap"><div class="matrix" :class="{ 'has-chip-highlight': highlightedEmpId, 'batch-mode': batchMode }" @click="highlightedEmpId = null" @mousedown.capture="onBatchMouseDown" @mouseup.capture="onBatchMouseUp">
+            <div v-if="rangeSelect.active" class="range-hint">{{ rangeHint }}</div>
+            <div v-if="rangeSel.visible" class="range-toolbar" @click.stop>
+              <span class="rt-info">{{ rangeSel.ws }} {{ rangeSelStart }} ~ {{ rangeSelEnd }}（{{ rangeSelCount }} 段）</span>
+              <el-button size="small" type="primary" @click="openAddDialog">加人</el-button>
+              <el-button size="small" type="primary" plain @click="openReplaceDialog">换人</el-button>
+              <el-button size="small" @click="moveRangeBy(-30)">◀ 左移</el-button>
+              <el-button size="small" @click="moveRangeBy(30)">右移 ▶</el-button>
+              <el-select v-model="rangeSel.restEmployeeId" size="small" placeholder="员工" style="width: 110px">
+                <el-option v-for="e in rangeSelEmployees" :key="e.id" :value="e.id" :label="e.name" />
+              </el-select>
+              <el-button size="small" type="warning" :disabled="!rangeSel.restEmployeeId" @click="toggleRangeRest">{{ rangeSelRestLabel }}</el-button>
+              <el-button size="small" type="danger" @click="cancelRangeSchedule">取消排班{{ rangeSel.restEmployeeId ? '' : '（全部）' }}</el-button>
+              <el-button size="small" link @click="clearRangeSel">✕</el-button>
+            </div>
             <div class="m-row m-header"><div class="m-ws-col">工作站</div><div v-for="slot in slots" :key="slot.key" class="m-slot-col" :title="slot.display"><span v-if="isHour(slot)">{{ slot.display }}</span></div></div>
-            <div v-for="ws in dailyWorkstations" :key="ws" class="m-row"><div class="m-ws-col">{{ ws }}<el-tag v-if="wsLowSkill(ws)" type="success" size="small" style="margin-left:4px">兼</el-tag></div><div v-for="(slot, si) in slots" :key="slot.key" class="m-slot-col" :class="[cellClass(ws, slot), snapTarget.ws === ws && snapTarget.slotIdx === si ? 'snap-target' : '', batchSelected(ws, si) ? 'batch-selected' : '']" :data-slot="slot.key"><div v-if="dailySlotIssues(ws, slot).length" class="gap-flag" :class="{ 'gap-flag-low': lowSkillGapIssues(ws, slot).length > 0 }" :title="gapTooltip(ws, slot)">{{ lowSkillGapIssues(ws, slot).length > 0 ? '兼' : '缺' }}</div><div v-for="emp in dailyCellUsers(ws, slot)" :key="emp.employeeId" class="emp-chip" :class="{ 'is-parttime': emp.isParttime === 1, 'pt-first': isFirstPartTimeChip(emp, ws, slot), 'is-break': inBreak(emp, slot), 'is-highlighted': highlightedEmpId === emp.employeeId }" :title="'单击高亮该员工当天全部色块；双击切换休息/上班；按住拖动可移动半小时'" @mousedown.prevent.stop="onChipMouseDown($event, emp, ws, slot)" @click.stop="onChipClick(emp, slot)" @dblclick.stop="onChipDblClick(emp, slot)"><div class="emp-name">{{ emp.employeeName }}<span v-if="prefMatch(emp, ws)" class="pref-dot" title="与店长历史偏好一致" /> <span v-if="inBreak(emp, slot)" class="break-flag" :title="breakTip(emp)">休</span></div><div v-if="!inBreak(emp, slot)" class="emp-shift">{{ emp.shiftCode || '--' }}</div><div v-else class="emp-shift break-info" :title="breakTip(emp)">休息</div></div></div></div>
+            <div v-for="ws in dailyWorkstations" :key="ws" class="m-row"><div class="m-ws-col">{{ ws }}<el-tag v-if="wsLowSkill(ws)" type="success" size="small" style="margin-left:4px">兼</el-tag></div><div v-for="(slot, si) in slots" :key="slot.key" class="m-slot-col" :class="[cellClass(ws, slot), { 'is-empty': dailyCellUsers(ws, slot).length === 0 }, (rangeSelected(ws, slot) || rangeSelSelected(ws, slot)) ? 'range-selected' : '', snapTarget.ws === ws && snapTarget.slotIdx === si ? 'snap-target' : '', batchSelected(ws, si) ? 'batch-selected' : '']" :data-slot="slot.key" :title="dailyCellUsers(ws, slot).length === 0 ? '点击添加人员，按住滑动可选多个时段' : '按住滑动可选择范围后操作（加人/换人/平移/休息）'" @mousedown="onCellMouseDown(ws, slot, $event)" @click="onCellClick(ws, slot)"><div v-if="dailySlotIssues(ws, slot).length" class="gap-flag" :class="{ 'gap-flag-low': lowSkillGapIssues(ws, slot).length > 0 }" :title="gapTooltip(ws, slot)">{{ lowSkillGapIssues(ws, slot).length > 0 ? '兼' : '缺' }}</div><div v-for="lane in cellLanes(ws, slot)" :key="'lane-' + lane.employeeId" class="emp-lane"><div v-if="lane.row" class="emp-chip" :class="{ 'is-parttime': lane.row.isParttime === 1, 'pt-first': lane.isFirstPtLane, 'is-break': inBreak(lane.row, slot), 'is-highlighted': highlightedEmpId === lane.row.employeeId }" :title="'单击高亮该员工当天全部色块；双击切换休息/上班；按住滑动可选择范围'" @click.stop="onChipClick(lane.row, slot)" @dblclick.stop="onChipDblClick(lane.row, slot)"><div class="emp-name">{{ lane.row.employeeName }}<span v-if="prefMatch(lane.row, ws)" class="pref-dot" title="与店长历史偏好一致" /> <span v-if="inBreak(lane.row, slot)" class="break-flag" :title="breakTip(lane.row)">休</span></div><div v-if="!inBreak(lane.row, slot)" class="emp-shift">{{ lane.row.shiftCode || '--' }}</div><div v-else class="emp-shift break-info" :title="breakTip(lane.row)">休息</div></div></div></div></div>
           </div></div>
         </div>
       </div>
@@ -338,6 +352,9 @@ function prefMatch(emp, ws) {
   return prefMap.value.has((emp.employeeNo || '') + '|' + code)
 }
 const dailyIssues = ref([])
+// 日明细需求映射（后端实时返回：工作站×时段 → 最少/最好需求 + 是否低技能），
+// 用于矩阵缺口按「实际人数 vs 最少需求」实时判定，不再依赖生成时缺口快照。
+const dailyDemand = ref([])
 const dailyLoading = ref(false)
 const dayDate = ref('')
 const issuesList = ref([])
@@ -372,19 +389,29 @@ const slots = computed(() => Array.from({ length: SLOT_COUNT }, (_, i) => {
   const key = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`
   return { key, display: isNext ? key + '+1' : key, isNextDay: isNext }
 }))
-// P3-11: 缺口岗位也显示
+// P3-11: 缺口岗位也显示（按实时需求：展示时间轴内存在最少需求的站点，含完全无人排班但有缺口的站点；
+// 后端未返回实时需求时回退按生成缺口快照补全站点）
 const dailyWorkstations = computed(() => {
   const set = new Set()
   dailyRows.value.forEach(r => {
     if (r.workstationName) set.add(r.workstationName)
   })
-  const currentDate = selectedDate.value || dayDate.value
-  const nextDay = addDays(currentDate, 1)
-  dailyIssues.value
-    .filter(i => i.issueType === 'STAFFING_GAP' && (i.workDate === currentDate || i.workDate === nextDay))
-    .forEach(i => {
-      if (i.workstationName) set.add(i.workstationName)
+  if (dailyDemand.value.length > 0) {
+    const keys = new Set(slots.value.map(s => s.key))
+    dailyDemand.value.forEach(d => {
+      if (d.requiredMin > 0 && d.timeSlot && keys.has(String(d.timeSlot).substring(0, 5))) {
+        if (d.workstationName) set.add(d.workstationName)
+      }
     })
+  } else {
+    const currentDate = selectedDate.value || dayDate.value
+    const nextDay = addDays(currentDate, 1)
+    dailyIssues.value
+      .filter(i => i.issueType === 'STAFFING_GAP' && (i.workDate === currentDate || i.workDate === nextDay))
+      .forEach(i => {
+        if (i.workstationName) set.add(i.workstationName)
+      })
+  }
   return Array.from(set)
 })
 function isHour(s) { return s.key.endsWith(':00') }
@@ -432,9 +459,20 @@ function isFirstPartTimeChip(emp, ws, slot) {
   const firstPt = users.findIndex(u => Number(u.isParttime) === 1)
   return firstPt === idx && users.some(u => Number(u.isParttime) === 0)
 }
-// P3-12: 缺口按日期过滤；次日格（00:00-05:30）的缺口归属次日日历日
-// （审查修复 M10：与 DailyScheduleView/MonthScheduleView 的 isNextDay+1 口径统一，否则次日缺口漏标）
+// 返回该工作站该时段的实时需求（后端日明细需求映射），找不到或无需求则返回 null
+function dailyDemandFor(ws, slot) {
+  return dailyDemand.value.find(x => x.workstationName === ws && x.timeSlot && String(x.timeSlot).substring(0, 5) === slot.key) || null
+}
+// P3-12: 缺口实时判定——该时段实际人数 < 最少需求人数即视为缺口
+// （基于后端实时需求映射，不再依赖生成时 STAFFING_GAP 快照；加人后红框即时消失）
 function dailySlotIssues(ws, slot) {
+  const dem = dailyDemandFor(ws, slot)
+  if (dem && dem.requiredMin > 0) {
+    return dailyCellUsers(ws, slot).length < dem.requiredMin
+      ? [{ issueType: 'STAFFING_GAP', isLowSkill: dem.isLowSkill }]
+      : []
+  }
+  // 后端未返回实时需求（未升级）时回退到生成时缺口快照，保持历史行为
   const currentDate = selectedDate.value || dayDate.value
   const date = slot.isNextDay ? addDays(currentDate, 1) : currentDate
   return dailyIssues.value.filter(i => i.issueType === 'STAFFING_GAP' && i.workDate === date && i.workstationName === ws && i.timeSlot && String(i.timeSlot).substring(0,5) === slot.key)
@@ -909,8 +947,11 @@ async function submitSlotStatus() {
 function lowSkillGapIssues(ws, slot) {
   return dailySlotIssues(ws, slot).filter(i => i.isLowSkill)
 }
-// 判断工作站是否低技能岗位
+// 判断工作站是否低技能岗位（优先实时需求映射；后端未升级时回退快照）
 function wsLowSkill(ws) {
+  if (dailyDemand.value.length > 0) {
+    return dailyDemand.value.some(d => d.workstationName === ws && d.isLowSkill)
+  }
   return dailyIssues.value.some(i => i.workstationName === ws && i.isLowSkill)
 }
 // 缺口提示：低技能岗位显示兼职建议
@@ -1122,7 +1163,10 @@ async function loadDay(date) {
       getMonthView(planId.value)
     ])
     if (seq !== dayLoadSeq) return
-    dailyRows.value = res || []
+    // 兼容两种返回：新格式对象 { rows, demand } / 旧格式数组（后端未升级时）
+    const payload = Array.isArray(res) ? { rows: res, demand: [] } : (res || {})
+    dailyRows.value = payload.rows || []
+    dailyDemand.value = payload.demand || []
     dailyIssues.value = iss || []
     if (Array.isArray(month)) monthRows.value = month
   } catch (e) {
@@ -1147,6 +1191,9 @@ const addSlotDialog = reactive({
   employeeId: null,
   candidates: []
 })
+
+// 当前正在编辑的营业日期：日明细视图用 dayDate；月视图点开的日排班用 selectedDate
+function curDate() { return selectedDate.value || dayDate.value }
 
 // 滑动选择状态（时间轴同一行内横向滑动）
 const rangeSelect = reactive({
@@ -1337,7 +1384,7 @@ function openAddDialog() {
 // 左移/右移 30 分钟
 async function moveRangeBy(offset) {
   const keys = [...rangeSelKeys.value]
-  if (!keys.length || !dayDate.value) return
+  if (!keys.length || !curDate()) return
   const wsId = wsNameToId.value.get(rangeSel.ws)
   if (!wsId) return
   // 审查修复（P1-1）：撤销条目存平移后的新时段，按新时段反平移（此前存旧时段必失败）
@@ -1349,7 +1396,7 @@ async function moveRangeBy(offset) {
     : []
   try {
     await moveScheduleRange(planId.value, {
-      workDate: dayDate.value,
+      workDate: curDate(),
       workstationId: wsId,
       timeSlots: keys,
       offsetMinutes: offset
@@ -1358,7 +1405,7 @@ async function moveRangeBy(offset) {
     pushUndo({
       type: 'move-range',
       text: `范围平移 ${offset < 0 ? '左移' : '右移'} 30 分钟（${rangeSel.ws} ${rangeSelCount.value} 段）`,
-      payload: { workDate: dayDate.value, workstationId: wsId, timeSlots: shiftedKeys.length ? shiftedKeys : keys, offsetMinutes: -offset }
+      payload: { workDate: curDate(), workstationId: wsId, timeSlots: shiftedKeys.length ? shiftedKeys : keys, offsetMinutes: -offset }
     })
     // 平移选择范围并刷新（保持工具条可用，可连续点按）
     if (shiftedKeys.length) {
@@ -1367,7 +1414,7 @@ async function moveRangeBy(offset) {
     } else {
       clearRangeSel()
     }
-    await loadDay(dayDate.value)
+    await loadDay(curDate())
   } catch (e) {
     /* 拦截器已提示 */
   }
@@ -1377,14 +1424,14 @@ async function moveRangeBy(offset) {
 async function toggleRangeRest() {
   const empId = rangeSel.restEmployeeId
   const keys = [...rangeSelKeys.value]
-  if (!empId || !keys.length || !dayDate.value) return
+  if (!empId || !keys.length || !curDate()) return
   const items = []
   for (const k of keys) {
     const slot = slots.value[slotIndex(k)]
     if (!slot) continue
     const u = dailyCellUsers(rangeSel.ws, slot).find(x => x.employeeId === empId)
     if (u) {
-      items.push({ employeeId: empId, workDate: dayDate.value, timeSlot: k + ':00', isRest: inBreak(u, slot) ? 0 : 1 })
+      items.push({ employeeId: empId, workDate: curDate(), timeSlot: k + ':00', isRest: inBreak(u, slot) ? 0 : 1 })
     }
   }
   if (items.length === 0) {
@@ -1402,7 +1449,7 @@ async function toggleRangeRest() {
       text: (toRest ? '已改为休息 ' : '已恢复上班 ') + (rangeSelEmployees.value.find(x => x.id === empId)?.name || ''),
       payload: { items: submitItems.map(it => ({ ...it, isRest: it.isRest === 1 ? 0 : 1 })) }
     })
-    await loadDay(dayDate.value)
+    await loadDay(curDate())
   } catch (e) {
     /* 拦截器已提示 */
   }
@@ -1411,7 +1458,7 @@ async function toggleRangeRest() {
 // 取消排班：选了员工只取消该员工在范围内的时段；未选则取消范围内所有人（需确认）
 async function cancelRangeSchedule() {
   const keys = [...rangeSelKeys.value]
-  if (!keys.length || !dayDate.value) return
+  if (!keys.length || !curDate()) return
   const wsId = wsNameToId.value.get(rangeSel.ws)
   if (!wsId) return
 
@@ -1453,7 +1500,7 @@ async function cancelRangeSchedule() {
       const e = byEmployee.get(empId)
       await removeScheduleSlot(planId.value, {
         employeeId: empId,
-        workDate: dayDate.value,
+        workDate: curDate(),
         timeSlots: e.timeSlots,
         workstationId: wsId
       })
@@ -1461,7 +1508,7 @@ async function cancelRangeSchedule() {
       ElMessage.success(`已取消 ${e.name} 的排班（${e.timeSlots.length} 段）`)
     } else {
       await clearScheduleRange(planId.value, {
-        workDate: dayDate.value,
+        workDate: curDate(),
         workstationId: wsId,
         timeSlots: keys
       })
@@ -1471,10 +1518,10 @@ async function cancelRangeSchedule() {
     pushUndo({
       type: 'cancel-range',
       text: '已取消排班 ' + (empId ? byEmployee.get(empId)?.name : rangeSel.ws + ' ' + rangeSelCount.value + ' 段'),
-      payload: { restores: restorePayload, workDate: dayDate.value }
+      payload: { restores: restorePayload, workDate: curDate() }
     })
     clearRangeSel()
-    await loadDay(dayDate.value)
+    await loadDay(curDate())
   } catch (e) {
     /* 拦截器已提示 */
   }
@@ -1482,6 +1529,8 @@ async function cancelRangeSchedule() {
 
 // 点击格子：拖动结束后的 click 被忽略；空位打开添加人员弹窗；非空仅清除高亮
 function onCellClick(ws, slot) {
+  // 批量模式下由框选处理，不触发空位加人
+  if (batchMode.value) return
   if (Date.now() < suppressCellClickUntil) return
   if (dailyCellUsers(ws, slot).length === 0) {
     openAddSlot(ws, [slot.key])
@@ -1492,7 +1541,7 @@ function onCellClick(ws, slot) {
 
 async function openAddSlot(ws, slotKeys, mode = 'add') {
   const wsId = wsNameToId.value.get(ws)
-  if (!wsId || !dayDate.value || !Array.isArray(slotKeys) || slotKeys.length === 0) {
+  if (!wsId || !curDate() || !Array.isArray(slotKeys) || slotKeys.length === 0) {
     ElMessage.warning('无法识别该工作站或日期，请刷新后重试')
     return
   }
@@ -1507,7 +1556,7 @@ async function openAddSlot(ws, slotKeys, mode = 'add') {
     const s = slots.value[slotIndex(k)]
     return n + (s ? dailyCellUsers(ws, s).length : 0)
   }, 0)
-  addSlotDialog.workDate = dayDate.value
+  addSlotDialog.workDate = curDate()
   addSlotDialog.employeeId = null
   addSlotDialog.candidates = []
   addSlotDialog.visible = true
@@ -1575,6 +1624,10 @@ function onModeChange() {
   selectedDate.value = ''
   dailyRows.value = []
   highlightedEmpId.value = null
+  // 清理范围选择/拖动吸附等临时交互状态，避免跨视图残留
+  clearRangeSel()
+  rangeSelect.active = false
+  rangeSelect.moved = false
   wsFilter.value = ''
   typeFilter.value = ''
   // 切到日明细时：默认日期限定在当前方案的周期内

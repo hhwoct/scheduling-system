@@ -416,7 +416,7 @@ public sealed class ScheduleService : IScheduleService
             .ToList();
     }
 
-    public async Task<IReadOnlyList<DailyViewItem>> GetDailyViewAsync(
+    public async Task<DailyViewResult> GetDailyViewAsync(
         long planId,
         long storeId,
         DateOnly workDate,
@@ -468,7 +468,7 @@ public sealed class ScheduleService : IScheduleService
                 .Where(x => coverIds.Contains(x.Id))
                 .ToDictionaryAsync(x => x.Id, x => x.Name, cancellationToken);
 
-        return results
+        var rows = results
             .OrderBy(x => x.TimeSlot)
             .ThenBy(x => x.EmployeeId)
             .Select(r =>
@@ -493,6 +493,39 @@ public sealed class ScheduleService : IScheduleService
                     brk?.BreakCoverEmployeeId is null ? null : coverNames.GetValueOrDefault(brk.BreakCoverEmployeeId.Value));
             })
             .ToList();
+
+        // 营业日口径：日明细时间轴 13:00~次日 05:30 属于同一个营业日，
+        // 需求按 workDate 的日期类型取（凌晨 00:00-05:30 归属前一营业日 = workDate 的 day_type）。
+        var dayType = (await _dbContext.DateParameters.AsNoTracking()
+                .FirstOrDefaultAsync(x => x.StoreId == storeId && x.WorkDate == workDate, cancellationToken))?.DayType
+            ?? "WORKDAY";
+
+        var requirements = await _dbContext.StaffingRequirements.AsNoTracking()
+            .Where(x => x.StoreId == storeId && x.DayType == dayType && (x.RequiredCount > 0 || x.IdealCount > 0))
+            .Select(x => new { x.WorkstationId, x.TimeSlot, x.RequiredCount, x.IdealCount })
+            .ToListAsync(cancellationToken);
+
+        var wsInfo = await _dbContext.Workstations.AsNoTracking()
+            .Where(x => x.StoreId == storeId)
+            .ToDictionaryAsync(x => x.Id, x => new { x.Name, x.IsLowSkill }, cancellationToken);
+
+        var demand = requirements
+            .Select(r =>
+            {
+                wsInfo.TryGetValue(r.WorkstationId, out var ws);
+                return new DailyDemandCell(
+                    r.WorkstationId,
+                    ws?.Name ?? "--",
+                    r.TimeSlot,
+                    r.RequiredCount,
+                    r.IdealCount,
+                    ws?.IsLowSkill ?? 0);
+            })
+            .OrderBy(d => d.TimeSlot)
+            .ThenBy(d => d.WorkstationId)
+            .ToList();
+
+        return new DailyViewResult(rows, demand);
     }
 
     public async Task<ScheduleSummaryDto> GetSummaryAsync(long planId, long storeId, CancellationToken cancellationToken)

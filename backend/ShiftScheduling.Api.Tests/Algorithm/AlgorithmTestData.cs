@@ -61,7 +61,6 @@ public static class AlgorithmTestData
         List<ShiftTemplateInput> shifts,
         List<StaffingRequirementInput> requirements,
         int defaultMonthlyRestDays = 4,
-        decimal maxWeeklyHours = 48,
         int maxConsecutiveWorkDays = 6,
         int minRestHoursAfterNightShift = 10,
         decimal minDailyWorkHours = 0m)
@@ -79,7 +78,6 @@ public static class AlgorithmTestData
             new Dictionary<long, bool>(),
             new Dictionary<long, string>(),
             defaultMonthlyRestDays,
-            maxWeeklyHours,
             maxConsecutiveWorkDays,
             minRestHoursAfterNightShift,
             minDailyWorkHours);

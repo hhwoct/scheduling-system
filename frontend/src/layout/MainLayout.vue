@@ -20,7 +20,7 @@
           <el-menu-item index="/shift-templates">班次管理</el-menu-item>
           <el-menu-item index="/rules">规则配置</el-menu-item>
           <el-menu-item index="/staffing-requirements">人数需求</el-menu-item>
-          <el-menu-item index="/date-parameters">日期参数</el-menu-item>
+          <el-menu-item v-if="authStore.username === SUPER_ADMIN_USERNAME" index="/date-parameters">日期参数</el-menu-item>
           <el-menu-item index="/skill-matrix">技能等级</el-menu-item>
         </el-sub-menu>
         <el-sub-menu v-if="authStore.role !== 'EMPLOYEE'" index="schedule">
@@ -30,8 +30,8 @@
           <el-menu-item index="/reports">排班报表</el-menu-item>
           <el-menu-item v-if="authStore.username === SUPER_ADMIN_USERNAME" index="/audit-logs">审计日志</el-menu-item>
           <el-menu-item index="/preferences">偏好学习</el-menu-item>
-          <el-menu-item index="/leave-review">请假审批</el-menu-item>
-          <el-menu-item index="/swap-review">换班审批</el-menu-item>
+          <el-menu-item v-if="authStore.username === STORE_MANAGER_USERNAME" index="/leave-review">请假审批</el-menu-item>
+          <el-menu-item v-if="authStore.username === STORE_MANAGER_USERNAME" index="/swap-review">换班审批</el-menu-item>
           <el-menu-item index="/notifications">通知消息</el-menu-item>
         </el-sub-menu>
       </el-menu>
@@ -89,7 +89,7 @@ import { ArrowDown, Bell, Calendar, DataBoard, Expand, Fold } from '@element-plu
 import { ElMessageBox } from 'element-plus'
 import { useAuthStore } from '../stores/auth'
 import { getUnreadCount } from '../api/notifications'
-import { SUPER_ADMIN_USERNAME } from '../constants/config'
+import { SUPER_ADMIN_USERNAME, STORE_MANAGER_USERNAME } from '../constants/config'
 import ChangePasswordDialog from '../components/ChangePasswordDialog.vue'
 
 const router = useRouter()

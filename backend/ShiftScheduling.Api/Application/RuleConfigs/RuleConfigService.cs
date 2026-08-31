@@ -76,6 +76,27 @@ public sealed class RuleConfigService : IRuleConfigService
         rule.Version++;
         rule.UpdatedAt = DateTime.UtcNow;
 
+        // 同步「最大周工时」：修改全局默认值时，跟随默认的员工个人周工时上限一并更新。
+        var syncedEmployeeCount = 0;
+        var syncedMaxWeeklyHours = 0m;
+        if (rule.RuleKey == "max_weekly_hours"
+            && decimal.TryParse(rule.RuleValue, System.Globalization.NumberStyles.Number,
+                System.Globalization.CultureInfo.InvariantCulture, out syncedMaxWeeklyHours)
+            && syncedMaxWeeklyHours > 0)
+        {
+            var followDefaultEmployees = await _dbContext.Employees
+                .Where(x => x.StoreId == storeId && x.WeeklyHoursFollowDefault == 1)
+                .ToListAsync(cancellationToken);
+
+            foreach (var employee in followDefaultEmployees)
+            {
+                employee.MaxWeeklyHours = syncedMaxWeeklyHours;
+                employee.UpdatedAt = DateTime.UtcNow;
+            }
+
+            syncedEmployeeCount = followDefaultEmployees.Count;
+        }
+
         // 修复：审计与业务数据在同一事务内提交
         _auditLogService.AddAuditEntity(
             _dbContext,
@@ -89,6 +110,22 @@ public sealed class RuleConfigService : IRuleConfigService
             System.Text.Json.JsonSerializer.Serialize(new { rule.RuleValue, rule.Status }),
             $"修改规则 {rule.RuleName}",
             DateTime.UtcNow);
+
+        if (syncedEmployeeCount > 0)
+        {
+            _auditLogService.AddAuditEntity(
+                _dbContext,
+                storeId,
+                operatorUserId,
+                operatorName,
+                "SYNC_EMPLOYEE_WEEKLY_HOURS",
+                "EMPLOYEE",
+                null,
+                null,
+                System.Text.Json.JsonSerializer.Serialize(new { maxWeeklyHours = syncedMaxWeeklyHours }),
+                $"同步 {syncedEmployeeCount} 名跟随默认员工的周工时上限",
+                DateTime.UtcNow);
+        }
 
         try
         {

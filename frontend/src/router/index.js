@@ -1,5 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import { SUPER_ADMIN_USERNAME } from '../constants/config'
+import { SUPER_ADMIN_USERNAME, STORE_MANAGER_USERNAME } from '../constants/config'
 
 const routes = [
   {
@@ -85,7 +85,7 @@ const routes = [
         path: 'date-parameters',
         name: 'DateParameters',
         component: () => import('../views/DateParametersView.vue'),
-        meta: { title: '日期参数' }
+        meta: { title: '日期参数', adminOnly: true }
       },
       {
         path: 'skill-matrix',
@@ -127,13 +127,13 @@ const routes = [
         path: 'leave-review',
         name: 'LeaveReview',
         component: () => import('../views/LeaveReviewView.vue'),
-        meta: { title: '请假审批' }
+        meta: { title: '请假审批', storeManagerOnly: true }
       },
       {
         path: 'swap-review',
         name: 'SwapReview',
         component: () => import('../views/SwapReviewView.vue'),
-        meta: { title: '换班审批' }
+        meta: { title: '换班审批', storeManagerOnly: true }
       },
       {
         path: 'notifications',
@@ -193,6 +193,15 @@ router.beforeEach((to) => {
   if (to.meta?.adminOnly) {
     const username = localStorage.getItem('shift_username') || ''
     if (username !== SUPER_ADMIN_USERNAME) {
+      return { path: '/dashboard' }
+    }
+  }
+
+  // 仅店长账号可访问的页面（请假/换班审批）：按用户名判定（店长账号由 STORE_MANAGER_USERNAME 配置），
+  // 与角色无关——张店长 E001 虽是 SYSTEM_ADMIN 角色，但作为店长可访问，而 admin 等其他账号不可访问。
+  if (to.meta?.storeManagerOnly) {
+    const username = localStorage.getItem('shift_username') || ''
+    if (username !== STORE_MANAGER_USERNAME) {
       return { path: '/dashboard' }
     }
   }

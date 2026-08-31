@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using ShiftScheduling.Api.Application.Common;
 using ShiftScheduling.Api.Application.RuleConfigs;
 using ShiftScheduling.Api.Infrastructure.Persistence.Entities;
@@ -98,5 +99,37 @@ public sealed class RuleConfigServiceTests
         var service = CreateService();
         await Assert.ThrowsAsync<NotFoundException>(() =>
             service.UpdateAsync(999, new RuleConfigUpdateRequest("50", 1), 1, 9, "a", CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task UpdateAsync_MaxWeeklyHours_SyncsFollowDefaultEmployeesOnly()
+    {
+        var rule = await SeedRuleAsync(_factory, value: "48");
+        var db = _factory.CreateDbContext();
+        db.Employees.AddRange(
+            new EmployeeEntity { StoreId = 1, EmployeeNo = "E001", Name = "跟随默认", Department = "楼面", MaxWeeklyHours = 48, WeeklyHoursFollowDefault = 1, Status = 1, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
+            new EmployeeEntity { StoreId = 1, EmployeeNo = "E002", Name = "个人覆盖", Department = "楼面", MaxWeeklyHours = 50, WeeklyHoursFollowDefault = 0, Status = 1, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow });
+        await db.SaveChangesAsync();
+
+        var service = CreateService();
+        await service.UpdateAsync(rule.Id, new RuleConfigUpdateRequest("60", 1, Version: rule.Version), 1, 9, "管理员", CancellationToken.None);
+
+        var reloaded = _factory.CreateDbContext();
+        var followDefault = await reloaded.Employees.SingleAsync(x => x.EmployeeNo == "E001");
+        var custom = await reloaded.Employees.SingleAsync(x => x.EmployeeNo == "E002");
+        Assert.Equal(60m, followDefault.MaxWeeklyHours);
+        Assert.Equal(50m, custom.MaxWeeklyHours); // 个人覆盖不被全局修改重置
+    }
+
+    [Fact]
+    public async Task UpdateAsync_JsonTypeRule_AcceptsJsonValue()
+    {
+        // 单日最大工时按岗位配置：value_type=json，保存 JSON 字符串不应被数字校验拦截
+        await SeedRuleAsync(_factory, key: "max_daily_work_hours", value: "12", valueType: "json");
+        var service = CreateService();
+        var json = "{\"default\":12,\"保洁\":10,\"楼面\":11}";
+        var result = await service.UpdateAsync(1, new RuleConfigUpdateRequest(json, 1), 1, 9, "a", CancellationToken.None);
+
+        Assert.Equal(json, result.RuleValue);
     }
 }

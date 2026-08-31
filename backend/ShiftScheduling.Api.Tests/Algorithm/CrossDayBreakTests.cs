@@ -52,7 +52,7 @@ public sealed class CrossDayBreakTests
             new List<PeakRestrictedHourInput> { new(TimeSpan.FromHours(20), TimeSpan.FromHours(22)) },
             new Dictionary<long, bool>(),
             new Dictionary<long, string>(),
-            4, 48m, 6, 10, 0m);
+            4, 6, 10, 0m);
 
         var shiftAssignments = new List<ShiftAssignment>
         {

@@ -307,11 +307,45 @@ public sealed class SchedulingEngine
             .ToDictionaryAsync(x => x.RuleKey, x => x.RuleValue, cancellationToken);
 
         var defaultMonthlyRestDays = GetRuleInt(rules, "default_monthly_rest_days", 4);
-        var maxWeeklyHours = GetRuleDecimal(rules, "max_weekly_hours", 48m);
         var maxConsecutiveWorkDays = GetRuleInt(rules, "max_consecutive_work_days", 6);
         var minRestHoursAfterNightShift = GetRuleInt(rules, "min_rest_hours_after_night_shift", 10);
         // 正式员工每日最低工时：上班当天工时不得低于该值（0 表示不限制）
         var minDailyWorkHours = GetRuleDecimal(rules, "min_daily_work_hours", 6.5m);
+        // 单日最大工时：可为不同岗位单独设置（JSON：{"default":12,"保洁":10}）；纯数字视为全部岗位默认值（0 表示不限制）
+        var maxDailyWorkHours = 12m;
+        var maxDailyWorkHoursByDepartment = new Dictionary<string, decimal>();
+        var dailyRuleValue = rules.GetValueOrDefault("max_daily_work_hours") ?? "12";
+        if (decimal.TryParse(dailyRuleValue, System.Globalization.NumberStyles.Number,
+                System.Globalization.CultureInfo.InvariantCulture, out var plainDaily))
+        {
+            maxDailyWorkHours = plainDaily;
+        }
+        else
+        {
+            try
+            {
+                var dailyMap = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, decimal>>(dailyRuleValue);
+                if (dailyMap is not null && dailyMap.Count > 0)
+                {
+                    if (dailyMap.TryGetValue("default", out var def))
+                    {
+                        maxDailyWorkHours = def;
+                    }
+
+                    foreach (var (dept, hours) in dailyMap)
+                    {
+                        if (dept != "default")
+                        {
+                            maxDailyWorkHoursByDepartment[dept] = hours;
+                        }
+                    }
+                }
+            }
+            catch (System.Text.Json.JsonException)
+            {
+                // 非法 JSON 回退默认 12
+            }
+        }
 
         // 偏好学习（feature/schedule-pref-learning）：软排序因子。
         // 权重 0 = 关闭；>0 时在技能分排序中作为次级键（技能分相同/接近时贴合店长历史习惯）。
@@ -373,14 +407,15 @@ public sealed class SchedulingEngine
             lowSkillWorkstationIds,
             warnOnlyGapWorkstations,
             defaultMonthlyRestDays,
-            maxWeeklyHours,
             maxConsecutiveWorkDays,
             minRestHoursAfterNightShift,
             minDailyWorkHours,
             preferenceShiftScores,
             preferenceWsScores,
             preferenceRestScores,
-            preferenceWeight);
+            preferenceWeight,
+            maxDailyWorkHours,
+            maxDailyWorkHoursByDepartment);
     }
 
     /// <summary>
@@ -510,7 +545,7 @@ public sealed class SchedulingEngine
 
         foreach (var entry in weeklyHoursByEmployeeAndWeek)
         {
-            if (entry.Value > input.MaxWeeklyHours && employeeById.TryGetValue(entry.Key.EmployeeId, out var emp))
+            if (employeeById.TryGetValue(entry.Key.EmployeeId, out var emp) && entry.Value > emp.MaxWeeklyHours)
             {
                 issues.Add(new ScheduleIssueOutput(
                     "OVERTIME",
@@ -519,7 +554,7 @@ public sealed class SchedulingEngine
                     null,
                     entry.Key.EmployeeId,
                     null,
-                    $"员工 {emp.Name} 在 {entry.Key.WeekStart:yyyy-MM-dd} 这一周总工时 {entry.Value:0.##} 超过上限 {input.MaxWeeklyHours:0.##}"));
+                    $"员工 {emp.Name} 在 {entry.Key.WeekStart:yyyy-MM-dd} 这一周总工时 {entry.Value:0.##} 超过上限 {emp.MaxWeeklyHours:0.##}"));
             }
         }
 

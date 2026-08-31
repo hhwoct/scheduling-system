@@ -29,7 +29,7 @@ public interface IScheduleService
         DateOnly? weekStart,
         CancellationToken cancellationToken);
 
-    Task<IReadOnlyList<DailyViewItem>> GetDailyViewAsync(
+    Task<DailyViewResult> GetDailyViewAsync(
         long planId,
         long storeId,
         DateOnly workDate,
