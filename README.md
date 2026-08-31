@@ -91,6 +91,21 @@ EOF
 mysql -u root -p < database/init_shift_mvp.sql
 ```
 
+> init 脚本已吸收 20260824 及之前的全部结构/数据变更（建库 shift_mvp + 建表 + 模拟数据）。
+
+**接着按文件名顺序执行 20260825 起的全部增量迁移**（店长工作站、偏好学习、调整明细等，均已幂等，可重跑）：
+
+```bash
+# 密码不是 root123 时请替换（与上方连接串保持一致）
+for f in database/migrations/2026*.sql; do
+  [ "$f" > "database/migrations/20260825_" ] || continue   # 只跑 20260825 及之后
+  echo "== $f =="
+  mysql -u root -proot123 shift_mvp < "$f" || exit 1
+done
+```
+
+或按文件名日期顺序逐个执行（migrations 目录天然按日期排序）。
+
 默认账号（**init 脚本只创建员工账号且为不可登录的占位哈希；admin/manager 需按下方说明创建**）：
 
 | 用户名 | 角色 |
