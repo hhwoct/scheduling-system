@@ -1,6 +1,5 @@
 # 排班系统 MVP
 
-> 案例门店：昆明滚滚
 > 后端：.NET 10.0 Web API + MySQL
 > 前端：Vue 3 + Element Plus + Vite
 
