@@ -15,8 +15,7 @@
           </div>
           <div class="hero-stat">
             <div class="hero-stat__value">{{ totalFullTime ?? '--' }}</div>
-            <div class="hero-stat__label">正式员工</div>
-            <div class="hero-stat__sub">{{ totalPartTime != null ? '另有 ' + totalPartTime + ' 名兼职' : '' }}</div>
+            <div class="hero-stat__label">员工</div>
           </div>
           <div class="hero-stat">
             <div class="hero-stat__value">{{ totalShifts ?? '--' }}</div>
@@ -40,11 +39,7 @@
             <div class="store-card__metrics">
               <div class="metric">
                 <div class="metric__value">{{ s.fullTimeCount ?? '--' }}</div>
-                <div class="metric__label">正式员工</div>
-              </div>
-              <div class="metric">
-                <div class="metric__value">{{ s.partTimeCount ?? '--' }}</div>
-                <div class="metric__label">兼职</div>
+                <div class="metric__label">员工</div>
               </div>
               <div class="metric">
                 <div class="metric__value">{{ s.shiftCount ?? '--' }}</div>
@@ -68,8 +63,7 @@
         <div class="hero-stats">
           <div class="hero-stat">
             <div class="hero-stat__value">{{ stats.fullTimeCount ?? '--' }}</div>
-            <div class="hero-stat__label">正式员工</div>
-            <div class="hero-stat__sub">{{ stats.partTimeCount != null ? '另有 ' + stats.partTimeCount + ' 名兼职' : '' }}</div>
+            <div class="hero-stat__label">员工</div>
           </div>
           <div class="hero-stat">
             <div class="hero-stat__value">{{ stats.shiftCount ?? '--' }}</div>
@@ -120,10 +114,6 @@ const storesFailed = ref(false)
 const totalFullTime = computed(() => {
   if (!stores.value.length) return null
   return stores.value.reduce((sum, s) => sum + (s.fullTimeCount || 0), 0)
-})
-const totalPartTime = computed(() => {
-  if (!stores.value.length) return null
-  return stores.value.reduce((sum, s) => sum + (s.partTimeCount || 0), 0)
 })
 const totalShifts = computed(() => {
   if (!stores.value.length) return null
