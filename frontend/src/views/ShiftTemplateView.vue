@@ -106,6 +106,7 @@ import { onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getShiftTemplates, updateShiftTemplate } from '../api/shiftTemplates'
 import PeakHoursSection from '../components/PeakHoursSection.vue'
+import { colorAt } from '../constants/palette'
 
 const loading = ref(false)
 const list = ref([])
@@ -172,8 +173,6 @@ const GANTT_START = 13 * 60  // 13:00 in minutes
 const GANTT_END = (24 + 6) * 60  // 次日 06:00 = 30:00 in minutes
 const GANTT_DURATION = GANTT_END - GANTT_START  // 17h = 1020 min
 
-const COLORS = ['#409eff','#67c23a','#e6a23c','#f56c6c','#909399','#b37feb','#ff85c0','#36cfc9']
-
 // 时间轴刻度：13:00 到 06:00（次日）
 const ganttHours = (() => {
   const arr = []
@@ -187,7 +186,7 @@ const ganttHours = (() => {
 
 function shiftColor(code) {
   const idx = (list.value || []).findIndex(s => s.code === code)
-  return COLORS[idx % COLORS.length] || '#ccc'
+  return colorAt(idx)
 }
 
 function toMinutes(t) {

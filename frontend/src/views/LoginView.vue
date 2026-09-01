@@ -198,7 +198,7 @@ async function handleForgotPassword() {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #001529 0%, #003a70 100%);
+  background: linear-gradient(135deg, var(--app-brand-gradient-from) 0%, var(--app-brand-gradient-to) 100%);
 }
 .login-card {
   width: 380px;

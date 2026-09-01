@@ -181,21 +181,21 @@
                 <div style="display: flex; align-items: center; gap: 8px">
                   <svg viewBox="0 0 200 200" width="220" height="220">
                     <circle v-for="(slice, i) in typePieData" :key="i" :cx="100" :cy="100" :r="80" fill="none" :stroke="slice.color" stroke-width="30" :stroke-dasharray="`${slice.pct * 502.65} ${(1 - slice.pct) * 502.65}`" :stroke-dashoffset="(typePieOffset[i])" transform="rotate(-90 100 100)" style="cursor: pointer" @click="filterTableByType(slice.key)" />
-                    <text v-for="(slice, i) in typePieLabels" :key="'tlbl'+i" :x="slice.x" :y="slice.y" text-anchor="middle" font-size="11" fill="#fff" font-weight="bold" pointer-events="none">{{ slice.count }}</text>
-                    <text x="100" y="95" text-anchor="middle" font-size="15" fill="#303133" font-weight="bold">{{ issuesList.length }} 条</text>
-                    <text x="100" y="114" text-anchor="middle" font-size="11" fill="#909399">类型分布</text>
-                    <text v-if="typeFilter" x="100" y="128" text-anchor="middle" font-size="9" fill="#409eff" style="cursor:pointer" @click="typeFilter=''">✕ 清除</text>
+                    <text v-for="(slice, i) in typePieLabels" :key="'tlbl'+i" :x="slice.x" :y="slice.y" text-anchor="middle" font-size="11" fill="var(--el-color-white)" font-weight="bold" pointer-events="none">{{ slice.count }}</text>
+                    <text x="100" y="95" text-anchor="middle" font-size="15" fill="var(--el-text-color-primary)" font-weight="bold">{{ issuesList.length }} 条</text>
+                    <text x="100" y="114" text-anchor="middle" font-size="11" fill="var(--el-text-color-secondary)">类型分布</text>
+                    <text v-if="typeFilter" x="100" y="128" text-anchor="middle" font-size="9" fill="var(--el-color-primary)" style="cursor:pointer" @click="typeFilter=''">✕ 清除</text>
                   </svg>
-                  <div class="mini-legend"><div v-for="s in typePieData" :key="s.label" class="legend-row clickable" @click="filterTableByType(s.key)"><span class="legend-dot" :style="{ background: s.color }"></span><span style="font-size:12px" :style="{ fontWeight: typeFilter === s.key ? 'bold' : 'normal', color: typeFilter === s.key ? '#409eff' : '#606266' }">{{ s.label }} ({{ s.count }})</span></div></div>
+                  <div class="mini-legend"><div v-for="s in typePieData" :key="s.label" class="legend-row clickable" @click="filterTableByType(s.key)"><span class="legend-dot" :style="{ background: s.color }"></span><span style="font-size:12px" :style="{ fontWeight: typeFilter === s.key ? 'bold' : 'normal', color: typeFilter === s.key ? 'var(--el-color-primary)' : 'var(--el-text-color-regular)' }">{{ s.label }} ({{ s.count }})</span></div></div>
                 </div>
                 <div style="display: flex; align-items: center; gap: 8px">
                   <svg viewBox="0 0 200 200" width="220" height="220">
                     <circle v-for="(slice, i) in wsPieData" :key="i" :cx="100" :cy="100" :r="80" fill="none" :stroke="slice.color" stroke-width="30" :stroke-dasharray="`${slice.pct * 502.65} ${(1 - slice.pct) * 502.65}`" :stroke-dashoffset="(wsPieOffset[i])" transform="rotate(-90 100 100)" style="cursor: pointer" @click="filterTableByWs(slice.name)" />
-                    <text x="100" y="95" text-anchor="middle" font-size="15" fill="#303133" font-weight="bold">{{ wsTotal }} 条</text>
-                    <text x="100" y="114" text-anchor="middle" font-size="11" fill="#909399">缺口分布</text>
-                    <text v-if="wsFilter" x="100" y="128" text-anchor="middle" font-size="9" fill="#409eff" style="cursor:pointer" @click="wsFilter=''">✕ 清除</text>
+                    <text x="100" y="95" text-anchor="middle" font-size="15" fill="var(--el-text-color-primary)" font-weight="bold">{{ wsTotal }} 条</text>
+                    <text x="100" y="114" text-anchor="middle" font-size="11" fill="var(--el-text-color-secondary)">缺口分布</text>
+                    <text v-if="wsFilter" x="100" y="128" text-anchor="middle" font-size="9" fill="var(--el-color-primary)" style="cursor:pointer" @click="wsFilter=''">✕ 清除</text>
                   </svg>
-                  <div class="mini-legend"><div v-for="s in wsPieData" :key="s.name" class="legend-row clickable" @click="filterTableByWs(s.name)"><span class="legend-dot" :style="{ background: s.color }"></span><span style="font-size:12px" :style="{ fontWeight: wsFilter === s.name ? 'bold' : 'normal', color: wsFilter === s.name ? '#409eff' : '#606266' }">{{ s.name }} ({{ s.count }})</span></div></div>
+                  <div class="mini-legend"><div v-for="s in wsPieData" :key="s.name" class="legend-row clickable" @click="filterTableByWs(s.name)"><span class="legend-dot" :style="{ background: s.color }"></span><span style="font-size:12px" :style="{ fontWeight: wsFilter === s.name ? 'bold' : 'normal', color: wsFilter === s.name ? 'var(--el-color-primary)' : 'var(--el-text-color-regular)' }">{{ s.name }} ({{ s.count }})</span></div></div>
                 </div>
               </div>
             </el-card>
@@ -300,6 +300,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { getMonthView, getWeekView, getDailyView, getScheduleIssues, getScheduleRationality, getSchedules, setSlotStatus, moveScheduleSegment, getAddSlotCandidates, addScheduleSlot, removeScheduleSlot, replaceScheduleSlot, moveScheduleRange, clearScheduleRange } from '../api/schedules'
 import { getPreferenceMatrix } from '../api/preferences'
 import { getWorkstations } from '../api/workstations'
+import { SEVERITY_COLORS, FALLBACK_COLOR, CHART_INK } from '../constants/palette'
 
 const route = useRoute()
 const planId = ref(route.query.planId || '')
@@ -1727,11 +1728,10 @@ const issueStats = computed(() => {
   return { gapCount: list.filter(i => i.issueType === 'STAFFING_GAP').length, warnCount: list.filter(i => i.severity === 'WARN').length, daysCount: new Set(list.map(i => i.workDate).filter(Boolean)).size }
 })
 
-const COLORS_ARR = ['#f56c6c','#e6a23c','#409eff','#67c23a','#909399']
 const typePieData = computed(() => {
   const map = {}; issuesList.value.forEach(i => { map[i.issueType] = (map[i.issueType] || 0) + 1 })
   const entries = Object.entries(map); const total = entries.reduce((s, [,c]) => s + c, 0) || 1
-  return entries.map(([k, c], idx) => ({ key: k, label: k === 'STAFFING_GAP' ? '岗位缺口' : k === 'SKILL_MISMATCH' ? '技能不匹配' : k === 'OVERTIME' ? '工时超限' : k === 'CONSECUTIVE_WORK' ? '连续工作超限' : k, count: c, pct: c / total, color: COLORS_ARR[idx % COLORS_ARR.length] }))
+  return entries.map(([k, c], idx) => ({ key: k, label: k === 'STAFFING_GAP' ? '岗位缺口' : k === 'SKILL_MISMATCH' ? '技能不匹配' : k === 'OVERTIME' ? '工时超限' : k === 'CONSECUTIVE_WORK' ? '连续工作超限' : k, count: c, pct: c / total, color: SEVERITY_COLORS[idx % SEVERITY_COLORS.length] }))
 })
 const typePieOffset = computed(() => { let sum = 0; return typePieData.value.map(s => { const v = -sum * 502.65; sum += s.pct; return v }) })
 const typePieLabels = computed(() => { const r = 63; let cum = -Math.PI / 2; return typePieData.value.map(s => { const half = s.pct * Math.PI; const mid = cum + half; const x = 100 + r * Math.cos(mid); const y = 100 + r * Math.sin(mid); cum += s.pct * 2 * Math.PI; return { x: Math.round(x), y: Math.round(y), count: s.count } }) })
@@ -1743,11 +1743,11 @@ const wsPieData = computed(() => {
   const total = allEntries.reduce((s,[,c]) => s+c, 0) || 1
   const top = allEntries.slice(0, 8)
   const topSum = top.reduce((s,[,c]) => s + c, 0)
-  const result = top.map(([name, count], idx) => ({ name, count, pct: count / total, color: COLORS_ARR[idx % COLORS_ARR.length] }))
+  const result = top.map(([name, count], idx) => ({ name, count, pct: count / total, color: SEVERITY_COLORS[idx % SEVERITY_COLORS.length] }))
   // 补「其他」段：前8之外的计数归入一段，保证比例总和=100%，环形闭合
   const restCount = total - topSum
   if (allEntries.length > 8 && restCount > 0) {
-    result.push({ name: '其他', count: restCount, pct: restCount / total, color: '#c0c4cc' })
+    result.push({ name: '其他', count: restCount, pct: restCount / total, color: FALLBACK_COLOR })
   }
   return result
 })
@@ -1793,14 +1793,14 @@ function renderRationalityChart() {
       type: 'category',
       data: dates,
       boundaryGap: false,
-      axisLabel: { fontSize: 12, fontWeight: 'bold', color: '#303133' }
+      axisLabel: { fontSize: 12, fontWeight: 'bold', color: CHART_INK.primary }
     },
     yAxis: {
       type: 'value',
       min: 0,
       max: 100,
-      axisLabel: { fontSize: 12, fontWeight: 'bold', color: '#606266', formatter: '{value}%' },
-      splitLine: { lineStyle: { color: '#ebeef5' } }
+      axisLabel: { fontSize: 12, fontWeight: 'bold', color: CHART_INK.regular, formatter: '{value}%' },
+      splitLine: { lineStyle: { color: CHART_INK.splitLine } }
     },
     series: [{
       type: 'line',
@@ -1808,10 +1808,10 @@ function renderRationalityChart() {
       smooth: true,
       symbol: 'circle',
       symbolSize: 8,
-      lineStyle: { width: 3, color: '#409eff' },
-      itemStyle: { color: '#409eff', borderColor: '#fff', borderWidth: 2 },
+      lineStyle: { width: 3, color: SEVERITY_COLORS[2] },
+      itemStyle: { color: SEVERITY_COLORS[2], borderColor: CHART_INK.onColor, borderWidth: 2 },
       areaStyle: { color: 'rgba(64,158,255,0.15)' },
-      label: { show: true, fontSize: 12, fontWeight: 'bold', color: '#303133', formatter: '{c}%' }
+      label: { show: true, fontSize: 12, fontWeight: 'bold', color: CHART_INK.primary, formatter: '{c}%' }
     }]
   })
 }
@@ -1847,8 +1847,8 @@ onBeforeUnmount(() => {
 <style scoped>
 .gantt { border: 1px solid var(--el-border-color-lighter); border-radius: 4px; overflow-x: auto; }
 .gantt-row { display: flex; border-bottom: 1px solid var(--el-border-color-lighter); min-width: 100%; }
-.gantt-row-parttime .gantt-emp-col { background: #f7fdf5; }
-.gantt-divider { background: var(--el-color-success-light-9); color: var(--el-color-success); font-weight: 600; font-size: 12px; padding: 5px 10px; border-bottom: 1px solid #c2e7b0; display: flex; align-items: center; gap: 6px; }
+.gantt-row-parttime .gantt-emp-col { background: var(--app-parttime-bg); }
+.gantt-divider { background: var(--el-color-success-light-9); color: var(--el-color-success); font-weight: 600; font-size: 12px; padding: 5px 10px; border-bottom: 1px solid var(--app-parttime-border); display: flex; align-items: center; gap: 6px; }
 .gantt-divider-badge { display: inline-block; background: var(--el-color-success); color: var(--el-color-white); border-radius: 3px; font-size: 11px; padding: 0 5px; line-height: 16px; }
 .gantt-header { background: var(--el-fill-color-light); font-weight: 600; }
 .gantt-emp-col { width: 140px; flex-shrink: 0; padding: 6px 8px; border-right: 1px solid var(--el-border-color-lighter); position: sticky; left: 0; background: var(--el-bg-color); z-index: 3; }
@@ -1873,7 +1873,7 @@ onBeforeUnmount(() => {
 .cal-cell { flex: 1; min-height: 72px; padding: 6px; border-right: 1px solid var(--el-border-color-lighter); cursor: pointer; }
 .cal-cell:hover { background: var(--el-color-primary-light-9); }
 .cal-cell.is-empty { background: var(--el-fill-color-lighter); cursor: default; }
-.cal-cell.is-selected { background: #e6f7ff; box-shadow: inset 0 0 0 2px var(--el-color-primary); }
+.cal-cell.is-selected { background: var(--el-color-primary-light-9); box-shadow: inset 0 0 0 2px var(--el-color-primary); }
 .cal-day-num { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
 .cal-work { font-size: 12px; color: var(--el-color-primary); }
 .cal-parttime { font-size: 12px; color: var(--el-color-success); }
@@ -1910,20 +1910,20 @@ onBeforeUnmount(() => {
 .emp-chip .emp-shift { opacity: 0.85; font-size: 10px; }
 /* 兼职色块：绿色，且与前面的全职色块用虚线间隔隔开 */
 .emp-chip.is-parttime { background: var(--el-color-success); }
-.emp-chip.pt-first { border-top: 1px dashed #a3d98a; padding-top: 3px; margin-top: 1px; }
+.emp-chip.pt-first { border-top: 1px dashed var(--app-parttime-divider); padding-top: 3px; margin-top: 1px; }
 /* 班中休息色块：灰色 + 橙色「休」标记，第二行显示休息时间段与顶岗人 */
 .emp-chip.is-break { background: var(--el-color-info); }
-.emp-chip.is-break .break-info { color: #ffe6a7; }
+.emp-chip.is-break .break-info { color: var(--app-break-text); }
 .break-flag { display: inline-block; background: var(--el-color-warning); color: var(--el-color-white); border-radius: 2px; padding: 0 3px; margin-left: 4px; font-size: 10px; line-height: 14px; }
 .next-day .emp-chip { background: var(--el-color-warning); }
 .next-day .emp-chip.is-parttime { background: var(--el-color-success); }
 .next-day .emp-chip.is-break { background: var(--el-color-info); }
 /* 单击高亮：该员工当天全部工作色块——亮黄底 + 白边 + 呼吸光晕，其余色块压暗 */
 .emp-chip.is-highlighted {
-  background: #ffb800 !important;
+  background: var(--app-highlight) !important;
   color: var(--el-text-color-primary);
   font-weight: 600;
-  box-shadow: 0 0 0 2px var(--el-color-white), 0 0 0 4px #ffb800, 0 0 16px 3px rgba(255, 184, 0, 0.9);
+  box-shadow: 0 0 0 2px var(--el-color-white), 0 0 0 4px var(--app-highlight), 0 0 16px 3px rgba(255, 184, 0, 0.9);
   z-index: 2;
   animation: chip-highlight-pulse 1.4s ease-in-out infinite;
 }
@@ -1931,8 +1931,8 @@ onBeforeUnmount(() => {
 .emp-chip.is-highlighted .emp-shift { color: var(--el-text-color-primary); opacity: 1; }
 .emp-chip.is-highlighted .break-flag { background: var(--el-color-warning); }
 @keyframes chip-highlight-pulse {
-  0%, 100% { box-shadow: 0 0 0 2px var(--el-color-white), 0 0 0 4px #ffb800, 0 0 10px 2px rgba(255, 184, 0, 0.8); }
-  50% { box-shadow: 0 0 0 2px var(--el-color-white), 0 0 0 4px #ffb800, 0 0 24px 7px rgba(255, 184, 0, 1); }
+  0%, 100% { box-shadow: 0 0 0 2px var(--el-color-white), 0 0 0 4px var(--app-highlight), 0 0 10px 2px rgba(255, 184, 0, 0.8); }
+  50% { box-shadow: 0 0 0 2px var(--el-color-white), 0 0 0 4px var(--app-highlight), 0 0 24px 7px rgba(255, 184, 0, 1); }
 }
 /* 有高亮时压暗其他员工色块，突出被高亮员工的全部安排 */
 .matrix.has-chip-highlight .emp-chip:not(.is-highlighted) { opacity: 0.35; transition: opacity 0.2s; }
@@ -1979,12 +1979,12 @@ onBeforeUnmount(() => {
 .parttime-block { border: 1px solid var(--el-color-success); border-radius: 6px; padding: 12px; background: var(--el-color-success-light-9); }
 .parttime-title { display: flex; align-items: center; gap: 6px; font-weight: 600; color: var(--el-text-color-primary); margin-bottom: 10px; }
 .parttime-badge { display: inline-block; background: var(--el-color-success); color: var(--el-color-white); border-radius: 3px; font-size: 12px; padding: 0 6px; line-height: 18px; }
-.parttime-table { border: 1px solid #c2e7b0; border-radius: 4px; overflow: hidden; }
-.parttime-row { display: flex; border-bottom: 1px solid #e8f5e0; }
+.parttime-table { border: 1px solid var(--app-parttime-border); border-radius: 4px; overflow: hidden; }
+.parttime-row { display: flex; border-bottom: 1px solid var(--app-parttime-border-light); }
 .parttime-row:last-child { border-bottom: none; }
 .parttime-header { background: var(--el-color-success-light-9); font-weight: 600; }
-.parttime-ws-col { width: 90px; flex-shrink: 0; padding: 5px 8px; border-right: 1px solid #e8f5e0; font-size: 12px; }
-.parttime-day-col { flex: 1; min-height: 20px; padding: 3px; border-right: 1px solid #e8f5e0; font-size: 11px; text-align: center; color: var(--el-text-color-secondary); }
+.parttime-ws-col { width: 90px; flex-shrink: 0; padding: 5px 8px; border-right: 1px solid var(--app-parttime-border-light); font-size: 12px; }
+.parttime-day-col { flex: 1; min-height: 20px; padding: 3px; border-right: 1px solid var(--app-parttime-border-light); font-size: 11px; text-align: center; color: var(--el-text-color-secondary); }
 .parttime-day-col:last-child { border-right: none; }
 .parttime-day-col.active { background: var(--el-color-success); }
 .parttime-legend { margin-top: 8px; display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--el-text-color-regular); }

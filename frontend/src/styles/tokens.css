@@ -23,6 +23,9 @@
   --app-sidebar-border: rgba(255, 255, 255, 0.08);
   --app-sidebar-hover-bg: rgba(255, 255, 255, 0.06);
   --app-sidebar-width: 220px;
+  /* el-menu 原先由 background-color prop 经 TinyColor shade(20) 派生,
+     现改为显式声明;取值用 tinycolor 实算得到,与原行为一致 */
+  --app-menu-hover-bg: #0c2a4d;
 
   /* ===== 等级热力梯度 ===== */
   /* 人数需求 / 技能矩阵共用的 4 档,由浅到深 */
@@ -80,6 +83,17 @@
   --app-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
   --app-shadow-md: 0 2px 8px rgba(0, 0, 0, 0.08);
   --app-shadow-lg: 0 6px 24px rgba(0, 0, 0, 0.12);
+
+  /* ===== 图表色板 ===== */
+  /* 与 constants/palette.js 保持一致;ECharts/SVG 走 JS,CSS 侧走这里 */
+  --app-chart-1: var(--el-color-primary);
+  --app-chart-2: var(--el-color-success);
+  --app-chart-3: var(--el-color-warning);
+  --app-chart-4: var(--el-color-danger);
+  --app-chart-5: var(--el-color-info);
+  --app-chart-6: #b37feb;
+  --app-chart-7: #ff85c0;
+  --app-chart-8: #36cfc9;
 
   /* ===== 动效 ===== */
   --app-ease: cubic-bezier(0.32, 0.72, 0, 1);

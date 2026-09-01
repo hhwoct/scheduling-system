@@ -107,8 +107,8 @@
       </div>
 
       <div class="legend">
-        <span class="legend-title" style="color: #d97706">┃ 开门 17:00</span>
-        <span class="legend-title" style="color: #4c6fff">┃ 次日 00:00</span>
+        <span class="legend-title" style="color: var(--app-marker-open-text)">┃ 开门 17:00</span>
+        <span class="legend-title" style="color: var(--app-marker-midnight-text)">┃ 次日 00:00</span>
         <span class="legend-title">颜色深浅 = 最少人数：</span>
         <span class="sw lv0">0</span>
         <span class="sw lv1">1</span>
@@ -1247,7 +1247,7 @@ onBeforeUnmount(() => {
 .stat-box {
   flex: 1;
   min-width: 150px;
-  background: #f7f9fc;
+  background: var(--el-fill-color-light);
   border: 1px solid var(--el-border-color-light);
   border-radius: 6px;
   padding: 10px 14px;
@@ -1324,12 +1324,12 @@ onBeforeUnmount(() => {
   border-right-color: var(--el-border-color);
 }
 .axis-cell.midnight {
-  border-left: 2px solid #8fa8ff;
-  color: #4c6fff;
+  border-left: 2px solid var(--app-marker-midnight);
+  color: var(--app-marker-midnight-text);
 }
 .axis-cell.open-time {
-  border-left: 2px solid #f59e0b;
-  color: #d97706;
+  border-left: 2px solid var(--app-marker-open);
+  color: var(--app-marker-open-text);
   font-weight: 700;
 }
 
@@ -1369,7 +1369,7 @@ onBeforeUnmount(() => {
   justify-content: center;
   font-size: 10px;
   color: var(--el-text-color-primary);
-  border-right: 1px solid #f0f2f5;
+  border-right: 1px solid var(--el-border-color-lighter);
   cursor: pointer;
   position: relative;
 }
@@ -1378,10 +1378,10 @@ onBeforeUnmount(() => {
   outline-offset: -2px;
 }
 .gantt-cell.midnight {
-  border-left: 2px solid #8fa8ff;
+  border-left: 2px solid var(--app-marker-midnight);
 }
 .gantt-cell.open-time {
-  border-left: 2px solid #f59e0b;
+  border-left: 2px solid var(--app-marker-open);
 }
 .gantt-cell.selected::after {
   content: '';
@@ -1405,16 +1405,16 @@ onBeforeUnmount(() => {
   background: var(--el-fill-color-light);
 }
 .lv1 {
-  background: #d9ead3;
+  background: var(--app-level-1);
 }
 .lv2 {
-  background: #b6d7a8;
+  background: var(--app-level-2);
 }
 .lv3 {
-  background: #93c47d;
+  background: var(--app-level-3);
 }
 .lv4 {
-  background: #6aa84f;
+  background: var(--app-level-4);
   color: var(--el-color-white);
 }
 .gantt-cell.soft {
@@ -1463,10 +1463,10 @@ onBeforeUnmount(() => {
   margin-bottom: 2px;
 }
 .tip-demand {
-  color: #d9ead3;
+  color: var(--app-level-1);
 }
 .tip-remark {
-  color: #f6c56e;
+  color: var(--el-color-warning-light-3);
   margin-top: 2px;
 }
 

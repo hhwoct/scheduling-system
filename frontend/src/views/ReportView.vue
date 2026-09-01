@@ -306,14 +306,14 @@ onMounted(async () => {
 .gantt { border: 1px solid var(--el-border-color-lighter); border-radius: 4px; overflow-x: auto; }
 .gantt-row { display: flex; border-bottom: 1px solid var(--el-border-color-lighter); min-width: 100%; }
 .gantt-row:last-child { border-bottom: none; }
-.gantt-row-parttime .gantt-emp-col { background: #f7fdf5; }
+.gantt-row-parttime .gantt-emp-col { background: var(--app-parttime-bg); }
 .gantt-divider {
   background: var(--el-color-success-light-9);
   color: var(--el-color-success);
   font-weight: 600;
   font-size: 12px;
   padding: 5px 10px;
-  border-bottom: 1px solid #c2e7b0;
+  border-bottom: 1px solid var(--app-parttime-border);
   display: flex;
   align-items: center;
   gap: 6px;

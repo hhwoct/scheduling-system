@@ -313,7 +313,7 @@ onMounted(loadData)
 .cal-cell:last-child { border-right: none; }
 .cal-cell:hover { background: var(--el-color-primary-light-9); }
 .cal-cell.is-empty { background: var(--el-fill-color-lighter); cursor: default; }
-.cal-cell.is-selected { background: #e6f7ff; box-shadow: inset 0 0 0 2px var(--el-color-primary); }
+.cal-cell.is-selected { background: var(--el-color-primary-light-9); box-shadow: inset 0 0 0 2px var(--el-color-primary); }
 .cal-day-num { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
 .cal-work { font-size: 12px; color: var(--el-color-primary); }
 .cal-rest { font-size: 12px; color: var(--el-color-danger); }
@@ -335,7 +335,7 @@ onMounted(loadData)
 .gap-flag { position: absolute; top: 1px; right: 1px; background: var(--el-color-danger); color: var(--el-color-white); font-size: 10px; border-radius: 2px; padding: 0 3px; line-height: 14px; }
 .emp-chip { background: var(--el-color-primary); color: var(--el-color-white); border-radius: 3px; padding: 2px 4px; margin-bottom: 2px; font-size: 11px; }
 .emp-chip.is-break { background: var(--el-color-info); }
-.emp-chip.is-break .break-info { color: #ffe6a7; }
+.emp-chip.is-break .break-info { color: var(--app-break-text); }
 .break-flag { display: inline-block; background: var(--el-color-warning); color: var(--el-color-white); border-radius: 2px; padding: 0 3px; margin-left: 4px; font-size: 10px; line-height: 14px; }
 .emp-chip .emp-name { font-weight: 600; }
 .emp-chip .emp-shift { opacity: 0.85; font-size: 10px; }

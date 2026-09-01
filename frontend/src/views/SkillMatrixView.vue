@@ -334,16 +334,16 @@ onBeforeUnmount(() => {
   background: var(--el-fill-color-light);
 }
 .skill-badge.lv1 {
-  background: #d9ead3;
+  background: var(--app-level-1);
 }
 .skill-badge.lv2 {
-  background: #b6d7a8;
+  background: var(--app-level-2);
 }
 .skill-badge.lv3 {
-  background: #93c47d;
+  background: var(--app-level-3);
 }
 .skill-badge.lv4 {
-  background: #6aa84f;
+  background: var(--app-level-4);
   color: var(--el-color-white);
 }
 .legend {
@@ -365,16 +365,16 @@ onBeforeUnmount(() => {
   border: 1px solid var(--el-border-color);
 }
 .sw.lv1 {
-  background: #d9ead3;
+  background: var(--app-level-1);
 }
 .sw.lv2 {
-  background: #b6d7a8;
+  background: var(--app-level-2);
 }
 .sw.lv3 {
-  background: #93c47d;
+  background: var(--app-level-3);
 }
 .sw.lv4 {
-  background: #6aa84f;
+  background: var(--app-level-4);
   color: var(--el-color-white);
 }
 </style>

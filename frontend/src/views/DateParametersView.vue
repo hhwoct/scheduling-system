@@ -248,11 +248,11 @@ onMounted(() => {
 }
 .cell.day.weekend {
   background: var(--el-color-primary-light-9);
-  border-color: #b3d8ff;
+  border-color: var(--el-color-primary-light-5);
 }
 .cell.day.holiday {
   background: var(--el-color-danger-light-9);
-  border-color: #fbc4c4;
+  border-color: var(--el-color-danger-light-7);
 }
 .cell.day.unconfigured {
   border-style: dashed;

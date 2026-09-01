@@ -4,9 +4,6 @@
       <div class="logo">排班系统</div>
       <el-menu
         :default-active="$route.path"
-        background-color="#0f3460"
-        text-color="rgba(255,255,255,0.65)"
-        active-text-color="#ffffff"
         @select="handleMenuSelect"
       >
         <el-menu-item v-if="authStore.role !== 'EMPLOYEE'" index="/dashboard">
@@ -171,7 +168,7 @@ async function handleCommand(command) {
 .main-aside {
   display: flex;
   flex-direction: column;
-  background-color: #0f3460;
+  background-color: var(--app-brand);
   overflow: hidden;
   transition: width 0.25s ease;
 }
@@ -195,7 +192,7 @@ async function handleCommand(command) {
   align-items: center;
   gap: 8px;
   padding: 16px 7px;
-  background-color: #0f3460;
+  background-color: var(--app-brand);
   color: rgba(255, 255, 255, 0.75);
   border: none;
   border-radius: 0 10px 10px 0;
@@ -215,9 +212,16 @@ async function handleCommand(command) {
 }
 .sidebar-tab:hover {
   color: var(--el-color-white);
-  background-color: #12395c;
+  background-color: var(--app-brand-hover);
 }
+/* 原先用 el-menu 的 background-color/text-color/active-text-color prop,
+   那三个 prop 已废弃且要走 TinyColor 派生,无法消费 token,故改为直接给变量 */
 .main-aside :deep(.el-menu) {
+  --el-menu-bg-color: var(--app-sidebar-bg);
+  --el-menu-text-color: var(--app-sidebar-text);
+  --el-menu-active-color: var(--app-sidebar-text-active);
+  --el-menu-hover-bg-color: var(--app-menu-hover-bg);
+  --el-menu-item-hover-fill: var(--app-menu-hover-bg);
   flex: 1;
   overflow-y: auto;
   border-right: none;
@@ -225,7 +229,7 @@ async function handleCommand(command) {
 /* 选中菜单项加深背景，突出当前页面 */
 .main-aside :deep(.el-menu-item.is-active),
 .main-aside :deep(.el-menu-item.is-active:hover) {
-  background-color: #0a2540;
+  background-color: var(--app-brand-active);
 }
 .aside-footer {
   display: flex;

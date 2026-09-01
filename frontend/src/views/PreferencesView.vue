@@ -146,7 +146,7 @@ onMounted(() => {
 .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
 .stat-row { margin-bottom: 8px; }
 .stat-card {
-  background: #f7f8fa; border-radius: 8px; padding: 14px; text-align: center;
+  background: var(--el-fill-color-light); border-radius: 8px; padding: 14px; text-align: center;
   border: 1px solid var(--el-border-color-lighter);
 }
 .stat-num { font-size: 26px; font-weight: 700; color: var(--el-color-primary); }
