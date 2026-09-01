@@ -34,11 +34,15 @@
           <el-sub-menu index="basic">
             <template #title><span>基础数据</span></template>
             <el-menu-item index="/employees">员工管理</el-menu-item>
+            <el-menu-item index="/rules">规则配置</el-menu-item>
+            <el-menu-item v-if="authStore.username === SUPER_ADMIN_USERNAME" index="/date-parameters">日期参数</el-menu-item>
+          </el-sub-menu>
+          <!-- 门店级运营配置:仅店长可见,admin 不显示 -->
+          <el-sub-menu v-if="authStore.role === 'STORE_MANAGER'" index="store-ops">
+            <template #title><span>店长管理</span></template>
             <el-menu-item index="/workstations">工作站管理</el-menu-item>
             <el-menu-item index="/shift-templates">班次管理</el-menu-item>
-            <el-menu-item index="/rules">规则配置</el-menu-item>
             <el-menu-item index="/staffing-requirements">人数需求</el-menu-item>
-            <el-menu-item v-if="authStore.username === SUPER_ADMIN_USERNAME" index="/date-parameters">日期参数</el-menu-item>
             <el-menu-item index="/skill-matrix">技能等级</el-menu-item>
           </el-sub-menu>
           <el-sub-menu index="schedule">
