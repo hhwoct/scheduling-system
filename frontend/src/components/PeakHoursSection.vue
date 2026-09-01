@@ -12,7 +12,7 @@
       :closable="false"
       show-icon
       title="员工班中休息（30 分钟）不会安排在这些时段内，休息与高峰时段完全不重叠。"
-      style="margin-bottom: 12px"
+      style="margin-bottom: var(--app-space-5)"
     />
 
     <el-table :data="list" v-loading="loading" border stripe size="small">
@@ -170,6 +170,6 @@ onMounted(loadData)
 
 <style scoped>
 .peak-section {
-  margin-bottom: 16px;
+  margin-bottom: var(--app-space-6);
 }
 </style>

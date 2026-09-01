@@ -5,13 +5,13 @@
         <div style="display: flex; align-items: center; justify-content: space-between">
           <span>排班视图</span>
           <div>
-            <el-input v-model="planId" placeholder="排班计划 ID" style="width: 200px; margin-right: 8px" />
+            <el-input v-model="planId" placeholder="排班计划 ID" style="width: 200px; margin-right: var(--app-space-4)" />
             <el-button type="primary" :loading="loading" @click="loadData">查询</el-button>
           </div>
         </div>
       </template>
 
-      <el-alert v-if="errorMsg" :title="errorMsg" type="warning" :closable="false" style="margin-bottom: 12px" />
+      <el-alert v-if="errorMsg" :title="errorMsg" type="warning" :closable="false" style="margin-bottom: var(--app-space-5)" />
 
       <!-- ========== 日历矩阵 ========== -->
       <div v-loading="loading" class="calendar">
@@ -38,10 +38,10 @@
       </div>
 
       <!-- ========== 日明细 ========== -->
-      <div v-if="selectedDate" style="margin-top: 24px">
+      <div v-if="selectedDate" style="margin-top: var(--app-space-7)">
         <el-divider content-position="left">{{ selectedDate }} 排班明细</el-divider>
 
-        <el-alert v-if="dailyError" :title="dailyError" type="warning" :closable="false" style="margin-bottom: 12px" />
+        <el-alert v-if="dailyError" :title="dailyError" type="warning" :closable="false" style="margin-bottom: var(--app-space-5)" />
 
         <div v-loading="dailyLoading" class="matrix-wrap">
           <div class="matrix">
@@ -304,40 +304,40 @@ onMounted(loadData)
 </script>
 
 <style scoped>
-.calendar { border: 1px solid var(--el-border-color-lighter); border-radius: 4px; }
+.calendar { border: 1px solid var(--el-border-color-lighter); border-radius: var(--app-radius-sm); }
 .cal-header { display: flex; background: var(--el-fill-color-light); border-bottom: 1px solid var(--el-border-color-lighter); }
-.cal-header-cell { flex: 1; text-align: center; padding: 8px 0; font-weight: 600; font-size: 13px; }
+.cal-header-cell { flex: 1; text-align: center; padding: var(--app-space-4) 0; font-weight: 600; font-size: var(--app-font-base); }
 .cal-week { display: flex; border-bottom: 1px solid var(--el-border-color-lighter); }
 .cal-week:last-child { border-bottom: none; }
-.cal-cell { flex: 1; min-height: 72px; padding: 6px; border-right: 1px solid var(--el-border-color-lighter); cursor: pointer; transition: background-color 0.2s; }
+.cal-cell { flex: 1; min-height: 72px; padding: var(--app-space-3); border-right: 1px solid var(--el-border-color-lighter); cursor: pointer; transition: background-color 0.2s; }
 .cal-cell:last-child { border-right: none; }
 .cal-cell:hover { background: var(--el-color-primary-light-9); }
 .cal-cell.is-empty { background: var(--el-fill-color-lighter); cursor: default; }
 .cal-cell.is-selected { background: var(--el-color-primary-light-9); box-shadow: inset 0 0 0 2px var(--el-color-primary); }
-.cal-day-num { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
-.cal-work { font-size: 12px; color: var(--el-color-primary); }
-.cal-rest { font-size: 12px; color: var(--el-color-danger); }
-.cal-break { font-size: 12px; color: var(--el-color-warning); }
-.cal-shift { font-size: 11px; color: var(--el-text-color-secondary); margin-top: 4px; }
+.cal-day-num { font-size: var(--app-font-md); font-weight: 600; margin-bottom: var(--app-space-2); }
+.cal-work { font-size: var(--app-font-sm); color: var(--el-color-primary); }
+.cal-rest { font-size: var(--app-font-sm); color: var(--el-color-danger); }
+.cal-break { font-size: var(--app-font-sm); color: var(--el-color-warning); }
+.cal-shift { font-size: var(--app-font-xs); color: var(--el-text-color-secondary); margin-top: var(--app-space-2); }
 
 .matrix-wrap { overflow-x: auto; }
-.matrix { min-width: 100%; border: 1px solid var(--el-border-color-lighter); border-radius: 4px; }
+.matrix { min-width: 100%; border: 1px solid var(--el-border-color-lighter); border-radius: var(--app-radius-sm); }
 .m-row { display: flex; border-bottom: 1px solid var(--el-border-color-lighter); }
 .m-row:last-child { border-bottom: none; }
 .m-header { background: var(--el-fill-color-light); font-weight: 600; }
-.m-ws-col { width: 130px; flex-shrink: 0; padding: 6px 8px; border-right: 1px solid var(--el-border-color-lighter); display: flex; align-items: center; }
+.m-ws-col { width: 130px; flex-shrink: 0; padding: var(--app-space-3) var(--app-space-4); border-right: 1px solid var(--el-border-color-lighter); display: flex; align-items: center; }
 .m-header .m-ws-col { background: var(--el-fill-color-light); }
-.m-slot-col { width: 72px; min-height: 48px; flex-shrink: 0; padding: 2px 3px; border-right: 1px solid var(--el-fill-color-light); font-size: 11px; text-align: center; position: relative; }
+.m-slot-col { width: 72px; min-height: 48px; flex-shrink: 0; padding: var(--app-space-1) var(--app-space-2); border-right: 1px solid var(--el-fill-color-light); font-size: var(--app-font-xs); text-align: center; position: relative; }
 .m-slot-col:last-child { border-right: none; }
 .has-employee { background: var(--el-color-primary-light-9); }
 .next-day { background: var(--el-color-warning-light-9); }
 .has-gap { box-shadow: inset 0 0 0 2px var(--el-color-danger); }
-.gap-flag { position: absolute; top: 1px; right: 1px; background: var(--el-color-danger); color: var(--el-color-white); font-size: 10px; border-radius: 2px; padding: 0 3px; line-height: 14px; }
-.emp-chip { background: var(--el-color-primary); color: var(--el-color-white); border-radius: 3px; padding: 2px 4px; margin-bottom: 2px; font-size: 11px; }
+.gap-flag { position: absolute; top: 1px; right: 1px; background: var(--el-color-danger); color: var(--el-color-white); font-size: var(--app-font-micro); border-radius: var(--app-radius-sm); padding: 0 var(--app-space-2); line-height: 14px; }
+.emp-chip { background: var(--el-color-primary); color: var(--el-color-white); border-radius: var(--app-radius-sm); padding: var(--app-space-1) var(--app-space-2); margin-bottom: var(--app-space-1); font-size: var(--app-font-xs); }
 .emp-chip.is-break { background: var(--el-color-info); }
 .emp-chip.is-break .break-info { color: var(--app-break-text); }
-.break-flag { display: inline-block; background: var(--el-color-warning); color: var(--el-color-white); border-radius: 2px; padding: 0 3px; margin-left: 4px; font-size: 10px; line-height: 14px; }
+.break-flag { display: inline-block; background: var(--el-color-warning); color: var(--el-color-white); border-radius: var(--app-radius-sm); padding: 0 var(--app-space-2); margin-left: var(--app-space-2); font-size: var(--app-font-micro); line-height: 14px; }
 .emp-chip .emp-name { font-weight: 600; }
-.emp-chip .emp-shift { opacity: 0.85; font-size: 10px; }
+.emp-chip .emp-shift { opacity: 0.85; font-size: var(--app-font-micro); }
 .next-day .emp-chip { background: var(--el-color-warning); }
 </style>

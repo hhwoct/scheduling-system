@@ -55,25 +55,30 @@
   /* 班次内的休息时段文字 */
   --app-break-text: #ffe6a7;
 
-  /* ===== 间距(4px 基准) ===== */
+  /* ===== 间距 ===== */
+  /* 4px 基准,额外保留 6px —— 排班网格大量依赖这个半步,去掉会改变行高 */
   --app-space-1: 2px;
   --app-space-2: 4px;
-  --app-space-3: 8px;
-  --app-space-4: 12px;
-  --app-space-5: 16px;
-  --app-space-6: 24px;
+  --app-space-3: 6px;
+  --app-space-4: 8px;
+  --app-space-5: 12px;
+  --app-space-6: 16px;
+  --app-space-7: 24px;
 
   /* ===== 字号 ===== */
-  /* 表格密集区最小到 xs,不再出现 9px / 10px */
+  /* 原有 13 个离散值(9~32px)收敛为 8 档 */
+  --app-font-micro: 10px;
   --app-font-xs: 11px;
   --app-font-sm: 12px;
   --app-font-base: 13px;
   --app-font-md: 14px;
   --app-font-lg: 16px;
   --app-font-xl: 18px;
+  --app-font-2xl: 22px;
   --app-font-display: 28px;
 
   /* ===== 圆角 ===== */
+  /* 原有 6 个值(2/3/4/6/8/10px)收敛为 3 档 */
   --app-radius-sm: 3px;
   --app-radius-md: 6px;
   --app-radius-lg: 10px;

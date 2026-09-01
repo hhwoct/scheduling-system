@@ -10,7 +10,7 @@
 
       <el-alert v-if="errorMsg" :title="errorMsg" type="warning" closable @close="errorMsg=''" />
 
-      <el-table ref="plansTableRef" :data="plans" v-loading="plansLoading" border stripe size="small" style="margin-bottom: 16px" highlight-current-row @current-change="selectPlan">
+      <el-table ref="plansTableRef" :data="plans" v-loading="plansLoading" border stripe size="small" style="margin-bottom: var(--app-space-6)" highlight-current-row @current-change="selectPlan">
         <el-table-column prop="id" label="ID" width="60" />
         <el-table-column prop="planName" label="计划名称" />
         <el-table-column label="周期" width="200">
@@ -23,7 +23,7 @@
         </el-table-column>
       </el-table>
 
-      <el-radio-group v-if="planId" v-model="viewMode" @change="onModeChange" style="margin-bottom: 16px">
+      <el-radio-group v-if="planId" v-model="viewMode" @change="onModeChange" style="margin-bottom: var(--app-space-6)">
         <el-radio-button label="week">周视图</el-radio-button>
         <el-radio-button label="whole">整月排班</el-radio-button>
         <el-radio-button label="month">月视图</el-radio-button>
@@ -32,7 +32,7 @@
       </el-radio-group>
 
       <div v-if="viewMode === 'week' || viewMode === 'whole'" v-loading="loading">
-        <el-date-picker v-if="viewMode === 'week'" v-model="weekStart" type="date" value-format="YYYY-MM-DD" style="width: 150px; margin-bottom: 12px" placeholder="选择起始日" :disabled-date="disabledDate" @change="loadWeek" />
+        <el-date-picker v-if="viewMode === 'week'" v-model="weekStart" type="date" value-format="YYYY-MM-DD" style="width: 150px; margin-bottom: var(--app-space-5)" placeholder="选择起始日" :disabled-date="disabledDate" @change="loadWeek" />
         <div class="gantt">
           <div class="gantt-row gantt-header">
             <div class="gantt-emp-col">员工</div>
@@ -46,7 +46,7 @@
               <span class="gantt-divider-badge">兼</span>兼职员工
             </div>
             <div class="gantt-row" :class="{ 'gantt-row-parttime': row.isParttime === 1 }">
-              <div class="gantt-emp-col"><div class="emp-name">{{ row.employeeName }}<el-tag v-if="row.isParttime === 1" type="success" size="small" style="margin-left:4px">兼</el-tag></div><div class="emp-sub">{{ row.department }}</div></div>
+              <div class="gantt-emp-col"><div class="emp-name">{{ row.employeeName }}<el-tag v-if="row.isParttime === 1" type="success" size="small" style="margin-left:var(--app-space-2)">兼</el-tag></div><div class="emp-sub">{{ row.department }}</div></div>
               <div v-for="d in weekDays" :key="d.date" class="gantt-day-col">
                 <template v-if="getWeekDay(row, d.date)">
                   <div v-if="getWeekDay(row, d.date).isRestDay === 1 && row.isParttime !== 1" class="day-block rest-block">休</div>
@@ -72,7 +72,7 @@
         </div>
 
         <!-- 兼职替补需求色块：低技能岗位缺口（仅周视图展示，整月视图横向过长） -->
-        <div v-if="viewMode === 'week' && weekPartTimeNeeds.length" class="parttime-block" style="margin-top: 16px">
+        <div v-if="viewMode === 'week' && weekPartTimeNeeds.length" class="parttime-block" style="margin-top: var(--app-space-6)">
           <div class="parttime-title">
             <span class="parttime-badge">兼</span>
             兼职替补需求（低技能岗位缺口，建议寻找兼职人员临时填补）
@@ -116,7 +116,7 @@
             </div>
           </div>
         </div>
-        <div v-if="selectedDate" style="margin-top: 24px">
+        <div v-if="selectedDate" style="margin-top: var(--app-space-7)">
           <el-divider content-position="left">{{ selectedDate }}</el-divider>
           <div class="batch-bar">
             <el-switch v-model="batchMode" size="small" />
@@ -140,13 +140,13 @@
               <el-button size="small" link @click="clearRangeSel">✕</el-button>
             </div>
             <div class="m-row m-header"><div class="m-ws-col">工作站</div><div v-for="slot in slots" :key="slot.key" class="m-slot-col" :title="slot.display"><span v-if="isHour(slot)">{{ slot.display }}</span></div></div>
-            <div v-for="ws in dailyWorkstations" :key="ws" class="m-row"><div class="m-ws-col">{{ ws }}<el-tag v-if="wsLowSkill(ws)" type="success" size="small" style="margin-left:4px">兼</el-tag></div><div v-for="(slot, si) in slots" :key="slot.key" class="m-slot-col" :class="[cellClass(ws, slot), { 'is-empty': dailyCellUsers(ws, slot).length === 0 }, (rangeSelected(ws, slot) || rangeSelSelected(ws, slot)) ? 'range-selected' : '', snapTarget.ws === ws && snapTarget.slotIdx === si ? 'snap-target' : '', batchSelected(ws, si) ? 'batch-selected' : '']" :data-slot="slot.key" :title="dailyCellUsers(ws, slot).length === 0 ? '点击添加人员，按住滑动可选多个时段' : '按住滑动可选择范围后操作（加人/换人/平移/休息）'" @mousedown="onCellMouseDown(ws, slot, $event)" @click="onCellClick(ws, slot)"><div v-if="dailySlotIssues(ws, slot).length" class="gap-flag" :class="{ 'gap-flag-low': lowSkillGapIssues(ws, slot).length > 0 }" :title="gapTooltip(ws, slot)">{{ lowSkillGapIssues(ws, slot).length > 0 ? '兼' : '缺' }}</div><div v-for="lane in cellLanes(ws, slot)" :key="'lane-' + lane.employeeId" class="emp-lane"><div v-if="lane.row" class="emp-chip" :class="{ 'is-parttime': lane.row.isParttime === 1, 'pt-first': lane.isFirstPtLane, 'is-break': inBreak(lane.row, slot), 'is-highlighted': highlightedEmpId === lane.row.employeeId }" :title="'单击高亮该员工当天全部色块；双击切换休息/上班；按住滑动可选择范围'" @click.stop="onChipClick(lane.row, slot)" @dblclick.stop="onChipDblClick(lane.row, slot)"><div class="emp-name">{{ lane.row.employeeName }}<span v-if="prefMatch(lane.row, ws)" class="pref-dot" title="与店长历史偏好一致" /> <span v-if="inBreak(lane.row, slot)" class="break-flag" :title="breakTip(lane.row)">休</span></div><div v-if="!inBreak(lane.row, slot)" class="emp-shift">{{ lane.row.shiftCode || '--' }}</div><div v-else class="emp-shift break-info" :title="breakTip(lane.row)">休息</div></div></div></div></div>
+            <div v-for="ws in dailyWorkstations" :key="ws" class="m-row"><div class="m-ws-col">{{ ws }}<el-tag v-if="wsLowSkill(ws)" type="success" size="small" style="margin-left:var(--app-space-2)">兼</el-tag></div><div v-for="(slot, si) in slots" :key="slot.key" class="m-slot-col" :class="[cellClass(ws, slot), { 'is-empty': dailyCellUsers(ws, slot).length === 0 }, (rangeSelected(ws, slot) || rangeSelSelected(ws, slot)) ? 'range-selected' : '', snapTarget.ws === ws && snapTarget.slotIdx === si ? 'snap-target' : '', batchSelected(ws, si) ? 'batch-selected' : '']" :data-slot="slot.key" :title="dailyCellUsers(ws, slot).length === 0 ? '点击添加人员，按住滑动可选多个时段' : '按住滑动可选择范围后操作（加人/换人/平移/休息）'" @mousedown="onCellMouseDown(ws, slot, $event)" @click="onCellClick(ws, slot)"><div v-if="dailySlotIssues(ws, slot).length" class="gap-flag" :class="{ 'gap-flag-low': lowSkillGapIssues(ws, slot).length > 0 }" :title="gapTooltip(ws, slot)">{{ lowSkillGapIssues(ws, slot).length > 0 ? '兼' : '缺' }}</div><div v-for="lane in cellLanes(ws, slot)" :key="'lane-' + lane.employeeId" class="emp-lane"><div v-if="lane.row" class="emp-chip" :class="{ 'is-parttime': lane.row.isParttime === 1, 'pt-first': lane.isFirstPtLane, 'is-break': inBreak(lane.row, slot), 'is-highlighted': highlightedEmpId === lane.row.employeeId }" :title="'单击高亮该员工当天全部色块；双击切换休息/上班；按住滑动可选择范围'" @click.stop="onChipClick(lane.row, slot)" @dblclick.stop="onChipDblClick(lane.row, slot)"><div class="emp-name">{{ lane.row.employeeName }}<span v-if="prefMatch(lane.row, ws)" class="pref-dot" title="与店长历史偏好一致" /> <span v-if="inBreak(lane.row, slot)" class="break-flag" :title="breakTip(lane.row)">休</span></div><div v-if="!inBreak(lane.row, slot)" class="emp-shift">{{ lane.row.shiftCode || '--' }}</div><div v-else class="emp-shift break-info" :title="breakTip(lane.row)">休息</div></div></div></div></div>
           </div></div>
         </div>
       </div>
 
       <div v-if="viewMode === 'day'" v-loading="loading">
-        <el-date-picker v-model="dayDate" type="date" value-format="YYYY-MM-DD" style="width: 150px; margin-bottom: 12px" placeholder="选择日期" :disabled-date="disabledDate" @change="loadDay" />
+        <el-date-picker v-model="dayDate" type="date" value-format="YYYY-MM-DD" style="width: 150px; margin-bottom: var(--app-space-5)" placeholder="选择日期" :disabled-date="disabledDate" @change="loadDay" />
         <div v-if="dayDate" class="matrix-wrap"><div class="matrix" :class="{ 'has-chip-highlight': highlightedEmpId }" @click="highlightedEmpId = null">
           <div v-if="rangeSelect.active" class="range-hint">{{ rangeHint }}</div>
           <div v-if="rangeSel.visible" class="range-toolbar" @click.stop>
@@ -163,22 +163,22 @@
             <el-button size="small" link @click="clearRangeSel">✕</el-button>
           </div>
           <div class="m-row m-header"><div class="m-ws-col">工作站</div><div v-for="slot in slots" :key="slot.key" class="m-slot-col" :title="slot.display"><span v-if="isHour(slot)">{{ slot.display }}</span></div></div>
-          <div v-for="ws in dailyWorkstations" :key="ws" class="m-row"><div class="m-ws-col">{{ ws }}<el-tag v-if="wsLowSkill(ws)" type="success" size="small" style="margin-left:4px">兼</el-tag></div><div v-for="(slot, si) in slots" :key="slot.key" class="m-slot-col" :class="[cellClass(ws, slot), { 'is-empty': dailyCellUsers(ws, slot).length === 0 }, (rangeSelected(ws, slot) || rangeSelSelected(ws, slot)) ? 'range-selected' : '', snapTarget.ws === ws && snapTarget.slotIdx === si ? 'snap-target' : '', batchSelected(ws, si) ? 'batch-selected' : '']" :data-slot="slot.key" :title="dailyCellUsers(ws, slot).length === 0 ? '点击添加人员，按住滑动可选多个时段' : '按住滑动可选择范围后操作（加人/换人/平移/休息）'" @mousedown="onCellMouseDown(ws, slot, $event)" @click="onCellClick(ws, slot)"><div v-if="dailySlotIssues(ws, slot).length" class="gap-flag" :class="{ 'gap-flag-low': lowSkillGapIssues(ws, slot).length > 0 }" :title="gapTooltip(ws, slot)">{{ lowSkillGapIssues(ws, slot).length > 0 ? '兼' : '缺' }}</div><div v-for="lane in cellLanes(ws, slot)" :key="'lane-' + lane.employeeId" class="emp-lane"><div v-if="lane.row" class="emp-chip" :class="{ 'is-parttime': lane.row.isParttime === 1, 'pt-first': lane.isFirstPtLane, 'is-break': inBreak(lane.row, slot), 'is-highlighted': highlightedEmpId === lane.row.employeeId }" :title="'单击高亮该员工当天全部色块；双击切换休息/上班；按住滑动可选择范围'" @click.stop="onChipClick(lane.row, slot)" @dblclick.stop="onChipDblClick(lane.row, slot)"><div class="emp-name">{{ lane.row.employeeName }}<span v-if="prefMatch(lane.row, ws)" class="pref-dot" title="与店长历史偏好一致" /> <span v-if="inBreak(lane.row, slot)" class="break-flag" :title="breakTip(lane.row)">休</span></div><div v-if="!inBreak(lane.row, slot)" class="emp-shift">{{ lane.row.shiftCode || '--' }}</div><div v-else class="emp-shift break-info" :title="breakTip(lane.row)">休息</div></div></div></div></div>
+          <div v-for="ws in dailyWorkstations" :key="ws" class="m-row"><div class="m-ws-col">{{ ws }}<el-tag v-if="wsLowSkill(ws)" type="success" size="small" style="margin-left:var(--app-space-2)">兼</el-tag></div><div v-for="(slot, si) in slots" :key="slot.key" class="m-slot-col" :class="[cellClass(ws, slot), { 'is-empty': dailyCellUsers(ws, slot).length === 0 }, (rangeSelected(ws, slot) || rangeSelSelected(ws, slot)) ? 'range-selected' : '', snapTarget.ws === ws && snapTarget.slotIdx === si ? 'snap-target' : '', batchSelected(ws, si) ? 'batch-selected' : '']" :data-slot="slot.key" :title="dailyCellUsers(ws, slot).length === 0 ? '点击添加人员，按住滑动可选多个时段' : '按住滑动可选择范围后操作（加人/换人/平移/休息）'" @mousedown="onCellMouseDown(ws, slot, $event)" @click="onCellClick(ws, slot)"><div v-if="dailySlotIssues(ws, slot).length" class="gap-flag" :class="{ 'gap-flag-low': lowSkillGapIssues(ws, slot).length > 0 }" :title="gapTooltip(ws, slot)">{{ lowSkillGapIssues(ws, slot).length > 0 ? '兼' : '缺' }}</div><div v-for="lane in cellLanes(ws, slot)" :key="'lane-' + lane.employeeId" class="emp-lane"><div v-if="lane.row" class="emp-chip" :class="{ 'is-parttime': lane.row.isParttime === 1, 'pt-first': lane.isFirstPtLane, 'is-break': inBreak(lane.row, slot), 'is-highlighted': highlightedEmpId === lane.row.employeeId }" :title="'单击高亮该员工当天全部色块；双击切换休息/上班；按住滑动可选择范围'" @click.stop="onChipClick(lane.row, slot)" @dblclick.stop="onChipDblClick(lane.row, slot)"><div class="emp-name">{{ lane.row.employeeName }}<span v-if="prefMatch(lane.row, ws)" class="pref-dot" title="与店长历史偏好一致" /> <span v-if="inBreak(lane.row, slot)" class="break-flag" :title="breakTip(lane.row)">休</span></div><div v-if="!inBreak(lane.row, slot)" class="emp-shift">{{ lane.row.shiftCode || '--' }}</div><div v-else class="emp-shift break-info" :title="breakTip(lane.row)">休息</div></div></div></div></div>
         </div></div>
       </div>
 
       <div v-if="viewMode === 'issues'" v-loading="issuesLoading">
-        <el-row :gutter="16" style="margin-bottom: 16px">
+        <el-row :gutter="16" style="margin-bottom: var(--app-space-6)">
           <el-col :span="6"><el-card shadow="hover"><div class="stat-num">{{ issuesList.length }}</div><div class="stat-label">问题总数</div></el-card></el-col>
           <el-col :span="6"><el-card shadow="hover"><div class="stat-num" style="color:var(--el-color-danger)">{{ issueStats.gapCount }}</div><div class="stat-label">岗位缺口</div></el-card></el-col>
           <el-col :span="6"><el-card shadow="hover"><div class="stat-num" style="color:var(--el-color-warning)">{{ issueStats.warnCount }}</div><div class="stat-label">警告级别</div></el-card></el-col>
           <el-col :span="6"><el-card shadow="hover"><div class="stat-num" style="color:var(--el-color-success)">{{ issueStats.daysCount }}</div><div class="stat-label">影响天数</div></el-card></el-col>
         </el-row>
-        <el-row :gutter="16" style="margin-bottom: 16px">
+        <el-row :gutter="16" style="margin-bottom: var(--app-space-6)">
           <el-col :span="24">
             <el-card header="问题分析">
-              <div style="display: flex; align-items: flex-start; gap: 12px; flex-wrap: wrap">
-                <div style="display: flex; align-items: center; gap: 8px">
+              <div style="display: flex; align-items: flex-start; gap: var(--app-space-5); flex-wrap: wrap">
+                <div style="display: flex; align-items: center; gap: var(--app-space-4)">
                   <svg viewBox="0 0 200 200" width="220" height="220">
                     <circle v-for="(slice, i) in typePieData" :key="i" :cx="100" :cy="100" :r="80" fill="none" :stroke="slice.color" stroke-width="30" :stroke-dasharray="`${slice.pct * 502.65} ${(1 - slice.pct) * 502.65}`" :stroke-dashoffset="(typePieOffset[i])" transform="rotate(-90 100 100)" style="cursor: pointer" @click="filterTableByType(slice.key)" />
                     <text v-for="(slice, i) in typePieLabels" :key="'tlbl'+i" :x="slice.x" :y="slice.y" text-anchor="middle" font-size="11" fill="var(--el-color-white)" font-weight="bold" pointer-events="none">{{ slice.count }}</text>
@@ -186,22 +186,22 @@
                     <text x="100" y="114" text-anchor="middle" font-size="11" fill="var(--el-text-color-secondary)">类型分布</text>
                     <text v-if="typeFilter" x="100" y="128" text-anchor="middle" font-size="9" fill="var(--el-color-primary)" style="cursor:pointer" @click="typeFilter=''">✕ 清除</text>
                   </svg>
-                  <div class="mini-legend"><div v-for="s in typePieData" :key="s.label" class="legend-row clickable" @click="filterTableByType(s.key)"><span class="legend-dot" :style="{ background: s.color }"></span><span style="font-size:12px" :style="{ fontWeight: typeFilter === s.key ? 'bold' : 'normal', color: typeFilter === s.key ? 'var(--el-color-primary)' : 'var(--el-text-color-regular)' }">{{ s.label }} ({{ s.count }})</span></div></div>
+                  <div class="mini-legend"><div v-for="s in typePieData" :key="s.label" class="legend-row clickable" @click="filterTableByType(s.key)"><span class="legend-dot" :style="{ background: s.color }"></span><span style="font-size:var(--app-font-sm)" :style="{ fontWeight: typeFilter === s.key ? 'bold' : 'normal', color: typeFilter === s.key ? 'var(--el-color-primary)' : 'var(--el-text-color-regular)' }">{{ s.label }} ({{ s.count }})</span></div></div>
                 </div>
-                <div style="display: flex; align-items: center; gap: 8px">
+                <div style="display: flex; align-items: center; gap: var(--app-space-4)">
                   <svg viewBox="0 0 200 200" width="220" height="220">
                     <circle v-for="(slice, i) in wsPieData" :key="i" :cx="100" :cy="100" :r="80" fill="none" :stroke="slice.color" stroke-width="30" :stroke-dasharray="`${slice.pct * 502.65} ${(1 - slice.pct) * 502.65}`" :stroke-dashoffset="(wsPieOffset[i])" transform="rotate(-90 100 100)" style="cursor: pointer" @click="filterTableByWs(slice.name)" />
                     <text x="100" y="95" text-anchor="middle" font-size="15" fill="var(--el-text-color-primary)" font-weight="bold">{{ wsTotal }} 条</text>
                     <text x="100" y="114" text-anchor="middle" font-size="11" fill="var(--el-text-color-secondary)">缺口分布</text>
                     <text v-if="wsFilter" x="100" y="128" text-anchor="middle" font-size="9" fill="var(--el-color-primary)" style="cursor:pointer" @click="wsFilter=''">✕ 清除</text>
                   </svg>
-                  <div class="mini-legend"><div v-for="s in wsPieData" :key="s.name" class="legend-row clickable" @click="filterTableByWs(s.name)"><span class="legend-dot" :style="{ background: s.color }"></span><span style="font-size:12px" :style="{ fontWeight: wsFilter === s.name ? 'bold' : 'normal', color: wsFilter === s.name ? 'var(--el-color-primary)' : 'var(--el-text-color-regular)' }">{{ s.name }} ({{ s.count }})</span></div></div>
+                  <div class="mini-legend"><div v-for="s in wsPieData" :key="s.name" class="legend-row clickable" @click="filterTableByWs(s.name)"><span class="legend-dot" :style="{ background: s.color }"></span><span style="font-size:var(--app-font-sm)" :style="{ fontWeight: wsFilter === s.name ? 'bold' : 'normal', color: wsFilter === s.name ? 'var(--el-color-primary)' : 'var(--el-text-color-regular)' }">{{ s.name }} ({{ s.count }})</span></div></div>
                 </div>
               </div>
             </el-card>
           </el-col>
         </el-row>
-        <el-row :gutter="16" style="margin-bottom: 16px">
+        <el-row :gutter="16" style="margin-bottom: var(--app-space-6)">
           <el-col :span="24">
             <el-card header="排班合理度趋势">
               <div v-if="rationalityData.length" ref="rationalityChartRef" class="area-chart-wrap" style="width: 100%; height: 420px"></div>
@@ -232,11 +232,11 @@
         <div><span class="ds-label">员工：</span>{{ slotStatusDialog.employeeName }}（{{ slotStatusDialog.employeeNo }}）</div>
         <div><span class="ds-label">日期：</span>{{ slotStatusDialog.date }}　<span class="ds-label">时段：</span>{{ slotStatusDialog.timeSlot }} - {{ slotStatusDialog.timeSlotEnd }}</div>
       </div>
-      <div style="margin: 10px 0 4px; font-size: 12px; color: var(--el-text-color-secondary)">
+      <div style="margin: 10px 0 var(--app-space-2); font-size: var(--app-font-sm); color: var(--el-text-color-secondary)">
         当前状态：<el-tag size="small" :type="slotStatusDialog.currentIsBreak ? 'warning' : 'success'">{{ slotStatusDialog.currentIsBreak ? '休息' : '上班' }}</el-tag>
       </div>
       <el-radio-group v-model="slotStatusDialog.action" style="margin: 10px 0; width: 100%">
-        <el-radio value="work" style="margin-right: 24px">该半小时上班</el-radio>
+        <el-radio value="work" style="margin-right: var(--app-space-7)">该半小时上班</el-radio>
         <el-radio value="rest">该半小时休息</el-radio>
       </el-radio-group>
       <template #footer>
@@ -262,18 +262,18 @@
       >
         <el-option v-for="c in addSlotDialog.candidates" :key="c.employeeId" :value="c.employeeId" :label="c.name + '（' + c.employeeNo + '）'">
           <span>{{ c.name }}（{{ c.employeeNo }}）</span>
-          <span style="float: right; color: var(--el-text-color-secondary); font-size: 12px">{{ c.department }} · {{ c.skillScore }}分</span>
+          <span style="float: right; color: var(--el-text-color-secondary); font-size: var(--app-font-sm)">{{ c.department }} · {{ c.skillScore }}分</span>
         </el-option>
       </el-select>
       <div v-if="addSlotDialog.selected" style="margin-top: 10px">
-        <el-tag v-if="addSlotDialog.selected.isRestDay === 1" type="info" size="small" style="margin-right: 6px">当天休息 · 将自动转上班</el-tag>
-        <el-tag v-if="addSlotDialog.selected.isParttime === 1" type="success" size="small" style="margin-right: 6px">兼职</el-tag>
-        <el-tag size="small" style="margin-right: 6px">技能 {{ addSlotDialog.selected.skillScore }} 分</el-tag>
+        <el-tag v-if="addSlotDialog.selected.isRestDay === 1" type="info" size="small" style="margin-right: var(--app-space-3)">当天休息 · 将自动转上班</el-tag>
+        <el-tag v-if="addSlotDialog.selected.isParttime === 1" type="success" size="small" style="margin-right: var(--app-space-3)">兼职</el-tag>
+        <el-tag size="small" style="margin-right: var(--app-space-3)">技能 {{ addSlotDialog.selected.skillScore }} 分</el-tag>
       </div>
-      <div v-if="addSlotDialog.mode === 'add' && addSlotDialog.existingCount > 0" style="margin-top: 10px; font-size: 12px; color: var(--el-color-warning)">
+      <div v-if="addSlotDialog.mode === 'add' && addSlotDialog.existingCount > 0" style="margin-top: 10px; font-size: var(--app-font-sm); color: var(--el-color-warning)">
         所选范围现有 {{ addSlotDialog.existingCount }} 人次在岗，新员工将与其<b>并存</b>（不会替换现有人员）。
       </div>
-      <div style="margin-top: 10px; font-size: 12px; color: var(--el-text-color-secondary)">
+      <div style="margin-top: 10px; font-size: var(--app-font-sm); color: var(--el-text-color-secondary)">
         仅添加所选时段（不挂班次模板）{{ currentPlan && currentPlan.status === 'PUBLISHED' ? '；已发布计划添加后会通知该员工' : '' }}。候选已按技能、兼职岗位限制、当天请假与已排班过滤。
       </div>
       <template #footer>
@@ -1845,76 +1845,76 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.gantt { border: 1px solid var(--el-border-color-lighter); border-radius: 4px; overflow-x: auto; }
+.gantt { border: 1px solid var(--el-border-color-lighter); border-radius: var(--app-radius-sm); overflow-x: auto; }
 .gantt-row { display: flex; border-bottom: 1px solid var(--el-border-color-lighter); min-width: 100%; }
 .gantt-row-parttime .gantt-emp-col { background: var(--app-parttime-bg); }
-.gantt-divider { background: var(--el-color-success-light-9); color: var(--el-color-success); font-weight: 600; font-size: 12px; padding: 5px 10px; border-bottom: 1px solid var(--app-parttime-border); display: flex; align-items: center; gap: 6px; }
-.gantt-divider-badge { display: inline-block; background: var(--el-color-success); color: var(--el-color-white); border-radius: 3px; font-size: 11px; padding: 0 5px; line-height: 16px; }
+.gantt-divider { background: var(--el-color-success-light-9); color: var(--el-color-success); font-weight: 600; font-size: var(--app-font-sm); padding: var(--app-space-3) 10px; border-bottom: 1px solid var(--app-parttime-border); display: flex; align-items: center; gap: var(--app-space-3); }
+.gantt-divider-badge { display: inline-block; background: var(--el-color-success); color: var(--el-color-white); border-radius: var(--app-radius-sm); font-size: var(--app-font-xs); padding: 0 var(--app-space-3); line-height: 16px; }
 .gantt-header { background: var(--el-fill-color-light); font-weight: 600; }
-.gantt-emp-col { width: 140px; flex-shrink: 0; padding: 6px 8px; border-right: 1px solid var(--el-border-color-lighter); position: sticky; left: 0; background: var(--el-bg-color); z-index: 3; }
+.gantt-emp-col { width: 140px; flex-shrink: 0; padding: var(--app-space-3) var(--app-space-4); border-right: 1px solid var(--el-border-color-lighter); position: sticky; left: 0; background: var(--el-bg-color); z-index: 3; }
 .gantt-header .gantt-emp-col { background: var(--el-fill-color-light); z-index: 4; }
-.gantt-day-col { width: 150px; flex-shrink: 0; padding: 4px; border-right: 1px solid var(--el-border-color-lighter); box-sizing: border-box; }
-.day-label { font-size: 12px; color: var(--el-text-color-regular); }
-.day-sub { font-size: 11px; color: var(--el-text-color-secondary); }
-.day-block { border-radius: 4px; padding: 6px; text-align: center; font-size: 12px; height: 72px; box-sizing: border-box; overflow: hidden; }
+.gantt-day-col { width: 150px; flex-shrink: 0; padding: var(--app-space-2); border-right: 1px solid var(--el-border-color-lighter); box-sizing: border-box; }
+.day-label { font-size: var(--app-font-sm); color: var(--el-text-color-regular); }
+.day-sub { font-size: var(--app-font-xs); color: var(--el-text-color-secondary); }
+.day-block { border-radius: var(--app-radius-sm); padding: var(--app-space-3); text-align: center; font-size: var(--app-font-sm); height: 72px; box-sizing: border-box; overflow: hidden; }
 .work-block { background: var(--el-color-primary-light-9); display: flex; flex-direction: column; align-items: center; justify-content: center; }
 .rest-block { background: var(--el-color-danger-light-9); color: var(--el-color-danger); font-weight: 600; }
 .empty-block { background: var(--el-fill-color-lighter); }
 .shift-code { font-weight: 600; }
-.shift-time { font-size: 11px; color: var(--el-text-color-secondary); }
-.shift-break { margin-top: 2px; font-size: 10px; color: var(--el-color-warning); line-height: 1.4; }
-.emp-name { font-size: 12px; font-weight: 600; }
-.emp-sub { font-size: 11px; color: var(--el-text-color-secondary); }
-.calendar { border: 1px solid var(--el-border-color-lighter); border-radius: 4px; }
+.shift-time { font-size: var(--app-font-xs); color: var(--el-text-color-secondary); }
+.shift-break { margin-top: var(--app-space-1); font-size: var(--app-font-micro); color: var(--el-color-warning); line-height: 1.4; }
+.emp-name { font-size: var(--app-font-sm); font-weight: 600; }
+.emp-sub { font-size: var(--app-font-xs); color: var(--el-text-color-secondary); }
+.calendar { border: 1px solid var(--el-border-color-lighter); border-radius: var(--app-radius-sm); }
 .cal-header { display: flex; background: var(--el-fill-color-light); }
-.cal-header-cell { flex: 1; text-align: center; padding: 4px 6px 0; font-weight: 600; font-size: 13px; }
+.cal-header-cell { flex: 1; text-align: center; padding: var(--app-space-2) var(--app-space-3) 0; font-weight: 600; font-size: var(--app-font-base); }
 .cal-week { display: flex; border-bottom: 1px solid var(--el-border-color-lighter); }
 .cal-week:last-child { border-bottom: none; }
-.cal-cell { flex: 1; min-height: 72px; padding: 6px; border-right: 1px solid var(--el-border-color-lighter); cursor: pointer; }
+.cal-cell { flex: 1; min-height: 72px; padding: var(--app-space-3); border-right: 1px solid var(--el-border-color-lighter); cursor: pointer; }
 .cal-cell:hover { background: var(--el-color-primary-light-9); }
 .cal-cell.is-empty { background: var(--el-fill-color-lighter); cursor: default; }
 .cal-cell.is-selected { background: var(--el-color-primary-light-9); box-shadow: inset 0 0 0 2px var(--el-color-primary); }
-.cal-day-num { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
-.cal-work { font-size: 12px; color: var(--el-color-primary); }
-.cal-parttime { font-size: 12px; color: var(--el-color-success); }
-.cal-rest { font-size: 12px; color: var(--el-color-danger); }
-.cal-shift { font-size: 11px; color: var(--el-text-color-secondary); margin-top: 4px; }
+.cal-day-num { font-size: var(--app-font-md); font-weight: 600; margin-bottom: var(--app-space-2); }
+.cal-work { font-size: var(--app-font-sm); color: var(--el-color-primary); }
+.cal-parttime { font-size: var(--app-font-sm); color: var(--el-color-success); }
+.cal-rest { font-size: var(--app-font-sm); color: var(--el-color-danger); }
+.cal-shift { font-size: var(--app-font-xs); color: var(--el-text-color-secondary); margin-top: var(--app-space-2); }
 .matrix-wrap { overflow: auto; max-height: 560px; position: relative; }
-.matrix { border: 1px solid var(--el-border-color-lighter); border-radius: 4px; }
+.matrix { border: 1px solid var(--el-border-color-lighter); border-radius: var(--app-radius-sm); }
 .m-row { display: flex; border-bottom: 1px solid var(--el-border-color-lighter); }
 .m-row:last-child { border-bottom: none; }
 .m-header { background: var(--el-fill-color-light); font-weight: 600; position: sticky; top: 0; z-index: 4; }
-.m-ws-col { width: 130px; flex-shrink: 0; padding: 6px 8px; border-right: 1px solid var(--el-border-color-lighter); display: flex; align-items: center; position: sticky; left: 0; background: var(--el-bg-color); z-index: 3; }
+.m-ws-col { width: 130px; flex-shrink: 0; padding: var(--app-space-3) var(--app-space-4); border-right: 1px solid var(--el-border-color-lighter); display: flex; align-items: center; position: sticky; left: 0; background: var(--el-bg-color); z-index: 3; }
 .m-header .m-ws-col { background: var(--el-fill-color-light); z-index: 5; }
-.m-slot-col { width: 72px; min-height: 48px; flex-shrink: 0; padding: 2px 3px; border-right: 1px solid var(--el-fill-color-light); font-size: 11px; text-align: center; position: relative; }
+.m-slot-col { width: 72px; min-height: 48px; flex-shrink: 0; padding: var(--app-space-1) var(--app-space-2); border-right: 1px solid var(--el-fill-color-light); font-size: var(--app-font-xs); text-align: center; position: relative; }
 .m-slot-col:last-child { border-right: none; }
 /* P3 空位加人：空格子可点击，悬停显示 + 提示；滑动选择多时段 */
 .m-slot-col.is-empty { cursor: pointer; }
 .m-slot-col.is-empty:hover { background: rgba(64, 158, 255, 0.08); }
-.m-slot-col.is-empty:hover::after { content: '+'; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: var(--el-color-primary); font-size: 16px; font-weight: 600; pointer-events: none; }
+.m-slot-col.is-empty:hover::after { content: '+'; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: var(--el-color-primary); font-size: var(--app-font-lg); font-weight: 600; pointer-events: none; }
 .m-slot-col.range-selected { background: rgba(64, 158, 255, 0.18); outline: 1px solid var(--el-color-primary); outline-offset: -1px; }
-.range-hint { position: absolute; top: 6px; left: 6px; z-index: 20; background: var(--el-color-primary); color: var(--el-color-white); font-size: 12px; padding: 4px 12px; border-radius: 4px; width: fit-content; pointer-events: none; }
-.range-toolbar { position: absolute; top: 6px; left: 6px; z-index: 25; display: flex; align-items: center; gap: 8px; background: var(--el-bg-color); border: 1px solid var(--el-color-primary); border-radius: 6px; padding: 6px 10px; box-shadow: 0 2px 12px rgba(0,0,0,0.15); }
-.range-toolbar .rt-info { font-size: 12px; color: var(--el-color-primary); font-weight: 600; white-space: nowrap; }
+.range-hint { position: absolute; top: 6px; left: 6px; z-index: 20; background: var(--el-color-primary); color: var(--el-color-white); font-size: var(--app-font-sm); padding: var(--app-space-2) var(--app-space-5); border-radius: var(--app-radius-sm); width: fit-content; pointer-events: none; }
+.range-toolbar { position: absolute; top: 6px; left: 6px; z-index: 25; display: flex; align-items: center; gap: var(--app-space-4); background: var(--el-bg-color); border: 1px solid var(--el-color-primary); border-radius: var(--app-radius-md); padding: var(--app-space-3) 10px; box-shadow: 0 2px 12px rgba(0,0,0,0.15); }
+.range-toolbar .rt-info { font-size: var(--app-font-sm); color: var(--el-color-primary); font-weight: 600; white-space: nowrap; }
 .matrix { user-select: none; }
 .has-employee { background: var(--el-color-primary-light-9); }
 .next-day { background: var(--el-color-warning-light-9); }
 .has-gap { box-shadow: inset 0 0 0 2px var(--el-color-danger); }
 .has-gap-low-skill { box-shadow: inset 0 0 0 2px var(--el-color-success); background: var(--el-color-success-light-9); }
-.gap-flag { position: absolute; top: 1px; right: 1px; background: var(--el-color-danger); color: var(--el-color-white); font-size: 10px; border-radius: 2px; padding: 0 3px; line-height: 14px; }
+.gap-flag { position: absolute; top: 1px; right: 1px; background: var(--el-color-danger); color: var(--el-color-white); font-size: var(--app-font-micro); border-radius: var(--app-radius-sm); padding: 0 var(--app-space-2); line-height: 14px; }
 .gap-flag-low { background: var(--el-color-success); }
-.emp-chip { background: var(--el-color-primary); color: var(--el-color-white); border-radius: 3px; padding: 2px 4px; margin-bottom: 2px; font-size: 11px; }
+.emp-chip { background: var(--el-color-primary); color: var(--el-color-white); border-radius: var(--app-radius-sm); padding: var(--app-space-1) var(--app-space-2); margin-bottom: var(--app-space-1); font-size: var(--app-font-xs); }
 .emp-chip .emp-name { font-weight: 600; }
 /* P2：偏好匹配角标——与店长历史偏好一致的色块显示绿点 */
-.pref-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--el-color-success); margin-left: 3px; vertical-align: middle; box-shadow: 0 0 0 1px var(--el-color-white); }
-.emp-chip .emp-shift { opacity: 0.85; font-size: 10px; }
+.pref-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--el-color-success); margin-left: var(--app-space-2); vertical-align: middle; box-shadow: 0 0 0 1px var(--el-color-white); }
+.emp-chip .emp-shift { opacity: 0.85; font-size: var(--app-font-micro); }
 /* 兼职色块：绿色，且与前面的全职色块用虚线间隔隔开 */
 .emp-chip.is-parttime { background: var(--el-color-success); }
-.emp-chip.pt-first { border-top: 1px dashed var(--app-parttime-divider); padding-top: 3px; margin-top: 1px; }
+.emp-chip.pt-first { border-top: 1px dashed var(--app-parttime-divider); padding-top: var(--app-space-2); margin-top: 1px; }
 /* 班中休息色块：灰色 + 橙色「休」标记，第二行显示休息时间段与顶岗人 */
 .emp-chip.is-break { background: var(--el-color-info); }
 .emp-chip.is-break .break-info { color: var(--app-break-text); }
-.break-flag { display: inline-block; background: var(--el-color-warning); color: var(--el-color-white); border-radius: 2px; padding: 0 3px; margin-left: 4px; font-size: 10px; line-height: 14px; }
+.break-flag { display: inline-block; background: var(--el-color-warning); color: var(--el-color-white); border-radius: var(--app-radius-sm); padding: 0 var(--app-space-2); margin-left: var(--app-space-2); font-size: var(--app-font-micro); line-height: 14px; }
 .next-day .emp-chip { background: var(--el-color-warning); }
 .next-day .emp-chip.is-parttime { background: var(--el-color-success); }
 .next-day .emp-chip.is-break { background: var(--el-color-info); }
@@ -1952,9 +1952,9 @@ onBeforeUnmount(() => {
   background: rgba(64, 158, 255, 0.78);
   color: var(--el-color-white);
   border: 1px dashed var(--el-color-white);
-  border-radius: 3px;
-  font-size: 11px;
-  padding: 3px 8px;
+  border-radius: var(--app-radius-sm);
+  font-size: var(--app-font-xs);
+  padding: var(--app-space-2) var(--app-space-4);
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
   display: flex;
   align-items: center;
@@ -1967,30 +1967,30 @@ onBeforeUnmount(() => {
   background: rgba(64, 158, 255, 0.14) !important;
 }
 
-.ds-info { font-size: 13px; color: var(--el-text-color-primary); }
+.ds-info { font-size: var(--app-font-base); color: var(--el-text-color-primary); }
 .ds-label { color: var(--el-text-color-secondary); }
-.stat-num { font-size: 28px; font-weight: 700; color: var(--el-text-color-primary); }
-.stat-label { font-size: 13px; color: var(--el-text-color-secondary); margin-top: 4px; }
-.legend-row { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.stat-num { font-size: var(--app-font-display); font-weight: 700; color: var(--el-text-color-primary); }
+.stat-label { font-size: var(--app-font-base); color: var(--el-text-color-secondary); margin-top: var(--app-space-2); }
+.legend-row { display: flex; align-items: center; gap: var(--app-space-3); font-size: var(--app-font-sm); }
 .legend-row.clickable { cursor: pointer; user-select: none; }
-.legend-row.clickable:hover { background: var(--el-fill-color-light); border-radius: 4px; }
+.legend-row.clickable:hover { background: var(--el-fill-color-light); border-radius: var(--app-radius-sm); }
 .legend-dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
-.mini-legend { margin-top: 4px; }
-.parttime-block { border: 1px solid var(--el-color-success); border-radius: 6px; padding: 12px; background: var(--el-color-success-light-9); }
-.parttime-title { display: flex; align-items: center; gap: 6px; font-weight: 600; color: var(--el-text-color-primary); margin-bottom: 10px; }
-.parttime-badge { display: inline-block; background: var(--el-color-success); color: var(--el-color-white); border-radius: 3px; font-size: 12px; padding: 0 6px; line-height: 18px; }
-.parttime-table { border: 1px solid var(--app-parttime-border); border-radius: 4px; overflow: hidden; }
+.mini-legend { margin-top: var(--app-space-2); }
+.parttime-block { border: 1px solid var(--el-color-success); border-radius: var(--app-radius-md); padding: var(--app-space-5); background: var(--el-color-success-light-9); }
+.parttime-title { display: flex; align-items: center; gap: var(--app-space-3); font-weight: 600; color: var(--el-text-color-primary); margin-bottom: 10px; }
+.parttime-badge { display: inline-block; background: var(--el-color-success); color: var(--el-color-white); border-radius: var(--app-radius-sm); font-size: var(--app-font-sm); padding: 0 var(--app-space-3); line-height: 18px; }
+.parttime-table { border: 1px solid var(--app-parttime-border); border-radius: var(--app-radius-sm); overflow: hidden; }
 .parttime-row { display: flex; border-bottom: 1px solid var(--app-parttime-border-light); }
 .parttime-row:last-child { border-bottom: none; }
 .parttime-header { background: var(--el-color-success-light-9); font-weight: 600; }
-.parttime-ws-col { width: 90px; flex-shrink: 0; padding: 5px 8px; border-right: 1px solid var(--app-parttime-border-light); font-size: 12px; }
-.parttime-day-col { flex: 1; min-height: 20px; padding: 3px; border-right: 1px solid var(--app-parttime-border-light); font-size: 11px; text-align: center; color: var(--el-text-color-secondary); }
+.parttime-ws-col { width: 90px; flex-shrink: 0; padding: var(--app-space-3) var(--app-space-4); border-right: 1px solid var(--app-parttime-border-light); font-size: var(--app-font-sm); }
+.parttime-day-col { flex: 1; min-height: 20px; padding: var(--app-space-2); border-right: 1px solid var(--app-parttime-border-light); font-size: var(--app-font-xs); text-align: center; color: var(--el-text-color-secondary); }
 .parttime-day-col:last-child { border-right: none; }
 .parttime-day-col.active { background: var(--el-color-success); }
-.parttime-legend { margin-top: 8px; display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--el-text-color-regular); }
+.parttime-legend { margin-top: var(--app-space-4); display: flex; align-items: center; gap: var(--app-space-3); font-size: var(--app-font-sm); color: var(--el-text-color-regular); }
 .parttime-legend-box { background: var(--el-color-success); }
 /* P2 交互：批量模式 */
-.batch-bar { display: flex; align-items: center; gap: 8px; margin: 8px 0; font-size: 12px; color: var(--el-text-color-regular); }
+.batch-bar { display: flex; align-items: center; gap: var(--app-space-4); margin: var(--app-space-4) 0; font-size: var(--app-font-sm); color: var(--el-text-color-regular); }
 .batch-label { color: var(--el-text-color-secondary); }
 .matrix.batch-mode .m-slot-col { cursor: crosshair; }
 .m-slot-col.batch-selected { outline: 2px solid var(--el-color-warning); outline-offset: -2px; background: rgba(230, 162, 60, 0.15); }
@@ -2003,12 +2003,12 @@ onBeforeUnmount(() => {
   z-index: 3000;
   background: var(--el-text-color-primary);
   color: var(--el-color-white);
-  border-radius: 6px;
-  padding: 8px 16px;
+  border-radius: var(--app-radius-md);
+  padding: var(--app-space-4) var(--app-space-6);
   display: flex;
   align-items: center;
-  gap: 12px;
-  font-size: 13px;
+  gap: var(--app-space-5);
+  font-size: var(--app-font-base);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
 }
 </style>

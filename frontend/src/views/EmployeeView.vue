@@ -18,12 +18,12 @@
         </el-form-item>
       </el-form>
 
-      <el-button type="primary" style="margin-bottom: 12px" @click="openCreate">新增员工</el-button>
+      <el-button type="primary" style="margin-bottom: var(--app-space-5)" @click="openCreate">新增员工</el-button>
 
       <el-table :data="list" v-loading="loading" border stripe>
         <el-table-column prop="employeeNo" label="工号" width="100" />
         <el-table-column label="姓名" width="140">
-          <template #default="{ row }">{{ row.name }}<el-tag v-if="row.isParttime === 1" type="warning" size="small" style="margin-left:4px">兼</el-tag></template>
+          <template #default="{ row }">{{ row.name }}<el-tag v-if="row.isParttime === 1" type="warning" size="small" style="margin-left:var(--app-space-2)">兼</el-tag></template>
         </el-table-column>
         <el-table-column prop="department" label="部门" width="100" />
         <el-table-column prop="primaryPosition" label="主岗" />
@@ -31,8 +31,8 @@
         <el-table-column label="周工时上限" width="130">
           <template #default="{ row }">
             {{ row.maxWeeklyHours }}h
-            <el-tag v-if="row.weeklyHoursFollowDefault === 1" size="small" type="info" style="margin-left:4px">默认</el-tag>
-            <el-tag v-else size="small" type="warning" style="margin-left:4px">自定义</el-tag>
+            <el-tag v-if="row.weeklyHoursFollowDefault === 1" size="small" type="info" style="margin-left:var(--app-space-2)">默认</el-tag>
+            <el-tag v-else size="small" type="warning" style="margin-left:var(--app-space-2)">自定义</el-tag>
           </template>
         </el-table-column>
         <el-table-column label="状态" width="80">
@@ -43,7 +43,7 @@
         <el-table-column label="是否休假" width="230">
           <template #default="{ row }">
             <template v-if="leavePeriods(row).length">
-              <el-tag v-if="onLeaveNow(row)" type="danger" size="small" style="margin-bottom: 2px">休假中</el-tag>
+              <el-tag v-if="onLeaveNow(row)" type="danger" size="small" style="margin-bottom: var(--app-space-1)">休假中</el-tag>
               <div v-for="(p, i) in leavePeriods(row)" :key="i" class="leave-line" :title="p.period">
                 <el-tag v-if="p.earlyReturned" type="warning" size="small" class="early-return-tag">提前返岗</el-tag>{{ p.period }}
               </div>
@@ -60,7 +60,7 @@
       </el-table>
 
       <el-pagination
-        style="margin-top: 16px"
+        style="margin-top: var(--app-space-6)"
         layout="total, prev, pager, next"
         :total="total"
         :page-size="query.pageSize"
@@ -420,12 +420,12 @@ onMounted(() => {
 
 <style scoped>
 .follow-hint {
-  margin-left: 8px;
+  margin-left: var(--app-space-4);
   color: var(--el-text-color-secondary);
-  font-size: 12px;
+  font-size: var(--app-font-sm);
 }
 .leave-line {
-  font-size: 12px;
+  font-size: var(--app-font-sm);
   line-height: 1.7;
   white-space: nowrap;
   overflow: hidden;
@@ -433,7 +433,7 @@ onMounted(() => {
   color: var(--el-text-color-regular);
 }
 .early-return-tag {
-  margin-right: 4px;
+  margin-right: var(--app-space-2);
   vertical-align: middle;
 }
 </style>

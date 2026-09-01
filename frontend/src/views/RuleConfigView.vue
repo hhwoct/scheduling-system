@@ -24,7 +24,7 @@
                 <div v-for="item in dailyHoursItems" :key="item.key" class="daily-hours-item">
                   <span class="daily-hours-item-label">
                     {{ item.label }}
-                    <el-tag v-if="item.custom" size="small" type="warning" style="margin-left:4px">自定义</el-tag>
+                    <el-tag v-if="item.custom" size="small" type="warning" style="margin-left:var(--app-space-2)">自定义</el-tag>
                   </span>
                   <el-input-number
                     :model-value="item.value"
@@ -77,7 +77,7 @@
           </template>
         </el-table-column>
       </el-table>
-      <div style="margin-top: 16px; text-align: right">
+      <div style="margin-top: var(--app-space-6); text-align: right">
         <el-button v-if="isSystemAdmin" type="primary" :loading="saving" @click="handleSave">保存全部</el-button>
         <el-alert v-else type="info" :closable="false" show-icon title="仅系统管理员可修改排班规则，当前为只读模式" />
       </div>
@@ -268,12 +268,12 @@ onMounted(loadData)
 /* 单日最大工时整行配置（默认收起） */
 .daily-hours-row {
   width: 100%;
-  padding: 3px 0;
+  padding: var(--app-space-2) 0;
 }
 .daily-hours-header {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--app-space-4);
   width: 100%;
   flex-wrap: wrap;
 }
@@ -282,7 +282,7 @@ onMounted(loadData)
   white-space: nowrap;
 }
 .daily-hours-summary {
-  font-size: 12px;
+  font-size: var(--app-font-sm);
   color: var(--el-text-color-regular);
   white-space: nowrap;
   overflow: hidden;
@@ -293,35 +293,35 @@ onMounted(loadData)
 .daily-hours-switch {
   display: flex;
   align-items: center;
-  gap: 4px;
-  font-size: 12px;
+  gap: var(--app-space-2);
+  font-size: var(--app-font-sm);
   color: var(--el-text-color-secondary);
   white-space: nowrap;
 }
 .daily-hours-list {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px 16px;
-  margin-top: 8px;
-  padding: 8px 10px;
+  gap: var(--app-space-4) var(--app-space-6);
+  margin-top: var(--app-space-4);
+  padding: var(--app-space-4) 10px;
   background: var(--el-fill-color-light);
-  border-radius: 4px;
+  border-radius: var(--app-radius-sm);
 }
 .daily-hours-item {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--app-space-3);
 }
 .daily-hours-item-label {
   min-width: 72px;
   display: flex;
   align-items: center;
-  font-size: 13px;
+  font-size: var(--app-font-base);
   color: var(--el-text-color-primary);
   white-space: nowrap;
 }
 .daily-hours-unit {
-  font-size: 12px;
+  font-size: var(--app-font-sm);
   color: var(--el-text-color-regular);
   white-space: nowrap;
 }

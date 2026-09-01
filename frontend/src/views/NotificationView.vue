@@ -21,18 +21,18 @@
           <el-card :class="{ unread: item.isRead === 0 }" shadow="hover">
             <div style="display: flex; align-items: center; justify-content: space-between">
               <div>
-                <el-tag size="small" style="margin-right: 8px">{{ typeName(item.notificationType) }}</el-tag>
+                <el-tag size="small" style="margin-right: var(--app-space-4)">{{ typeName(item.notificationType) }}</el-tag>
                 <strong>{{ item.title }}</strong>
               </div>
               <el-button v-if="item.isRead === 0" link type="primary" size="small" @click="handleRead(item.id)">标为已读</el-button>
             </div>
-            <div style="margin-top: 8px; color: var(--el-text-color-regular)">{{ item.content }}</div>
+            <div style="margin-top: var(--app-space-4); color: var(--el-text-color-regular)">{{ item.content }}</div>
           </el-card>
         </el-timeline-item>
       </el-timeline>
 
       <el-pagination
-        style="margin-top: 16px; justify-content: center"
+        style="margin-top: var(--app-space-6); justify-content: center"
         layout="total, prev, pager, next"
         :total="total"
         :page-size="pageSize"

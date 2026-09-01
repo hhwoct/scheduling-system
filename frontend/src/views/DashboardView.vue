@@ -22,7 +22,7 @@
       </el-col>
     </el-row>
 
-    <el-card style="margin-top: 16px">
+    <el-card style="margin-top: var(--app-space-6)">
       <template #header>当前门店</template>
       <el-descriptions :column="2" border>
         <el-descriptions-item label="门店编码">{{ store?.code || '--' }}</el-descriptions-item>
@@ -81,17 +81,17 @@ onMounted(async () => {
 
 <style scoped>
 .stat-value {
-  font-size: 32px;
+  font-size: var(--app-font-display);
   font-weight: 700;
   color: var(--el-color-primary);
 }
 .stat-label {
-  margin-top: 8px;
+  margin-top: var(--app-space-4);
   color: var(--el-text-color-secondary);
 }
 .stat-sub-label {
-  margin-top: 4px;
-  font-size: 13px;
+  margin-top: var(--app-space-2);
+  font-size: var(--app-font-base);
   color: var(--el-color-success);
 }
 </style>

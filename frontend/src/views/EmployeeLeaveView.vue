@@ -39,7 +39,7 @@
       </el-form>
     </el-card>
 
-    <el-card style="margin-top: 16px">
+    <el-card style="margin-top: var(--app-space-6)">
       <template #header>
         <div style="display: flex; align-items: center; justify-content: space-between">
           <span>我的请假记录</span>

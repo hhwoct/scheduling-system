@@ -5,35 +5,35 @@
         <div style="display: flex; align-items: center; justify-content: space-between">
           <span>周排班视图（资源时间线）</span>
           <div>
-            <el-input v-model="planId" placeholder="排班计划 ID" style="width: 180px; margin-right: 8px" />
-            <el-date-picker v-model="weekStart" type="date" value-format="YYYY-MM-DD" style="width: 150px; margin-right: 8px" placeholder="周起始日" />
+            <el-input v-model="planId" placeholder="排班计划 ID" style="width: 180px; margin-right: var(--app-space-4)" />
+            <el-date-picker v-model="weekStart" type="date" value-format="YYYY-MM-DD" style="width: 150px; margin-right: var(--app-space-4)" placeholder="周起始日" />
             <el-button type="primary" :loading="loading" @click="loadData">查询</el-button>
           </div>
         </div>
       </template>
 
-      <el-alert v-if="errorMsg" :title="errorMsg" type="warning" :closable="false" style="margin-bottom: 12px" />
+      <el-alert v-if="errorMsg" :title="errorMsg" type="warning" :closable="false" style="margin-bottom: var(--app-space-5)" />
 
       <!-- 整周期级问题（无具体日期，如工时超限） -->
       <el-alert
         v-if="summaryIssues.length"
         type="warning"
         :closable="false"
-        style="margin-bottom: 12px"
+        style="margin-bottom: var(--app-space-5)"
       >
         <template #title>
           整周期问题（{{ summaryIssues.length }} 条）
         </template>
-        <div v-for="(si, idx) in summaryIssues.slice(0, 5)" :key="idx" style="font-size: 12px; margin-top: 2px">
+        <div v-for="(si, idx) in summaryIssues.slice(0, 5)" :key="idx" style="font-size: var(--app-font-sm); margin-top: var(--app-space-1)">
           {{ si.description }}
         </div>
-        <span v-if="summaryIssues.length > 5" style="font-size: 12px">… 等 {{ summaryIssues.length }} 条</span>
+        <span v-if="summaryIssues.length > 5" style="font-size: var(--app-font-sm)">… 等 {{ summaryIssues.length }} 条</span>
 
         <el-button
           v-if="summaryIssues.length"
           type="primary"
           size="small"
-          style="margin-top: 8px"
+          style="margin-top: var(--app-space-4)"
           @click="showOvertimeDetail = true"
         >
           查看详情
@@ -85,22 +85,22 @@
         </div>
       </div>
 
-      <div style="margin-top: 12px; display: flex; gap: 16px; align-items: center">
-        <el-tag size="small" type="danger">休</el-tag><span style="font-size: 12px; color: var(--el-text-color-secondary)">休息</span>
-        <el-tag size="small" type="primary">班</el-tag><span style="font-size: 12px; color: var(--el-text-color-secondary)">班次（含时间与工时）</span>
-        <el-tag size="small" type="warning">休 HH:mm-HH:mm</el-tag><span style="font-size: 12px; color: var(--el-text-color-secondary)">班中休息（含顶岗人）</span>
+      <div style="margin-top: var(--app-space-5); display: flex; gap: var(--app-space-6); align-items: center">
+        <el-tag size="small" type="danger">休</el-tag><span style="font-size: var(--app-font-sm); color: var(--el-text-color-secondary)">休息</span>
+        <el-tag size="small" type="primary">班</el-tag><span style="font-size: var(--app-font-sm); color: var(--el-text-color-secondary)">班次（含时间与工时）</span>
+        <el-tag size="small" type="warning">休 HH:mm-HH:mm</el-tag><span style="font-size: var(--app-font-sm); color: var(--el-text-color-secondary)">班中休息（含顶岗人）</span>
       </div>
     </el-card>
 
     <!-- 整周期问题详情弹窗 -->
     <el-dialog v-model="showOvertimeDetail" title="整周期问题详情（工时超限）" width="760px">
-      <el-alert type="info" :closable="false" style="margin-bottom: 12px">
+      <el-alert type="info" :closable="false" style="margin-bottom: var(--app-space-5)">
         以下员工排班周期内总工时超过上限（58h）。点击「工时明细」可查看该员工每天的班次与工时，定位超时来源。
       </el-alert>
       <el-table :data="summaryIssues" border stripe size="small" max-height="440">
         <el-table-column type="expand">
           <template #default="{ row }">
-            <div style="padding: 8px 16px">
+            <div style="padding: var(--app-space-4) var(--app-space-6)">
               <el-table :data="employeeHourRows[`${planId}_${row.employeeId}`] || []" size="small" border max-height="260">
                 <el-table-column prop="workDate" label="日期" width="110" />
                 <el-table-column label="类型" width="60">
@@ -111,7 +111,7 @@
                   <template #default="{ row: d }">{{ Number(d.workHours).toFixed(1) }}</template>
                 </el-table-column>
               </el-table>
-              <div v-if="!((employeeHourRows[`${planId}_${row.employeeId}`] || []).length)" style="font-size:12px;color:var(--el-text-color-secondary)">（点击右侧「工时明细」加载）</div>
+              <div v-if="!((employeeHourRows[`${planId}_${row.employeeId}`] || []).length)" style="font-size:var(--app-font-sm);color:var(--el-text-color-secondary)">（点击右侧「工时明细」加载）</div>
             </div>
           </template>
         </el-table-column>
@@ -267,22 +267,22 @@ onMounted(loadData)
 .gantt { min-width: 100%; }
 .gantt-row { display: flex; border-bottom: 1px solid var(--el-border-color-lighter); }
 .gantt-header { background: var(--el-fill-color-light); font-weight: 600; }
-.gantt-emp-col { width: 150px; flex-shrink: 0; padding: 6px 8px; border-right: 1px solid var(--el-border-color-lighter); position: sticky; left: 0; background: var(--el-bg-color); z-index: 3; }
+.gantt-emp-col { width: 150px; flex-shrink: 0; padding: var(--app-space-3) var(--app-space-4); border-right: 1px solid var(--el-border-color-lighter); position: sticky; left: 0; background: var(--el-bg-color); z-index: 3; }
 .gantt-header .gantt-emp-col { background: var(--el-fill-color-light); z-index: 4; }
-.emp-name { font-size: 13px; }
-.emp-sub { font-size: 11px; color: var(--el-text-color-secondary); }
-.gantt-day-col { flex: 1; min-width: 120px; padding: 6px; border-right: 1px solid var(--el-fill-color-light); }
+.emp-name { font-size: var(--app-font-base); }
+.emp-sub { font-size: var(--app-font-xs); color: var(--el-text-color-secondary); }
+.gantt-day-col { flex: 1; min-width: 120px; padding: var(--app-space-3); border-right: 1px solid var(--el-fill-color-light); }
 .gantt-day-col:last-child { border-right: none; }
-.day-label { font-size: 13px; text-align: center; }
-.day-sub { font-size: 11px; color: var(--el-text-color-secondary); text-align: center; }
-.day-block { min-height: 84px; border-radius: 4px; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 4px 2px; }
-.shift-break { margin-top: 2px; font-size: 10px; color: var(--el-color-warning); line-height: 1.4; text-align: center; }
-.rest-block { background: var(--el-color-danger-light-9); color: var(--el-color-danger); font-weight: 600; font-size: 14px; }
+.day-label { font-size: var(--app-font-base); text-align: center; }
+.day-sub { font-size: var(--app-font-xs); color: var(--el-text-color-secondary); text-align: center; }
+.day-block { min-height: 84px; border-radius: var(--app-radius-sm); display: flex; flex-direction: column; align-items: center; justify-content: center; padding: var(--app-space-2) var(--app-space-1); }
+.shift-break { margin-top: var(--app-space-1); font-size: var(--app-font-micro); color: var(--el-color-warning); line-height: 1.4; text-align: center; }
+.rest-block { background: var(--el-color-danger-light-9); color: var(--el-color-danger); font-weight: 600; font-size: var(--app-font-md); }
 .work-block { background: var(--el-color-primary-light-9); color: var(--el-color-primary); }
-.shift-code { font-weight: 600; font-size: 13px; }
-.shift-time { font-size: 11px; }
-.shift-hours { font-size: 11px; color: var(--el-color-primary-light-3); }
+.shift-code { font-weight: 600; font-size: var(--app-font-base); }
+.shift-time { font-size: var(--app-font-xs); }
+.shift-hours { font-size: var(--app-font-xs); color: var(--el-color-primary-light-3); }
 .empty-block { background: var(--el-fill-color-lighter); }
 .has-issue-person { box-shadow: inset 0 0 0 2px var(--el-color-danger); }
-.issue-badge { margin-top: 2px; background: var(--el-color-danger); color: var(--el-color-white); font-size: 10px; border-radius: 2px; padding: 0 4px; }
+.issue-badge { margin-top: var(--app-space-1); background: var(--el-color-danger); color: var(--el-color-white); font-size: var(--app-font-micro); border-radius: var(--app-radius-sm); padding: 0 var(--app-space-2); }
 </style>

@@ -33,7 +33,7 @@
       </el-form>
     </el-card>
 
-    <el-card style="margin-top: 16px">
+    <el-card style="margin-top: var(--app-space-6)">
       <template #header>我的换班记录</template>
       <el-table :data="mine" v-loading="loading" border stripe size="small">
         <el-table-column prop="id" label="ID" width="60" />

@@ -1,6 +1,6 @@
 <template>
   <div>
-    <el-card style="margin-bottom: 16px">
+    <el-card style="margin-bottom: var(--app-space-6)">
       <template #header>班次甘特图（13:00 ~ 次日 06:00）</template>
       <div class="gantt-wrap">
         <!-- 时间轴刻度 -->
@@ -58,7 +58,7 @@
         <el-table-column prop="priority" label="优先级" width="80" />
         <el-table-column prop="coveredWorkstations" label="覆盖工作站">
           <template #default="{ row }">
-            <el-tag v-for="ws in (Array.isArray(row.coveredWorkstations) ? row.coveredWorkstations : String(row.coveredWorkstations || '').split(',').filter(Boolean))" :key="ws" size="small" style="margin-right: 4px">{{ ws }}</el-tag>
+            <el-tag v-for="ws in (Array.isArray(row.coveredWorkstations) ? row.coveredWorkstations : String(row.coveredWorkstations || '').split(',').filter(Boolean))" :key="ws" size="small" style="margin-right: var(--app-space-2)">{{ ws }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column label="操作" width="120">
@@ -231,14 +231,14 @@ onMounted(loadData)
 
 <style scoped>
 .form-tip {
-  font-size: 12px;
+  font-size: var(--app-font-sm);
   color: var(--el-text-color-secondary);
   line-height: 1.4;
-  margin-top: 2px;
+  margin-top: var(--app-space-1);
 }
 .gantt-wrap {
   overflow-x: auto;
-  padding-bottom: 8px;
+  padding-bottom: var(--app-space-4);
 }
 .gantt-axis {
   display: flex;
@@ -257,7 +257,7 @@ onMounted(loadData)
 .axis-tick {
   position: absolute;
   transform: translateX(-50%);
-  font-size: 9px;
+  font-size: var(--app-font-micro);
   text-align: center;
   color: var(--el-text-color-secondary);
   border-left: 1px solid var(--el-border-color-light);
@@ -271,13 +271,13 @@ onMounted(loadData)
 .gantt-row {
   display: flex;
   align-items: center;
-  margin-bottom: 6px;
+  margin-bottom: var(--app-space-3);
 }
 .gantt-label {
   width: 100px;
   min-width: 100px;
-  font-size: 12px;
-  padding-right: 8px;
+  font-size: var(--app-font-sm);
+  padding-right: var(--app-space-4);
   text-align: right;
   color: var(--el-text-color-regular);
   line-height: 28px;
@@ -287,41 +287,41 @@ onMounted(loadData)
   position: relative;
   height: 28px;
   background: var(--el-fill-color-light);
-  border-radius: 4px;
+  border-radius: var(--app-radius-sm);
   overflow: hidden;
 }
 .gantt-bar {
   position: absolute;
   top: 4px;
   height: 20px;
-  border-radius: 10px;
+  border-radius: var(--app-radius-lg);
   color: var(--el-color-white);
-  font-size: 11px;
+  font-size: var(--app-font-xs);
   text-align: center;
   line-height: 20px;
   min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  padding: 0 4px;
+  padding: 0 var(--app-space-2);
   box-sizing: border-box;
 }
 .gantt-legend {
-  margin-top: 16px;
+  margin-top: var(--app-space-6);
   display: flex;
   flex-wrap: wrap;
   gap: 14px;
 }
 .legend-item {
-  font-size: 12px;
+  font-size: var(--app-font-sm);
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--app-space-3);
 }
 .legend-box {
   width: 20px;
   height: 14px;
-  border-radius: 3px;
+  border-radius: var(--app-radius-sm);
   display: inline-block;
 }
 </style>

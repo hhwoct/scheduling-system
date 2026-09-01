@@ -205,7 +205,7 @@ async function handleForgotPassword() {
 }
 .login-title {
   text-align: center;
-  font-size: 18px;
+  font-size: var(--app-font-xl);
   font-weight: 600;
 }
 .login-btn {
@@ -217,8 +217,8 @@ async function handleForgotPassword() {
 }
 .cooldown-tip {
   margin-top: -4px;
-  margin-bottom: 8px;
-  font-size: 12px;
+  margin-bottom: var(--app-space-4);
+  font-size: var(--app-font-sm);
   color: var(--el-color-warning);
   text-align: center;
 }

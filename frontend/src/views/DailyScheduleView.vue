@@ -5,27 +5,27 @@
         <div style="display: flex; align-items: center; justify-content: space-between">
           <span>日排班明细（工作站 × 时间矩阵）</span>
           <div>
-            <el-input v-model="planId" placeholder="排班计划 ID" style="width: 160px; margin-right: 8px" />
-            <el-date-picker v-model="workDate" type="date" value-format="YYYY-MM-DD" style="width: 150px; margin-right: 8px" />
+            <el-input v-model="planId" placeholder="排班计划 ID" style="width: 160px; margin-right: var(--app-space-4)" />
+            <el-date-picker v-model="workDate" type="date" value-format="YYYY-MM-DD" style="width: 150px; margin-right: var(--app-space-4)" />
             <el-button type="primary" :loading="loading" @click="loadData">查询</el-button>
           </div>
         </div>
       </template>
 
-      <el-alert v-if="errorMsg" :title="errorMsg" type="warning" :closable="false" style="margin-bottom: 12px" />
+      <el-alert v-if="errorMsg" :title="errorMsg" type="warning" :closable="false" style="margin-bottom: var(--app-space-5)" />
 
       <!-- 整周期问题：无具体日期（工时超限等） -->
       <el-alert
         v-if="summaryIssues.length"
         type="warning"
         :closable="false"
-        style="margin-bottom: 12px"
+        style="margin-bottom: var(--app-space-5)"
       >
         <template #title>整周期问题（{{ summaryIssues.length }} 条）</template>
-        <div v-for="(si, idx) in summaryIssues.slice(0, 5)" :key="idx" style="font-size: 12px; margin-top: 2px">
+        <div v-for="(si, idx) in summaryIssues.slice(0, 5)" :key="idx" style="font-size: var(--app-font-sm); margin-top: var(--app-space-1)">
           {{ si.description }}
         </div>
-        <span v-if="summaryIssues.length > 5" style="font-size: 12px">… 等 {{ summaryIssues.length }} 条</span>
+        <span v-if="summaryIssues.length > 5" style="font-size: var(--app-font-sm)">… 等 {{ summaryIssues.length }} 条</span>
       </el-alert>
 
       <div v-loading="loading" class="matrix-wrap">
@@ -57,11 +57,11 @@
         </div>
       </div>
 
-      <div style="margin-top: 12px; display: flex; gap: 16px; align-items: center; flex-wrap: wrap">
-        <span style="font-size: 12px; color: var(--el-text-color-secondary)">色块从上到下：名字 / 班次 / 职位；时间轴从当日 13:00 到次日 05:30（+1 表示次日，覆盖 06:00 下班的班次）</span>
+      <div style="margin-top: var(--app-space-5); display: flex; gap: var(--app-space-6); align-items: center; flex-wrap: wrap">
+        <span style="font-size: var(--app-font-sm); color: var(--el-text-color-secondary)">色块从上到下：名字 / 班次 / 职位；时间轴从当日 13:00 到次日 05:30（+1 表示次日，覆盖 06:00 下班的班次）</span>
         <el-tag size="small" type="warning">次日</el-tag>
         <el-tag size="small" type="danger">缺</el-tag>
-        <span style="font-size: 12px; color: var(--el-text-color-secondary)">该工作站该时段存在岗位缺口</span>
+        <span style="font-size: var(--app-font-sm); color: var(--el-text-color-secondary)">该工作站该时段存在岗位缺口</span>
       </div>
     </el-card>
   </div>
@@ -227,24 +227,24 @@ onMounted(loadData)
 
 <style scoped>
 .matrix-wrap { overflow: auto; max-height: 560px; position: relative; }
-.matrix { min-width: 100%; border: 1px solid var(--el-border-color-lighter); border-radius: 4px; }
+.matrix { min-width: 100%; border: 1px solid var(--el-border-color-lighter); border-radius: var(--app-radius-sm); }
 .m-row { display: flex; border-bottom: 1px solid var(--el-border-color-lighter); }
 .m-row:last-child { border-bottom: none; }
 .m-header { background: var(--el-fill-color-light); font-weight: 600; position: sticky; top: 0; z-index: 4; }
-.m-ws-col { width: 130px; flex-shrink: 0; padding: 6px 8px; border-right: 1px solid var(--el-border-color-lighter); position: sticky; left: 0; background: var(--el-bg-color); z-index: 3; display: flex; align-items: center; }
+.m-ws-col { width: 130px; flex-shrink: 0; padding: var(--app-space-3) var(--app-space-4); border-right: 1px solid var(--el-border-color-lighter); position: sticky; left: 0; background: var(--el-bg-color); z-index: 3; display: flex; align-items: center; }
 .m-header .m-ws-col { background: var(--el-fill-color-light); z-index: 5; }
-.m-slot-col { width: 72px; min-height: 56px; flex-shrink: 0; padding: 2px 3px; border-right: 1px solid var(--el-fill-color-light); font-size: 11px; text-align: center; transition: background 0.2s; position: relative; }
+.m-slot-col { width: 72px; min-height: 56px; flex-shrink: 0; padding: var(--app-space-1) var(--app-space-2); border-right: 1px solid var(--el-fill-color-light); font-size: var(--app-font-xs); text-align: center; transition: background 0.2s; position: relative; }
 .m-slot-col:last-child { border-right: none; }
 .has-employee { background: var(--el-color-primary-light-9); }
 .next-day { background: var(--el-color-warning-light-9); }
 .has-gap { box-shadow: inset 0 0 0 2px var(--el-color-danger); }
-.gap-flag { position: absolute; top: 1px; right: 1px; background: var(--el-color-danger); color: var(--el-color-white); font-size: 10px; border-radius: 2px; padding: 0 3px; line-height: 14px; }
-.emp-chip { background: var(--el-color-primary); color: var(--el-color-white); border-radius: 3px; padding: 2px 4px; margin-bottom: 2px; font-size: 11px; }
+.gap-flag { position: absolute; top: 1px; right: 1px; background: var(--el-color-danger); color: var(--el-color-white); font-size: var(--app-font-micro); border-radius: var(--app-radius-sm); padding: 0 var(--app-space-2); line-height: 14px; }
+.emp-chip { background: var(--el-color-primary); color: var(--el-color-white); border-radius: var(--app-radius-sm); padding: var(--app-space-1) var(--app-space-2); margin-bottom: var(--app-space-1); font-size: var(--app-font-xs); }
 .emp-chip.is-break { background: var(--el-color-info); }
 .emp-chip.is-break .break-info { color: var(--app-break-text); }
-.break-flag { display: inline-block; background: var(--el-color-warning); color: var(--el-color-white); border-radius: 2px; padding: 0 3px; margin-left: 4px; font-size: 10px; line-height: 14px; }
+.break-flag { display: inline-block; background: var(--el-color-warning); color: var(--el-color-white); border-radius: var(--app-radius-sm); padding: 0 var(--app-space-2); margin-left: var(--app-space-2); font-size: var(--app-font-micro); line-height: 14px; }
 .emp-chip .emp-name { font-weight: 600; }
 .emp-chip .emp-shift { opacity: 0.95; }
-.emp-chip .emp-pos { opacity: 0.8; font-size: 10px; }
+.emp-chip .emp-pos { opacity: 0.8; font-size: var(--app-font-micro); }
 .next-day .emp-chip { background: var(--el-color-warning); }
 </style>

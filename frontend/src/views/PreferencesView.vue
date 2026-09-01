@@ -142,16 +142,16 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.pref-page { padding: 4px; }
-.page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
-.stat-row { margin-bottom: 8px; }
+.pref-page { padding: var(--app-space-2); }
+.page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--app-space-5); }
+.stat-row { margin-bottom: var(--app-space-4); }
 .stat-card {
-  background: var(--el-fill-color-light); border-radius: 8px; padding: 14px; text-align: center;
+  background: var(--el-fill-color-light); border-radius: var(--app-radius-md); padding: 14px; text-align: center;
   border: 1px solid var(--el-border-color-lighter);
 }
-.stat-num { font-size: 26px; font-weight: 700; color: var(--el-color-primary); }
+.stat-num { font-size: var(--app-font-display); font-weight: 700; color: var(--el-color-primary); }
 .stat-card.trend-up .stat-num { color: var(--el-color-success); }
-.stat-label { font-size: 12px; color: var(--el-text-color-secondary); margin-top: 4px; }
-.weight-tip { font-size: 12px; color: var(--el-text-color-secondary); margin: 6px 0 12px; }
-.section { margin-bottom: 16px; }
+.stat-label { font-size: var(--app-font-sm); color: var(--el-text-color-secondary); margin-top: var(--app-space-2); }
+.weight-tip { font-size: var(--app-font-sm); color: var(--el-text-color-secondary); margin: var(--app-space-3) 0 var(--app-space-5); }
+.section { margin-bottom: var(--app-space-6); }
 </style>

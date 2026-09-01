@@ -1,0 +1,62 @@
+/**
+ * Element Plus 覆盖层
+ *
+ * 让组件库跟随本项目的 token,避免「组件是一套尺度、业务样式是另一套」。
+ * 业务代码里不应再出现 Element 调色板或尺度的字面量。
+ */
+
+:root {
+  /* ===== 圆角 ===== */
+  /* 与业务侧同一套刻度:base 4->6,small 2->3 */
+  --el-border-radius-base: var(--app-radius-md);
+  --el-border-radius-small: var(--app-radius-sm);
+
+  /* ===== 字号 ===== */
+  --el-font-size-extra-small: var(--app-font-sm);
+  --el-font-size-small: var(--app-font-base);
+  --el-font-size-base: var(--app-font-md);
+  --el-font-size-medium: var(--app-font-lg);
+  --el-font-size-large: var(--app-font-xl);
+
+  /* ===== 阴影 ===== */
+  --el-box-shadow-light: var(--app-shadow-sm);
+  --el-box-shadow: var(--app-shadow-md);
+}
+
+/* ===== 卡片 ===== */
+/* 用半透明阴影表达层级,而不是实线边框 —— 边框会把密集页面切得很碎 */
+.el-card {
+  border: none;
+  box-shadow: var(--app-shadow-sm);
+}
+
+.el-card.is-hover-shadow:hover {
+  box-shadow: var(--app-shadow-md);
+}
+
+/* ===== 表格 ===== */
+/* 全站 165 处 el-table,表头需要足够区分度才能在长表里定位 */
+.el-table thead th.el-table__cell {
+  background-color: var(--el-fill-color-light);
+  color: var(--el-text-color-primary);
+  font-weight: 600;
+}
+
+/* ===== 按压反馈 ===== */
+/* 按下即有响应,不等 click;幅度控制在几乎察觉不到的程度 */
+.el-button {
+  transition: transform var(--app-duration-fast) ease-out,
+    background-color var(--app-duration-fast) ease-out,
+    border-color var(--app-duration-fast) ease-out;
+}
+
+.el-button:not(.is-disabled):active {
+  transform: scale(0.98);
+}
+
+/* 触摸设备没有真正的 hover,避免 hover 态粘住 */
+@media (hover: hover) and (pointer: fine) {
+  .el-card.is-hover-shadow {
+    transition: box-shadow var(--app-duration) var(--app-ease);
+  }
+}

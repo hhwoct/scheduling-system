@@ -12,7 +12,7 @@
               placeholder="选择预览员工"
               clearable
               filterable
-              style="width: 160px; margin-right: 8px"
+              style="width: 160px; margin-right: var(--app-space-4)"
               @update:model-value="onPreviewChange"
             >
               <el-option
@@ -27,7 +27,7 @@
               type="month"
               value-format="YYYY-MM"
               :clearable="false"
-              style="width: 140px; margin-right: 8px"
+              style="width: 140px; margin-right: var(--app-space-4)"
             />
             <el-button type="primary" :loading="loading" @click="loadData">查询</el-button>
           </div>
@@ -35,7 +35,7 @@
       </template>
 
       <!-- 员工信息 -->
-      <el-descriptions v-if="employee" :column="4" border style="margin-bottom: 12px">
+      <el-descriptions v-if="employee" :column="4" border style="margin-bottom: var(--app-space-5)">
         <el-descriptions-item label="工号">{{ employee.employeeNo }}</el-descriptions-item>
         <el-descriptions-item label="姓名">{{ employee.name }}</el-descriptions-item>
         <el-descriptions-item label="部门">{{ employee.department }}</el-descriptions-item>
@@ -82,7 +82,7 @@
       <!-- 顶岗记录：独立于具体计划，全局展示 -->
       <div v-if="covers.length" class="cover-list">
         <div class="cover-title">我顶岗的记录</div>
-        <el-table :data="covers" border stripe size="small" max-height="200" style="margin-top: 6px">
+        <el-table :data="covers" border stripe size="small" max-height="200" style="margin-top: var(--app-space-3)">
           <el-table-column prop="workDate" label="日期" width="120" />
           <el-table-column label="时段" width="130">
             <template #default="{ row }">{{ fmtTime(row.breakStartTime) }}-{{ fmtTime(row.breakEndTime) }}</template>
@@ -224,12 +224,12 @@ onMounted(() => {
 }
 .plan-title {
   font-weight: 600;
-  margin-bottom: 8px;
+  margin-bottom: var(--app-space-4);
   color: var(--el-text-color-primary);
 }
 .cover-note {
-  margin-left: 6px;
-  font-size: 12px;
+  margin-left: var(--app-space-3);
+  font-size: var(--app-font-sm);
   color: var(--el-color-primary);
 }
 .cover-list {
@@ -238,6 +238,6 @@ onMounted(() => {
 .cover-title {
   font-weight: 600;
   color: var(--el-color-warning);
-  font-size: 13px;
+  font-size: var(--app-font-base);
 }
 </style>

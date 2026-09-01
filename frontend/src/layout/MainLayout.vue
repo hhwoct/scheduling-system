@@ -52,7 +52,7 @@
         <div class="header-left">
           <div class="header-title">{{ $route.meta.title }}</div>
         </div>
-        <div style="display: flex; align-items: center; gap: 16px">
+        <div style="display: flex; align-items: center; gap: var(--app-space-6)">
           <el-badge :value="unreadCount" :hidden="unreadCount === 0" :max="99" style="cursor: pointer" @click="$router.push('/notifications')">
             <el-icon :size="20"><Bell /></el-icon>
           </el-badge>
@@ -177,7 +177,7 @@ async function handleCommand(command) {
   line-height: 60px;
   text-align: center;
   color: var(--el-color-white);
-  font-size: 18px;
+  font-size: var(--app-font-xl);
   font-weight: 600;
 }
 /* 书签样式按钮：常驻左边缘；收起时贴屏幕左缘，展开时贴 sidebar 右边界内侧（translate 保证贴边） */
@@ -190,14 +190,14 @@ async function handleCommand(command) {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
-  padding: 16px 7px;
+  gap: var(--app-space-4);
+  padding: var(--app-space-6) 7px;
   background-color: var(--app-brand);
   color: rgba(255, 255, 255, 0.75);
   border: none;
-  border-radius: 0 10px 10px 0;
+  border-radius: 0 var(--app-radius-lg) var(--app-radius-lg) 0;
   cursor: pointer;
-  font-size: 12px;
+  font-size: var(--app-font-sm);
   box-shadow: 2px 0 8px rgba(0, 0, 0, 0.25);
   transition: color 0.2s, background-color 0.2s, left 0.25s ease, transform 0.25s ease;
   user-select: none;
@@ -234,7 +234,7 @@ async function handleCommand(command) {
 .aside-footer {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--app-space-4);
   padding: 14px 20px;
   color: rgba(255, 255, 255, 0.65);
   cursor: pointer;
@@ -256,12 +256,12 @@ async function handleCommand(command) {
 .header-left {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--app-space-5);
 }
 .collapse-btn {
   cursor: pointer;
-  padding: 6px;
-  border-radius: 4px;
+  padding: var(--app-space-3);
+  border-radius: var(--app-radius-sm);
   color: var(--el-text-color-regular);
   transition: background-color 0.2s, color 0.2s;
 }
@@ -270,14 +270,14 @@ async function handleCommand(command) {
   color: var(--el-color-primary);
 }
 .header-title {
-  font-size: 16px;
+  font-size: var(--app-font-lg);
   font-weight: 600;
 }
 .user-info {
   cursor: pointer;
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--app-space-2);
 }
 .main-content {
   overflow-y: auto;

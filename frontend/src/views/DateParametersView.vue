@@ -19,7 +19,7 @@
               />
               <el-button :disabled="loading" @click="shiftMonth(1)">下月</el-button>
             </el-button-group>
-            <span style="margin: 0 12px" />
+            <span style="margin: 0 var(--app-space-5)" />
             <el-input-number v-model="generateMonths" :min="1" :max="12" size="small" style="width: 90px" />
             <el-button :loading="generating" :disabled="loading" @click="generate">按规则补全未来 N 个月</el-button>
             <el-button type="primary" :loading="saving" :disabled="loading || !hasChanges" @click="save">
@@ -34,7 +34,7 @@
         :closable="false"
         show-icon
         title="点击日期可切换类型：平日 → 周末 → 节假日 → 平日；法定节假日自动带「法」标记，调休补班日请把周末点回「平日」。虚线格子 = 数据库中尚未配置（当前为按规则的建议值）。"
-        style="margin-bottom: 12px"
+        style="margin-bottom: var(--app-space-5)"
       />
 
       <div v-loading="loading" class="calendar">
@@ -206,7 +206,7 @@ onMounted(() => {
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--app-space-4);
 }
 .header-actions {
   display: flex;
@@ -215,15 +215,15 @@ onMounted(() => {
 .calendar {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  gap: 4px;
+  gap: var(--app-space-2);
 }
 .cell {
   min-height: 64px;
   border: 1px solid var(--el-border-color-light);
-  border-radius: 4px;
+  border-radius: var(--app-radius-sm);
   position: relative;
   text-align: center;
-  padding: 4px;
+  padding: var(--app-space-2);
   box-sizing: border-box;
 }
 .weekday-header {
@@ -271,35 +271,35 @@ onMounted(() => {
   right: 4px;
   background: var(--el-color-danger);
   color: var(--el-color-white);
-  font-size: 10px;
+  font-size: var(--app-font-micro);
   line-height: 14px;
-  border-radius: 3px;
-  padding: 0 3px;
+  border-radius: var(--app-radius-sm);
+  padding: 0 var(--app-space-2);
 }
 .day-number {
-  font-size: 15px;
-  margin-top: 6px;
+  font-size: var(--app-font-lg);
+  margin-top: var(--app-space-3);
 }
 .day-type {
-  font-size: 12px;
+  font-size: var(--app-font-sm);
   color: var(--el-text-color-secondary);
-  margin-top: 4px;
+  margin-top: var(--app-space-2);
 }
 .legend {
-  margin-top: 12px;
+  margin-top: var(--app-space-5);
   display: flex;
-  gap: 16px;
+  gap: var(--app-space-6);
   flex-wrap: wrap;
-  font-size: 12px;
+  font-size: var(--app-font-sm);
   color: var(--el-text-color-regular);
 }
 .legend-box {
   display: inline-block;
   width: 14px;
   height: 14px;
-  border-radius: 3px;
+  border-radius: var(--app-radius-sm);
   vertical-align: -2px;
-  margin-right: 4px;
+  margin-right: var(--app-space-2);
   border: 1px solid var(--el-border-color);
 }
 .legend-box.workday { background: var(--el-bg-color); }
@@ -308,7 +308,7 @@ onMounted(() => {
 .legend-box.legal-flag-box {
   background: var(--el-color-danger);
   color: var(--el-color-white);
-  font-size: 10px;
+  font-size: var(--app-font-micro);
   text-align: center;
   line-height: 14px;
   border: none;

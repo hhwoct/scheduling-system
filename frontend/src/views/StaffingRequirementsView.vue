@@ -37,7 +37,7 @@
         :closable="false"
         show-icon
         title="时间轴为营业时段 12:00 至次日 06:00（00:00 起为次日；06:00-11:30 闭店时段不在图中，其数据保留）。单元格含义：单数字 N = 该时段该岗位最少 N 人；写成 M,N（如 2,3）= 最少 M 人、最好 N 人。一键排班优先保证最少人数，人手有余时尽量补到最好人数。点击单元格编辑；按住拖动框选区域后可批量修改人数并附备注（Esc 或点空白处取消选区）；带备注的格子右上角有橙点，悬停可查看。"
-        style="margin-bottom: 12px"
+        style="margin-bottom: var(--app-space-5)"
       />
 
       <div class="stats-bar">
@@ -206,18 +206,18 @@
           :closable="false"
           show-icon
           :title="aiConfigHint"
-          style="margin-bottom: 8px"
+          style="margin-bottom: var(--app-space-4)"
         />
         <el-alert
           type="warning"
           :closable="false"
           show-icon
           title="表格（Excel/CSV）识别所有文本模型均支持；图片识别需要模型支持视觉输入（如 deepseek-vl 系列），当前默认模型仅支持表格。"
-          style="margin-bottom: 8px"
+          style="margin-bottom: var(--app-space-4)"
         />
         <el-form-item label=" ">
           <el-button size="small" :loading="aiTesting" @click="handleAiTest">测试连接</el-button>
-          <span v-if="aiTestResult" style="margin-left: 8px; font-size: 13px; color: var(--el-text-color-regular)">{{ aiTestResult }}</span>
+          <span v-if="aiTestResult" style="margin-left: var(--app-space-4); font-size: var(--app-font-base); color: var(--el-text-color-regular)">{{ aiTestResult }}</span>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -1235,21 +1235,21 @@ onBeforeUnmount(() => {
 .header-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--app-space-4);
 }
 
 .stats-bar {
   display: flex;
-  gap: 12px;
+  gap: var(--app-space-5);
   flex-wrap: wrap;
-  margin-bottom: 12px;
+  margin-bottom: var(--app-space-5);
 }
 .stat-box {
   flex: 1;
   min-width: 150px;
   background: var(--el-fill-color-light);
   border: 1px solid var(--el-border-color-light);
-  border-radius: 6px;
+  border-radius: var(--app-radius-md);
   padding: 10px 14px;
 }
 .stat-box.total {
@@ -1257,24 +1257,24 @@ onBeforeUnmount(() => {
   border-color: var(--el-color-primary-light-8);
 }
 .stat-label {
-  font-size: 12px;
+  font-size: var(--app-font-sm);
   color: var(--el-text-color-secondary);
-  margin-bottom: 4px;
+  margin-bottom: var(--app-space-2);
 }
 .stat-value {
-  font-size: 22px;
+  font-size: var(--app-font-2xl);
   font-weight: 700;
   color: var(--el-text-color-primary);
 }
 .stat-unit {
-  font-size: 12px;
+  font-size: var(--app-font-sm);
   font-weight: 400;
   color: var(--el-text-color-regular);
 }
 .stat-sub {
-  font-size: 11px;
+  font-size: var(--app-font-xs);
   color: var(--el-text-color-secondary);
-  margin-top: 2px;
+  margin-top: var(--app-space-1);
 }
 
 .gantt-wrap {
@@ -1282,7 +1282,7 @@ onBeforeUnmount(() => {
   max-height: calc(100vh - 310px);
   min-height: 260px;
   border: 1px solid var(--el-border-color-light);
-  border-radius: 4px;
+  border-radius: var(--app-radius-sm);
 }
 .gantt-inner {
   min-width: max-content;
@@ -1299,9 +1299,9 @@ onBeforeUnmount(() => {
 .gantt-corner {
   width: 75px;
   min-width: 75px;
-  padding: 8px 5px;
+  padding: var(--app-space-4) var(--app-space-3);
   font-weight: 600;
-  font-size: 12px;
+  font-size: var(--app-font-sm);
   color: var(--el-text-color-regular);
   border-right: 1px solid var(--el-border-color);
 }
@@ -1314,7 +1314,7 @@ onBeforeUnmount(() => {
   height: 30px;
   line-height: 30px;
   text-align: center;
-  font-size: 10px;
+  font-size: var(--app-font-micro);
   color: var(--el-text-color-secondary);
   border-right: 1px solid var(--el-border-color-lighter);
 }
@@ -1343,10 +1343,10 @@ onBeforeUnmount(() => {
 .gantt-label {
   width: 75px;
   min-width: 75px;
-  padding: 0 5px;
+  padding: 0 var(--app-space-3);
   display: flex;
   align-items: center;
-  font-size: 12px;
+  font-size: var(--app-font-sm);
   color: var(--el-text-color-primary);
   background: var(--el-bg-color);
   border-right: 1px solid var(--el-border-color);
@@ -1367,7 +1367,7 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 10px;
+  font-size: var(--app-font-micro);
   color: var(--el-text-color-primary);
   border-right: 1px solid var(--el-border-color-lighter);
   cursor: pointer;
@@ -1424,13 +1424,13 @@ onBeforeUnmount(() => {
 .legend {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 10px;
+  gap: var(--app-space-3);
+  padding: var(--app-space-4) 10px;
   border-top: 1px solid var(--el-border-color);
   flex-wrap: wrap;
 }
 .legend-title {
-  font-size: 12px;
+  font-size: var(--app-font-sm);
   color: var(--el-text-color-regular);
 }
 .sw {
@@ -1439,10 +1439,10 @@ onBeforeUnmount(() => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 10px;
+  font-size: var(--app-font-micro);
   color: var(--el-text-color-primary);
   border: 1px solid var(--el-border-color);
-  border-radius: 3px;
+  border-radius: var(--app-radius-sm);
 }
 
 .cell-tip {
@@ -1451,23 +1451,23 @@ onBeforeUnmount(() => {
   max-width: 240px;
   background: rgba(31, 45, 61, 0.95);
   color: var(--el-color-white);
-  font-size: 12px;
-  border-radius: 6px;
-  padding: 8px 10px;
+  font-size: var(--app-font-sm);
+  border-radius: var(--app-radius-md);
+  padding: var(--app-space-4) 10px;
   pointer-events: none;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
   line-height: 1.5;
 }
 .tip-title {
   font-weight: 600;
-  margin-bottom: 2px;
+  margin-bottom: var(--app-space-1);
 }
 .tip-demand {
   color: var(--app-level-1);
 }
 .tip-remark {
   color: var(--el-color-warning-light-3);
-  margin-top: 2px;
+  margin-top: var(--app-space-1);
 }
 
 .cell-editor {
@@ -1476,12 +1476,12 @@ onBeforeUnmount(() => {
   width: 220px;
   background: var(--el-bg-color);
   border: 1px solid var(--el-border-color);
-  border-radius: 6px;
+  border-radius: var(--app-radius-md);
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.15);
-  padding: 12px;
+  padding: var(--app-space-5);
 }
 .editor-title {
-  font-size: 13px;
+  font-size: var(--app-font-base);
   font-weight: 600;
   color: var(--el-text-color-primary);
   margin-bottom: 10px;
@@ -1489,21 +1489,21 @@ onBeforeUnmount(() => {
 .editor-row {
   display: flex;
   align-items: center;
-  margin-bottom: 8px;
+  margin-bottom: var(--app-space-4);
 }
 .editor-label {
   width: 44px;
-  font-size: 12px;
+  font-size: var(--app-font-sm);
   color: var(--el-text-color-regular);
 }
 .editor-quick {
   display: flex;
-  gap: 6px;
+  gap: var(--app-space-3);
   margin-bottom: 10px;
 }
 .editor-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 6px;
+  gap: var(--app-space-3);
 }
 </style>
