@@ -55,7 +55,11 @@ request.interceptors.response.use(
     normalizedError.status = status
     normalizedError.code = error.code
     normalizedError.original = error
-    ElMessage.error(message)
+    // 调用方可通过 config.skipErrorToast 声明自行降级处理(如门店总览
+    // 接口未部署时页面内温和提示),此时不再弹全局错误
+    if (error.config?.skipErrorToast !== true) {
+      ElMessage.error(message)
+    }
     return Promise.reject(normalizedError)
   }
 )
