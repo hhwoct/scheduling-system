@@ -25,36 +25,68 @@
             <span>通知消息</span>
           </el-menu-item>
         </template>
-        <!-- 其他门店：完整菜单 -->
+        <!-- 其他门店：admin 扁平菜单 / 店长分组菜单 -->
         <template v-else-if="authStore.role !== 'EMPLOYEE'">
-          <el-menu-item index="/dashboard">
-            <el-icon><DataBoard /></el-icon>
-            <span>首页概览</span>
-          </el-menu-item>
-          <el-sub-menu index="basic">
-            <template #title><span>基础数据</span></template>
-            <el-menu-item index="/employees">员工管理</el-menu-item>
-            <el-menu-item index="/rules">规则配置</el-menu-item>
-            <el-menu-item v-if="authStore.username === SUPER_ADMIN_USERNAME" index="/date-parameters">日期参数</el-menu-item>
-          </el-sub-menu>
-          <!-- 门店级运营配置:仅店长可见,admin 不显示 -->
-          <el-sub-menu v-if="authStore.role === 'STORE_MANAGER'" index="store-ops">
-            <template #title><span>店长管理</span></template>
-            <el-menu-item index="/workstations">工作站管理</el-menu-item>
-            <el-menu-item index="/shift-templates">班次管理</el-menu-item>
-            <el-menu-item index="/staffing-requirements">人数需求</el-menu-item>
-            <el-menu-item index="/skill-matrix">技能等级</el-menu-item>
-          </el-sub-menu>
-          <el-sub-menu index="schedule">
-            <template #title><span>排班管理</span></template>
-            <el-menu-item v-if="authStore.role === 'STORE_MANAGER'" index="/schedules/generate">一键排班</el-menu-item>
-            <el-menu-item index="/schedules/view">排班查看</el-menu-item>
-            <el-menu-item v-if="authStore.role === 'STORE_MANAGER'" index="/reports">排班报表</el-menu-item>
-            <el-menu-item v-if="authStore.username === SUPER_ADMIN_USERNAME" index="/audit-logs">审计日志</el-menu-item>
-            <el-menu-item index="/preferences">偏好学习</el-menu-item>
-            <el-menu-item v-if="authStore.username === STORE_MANAGER_USERNAME" index="/leave-review">请假审批</el-menu-item>
-            <el-menu-item v-if="authStore.username === STORE_MANAGER_USERNAME" index="/swap-review">换班审批</el-menu-item>
-          </el-sub-menu>
+          <!-- admin：页面不多，不再分组 -->
+          <template v-if="authStore.role !== 'STORE_MANAGER'">
+            <el-menu-item index="/dashboard">
+              <el-icon><DataBoard /></el-icon>
+              <span>首页概览</span>
+            </el-menu-item>
+            <el-menu-item index="/employees">
+              <el-icon><User /></el-icon>
+              <span>员工管理</span>
+            </el-menu-item>
+            <el-menu-item index="/rules">
+              <el-icon><Setting /></el-icon>
+              <span>规则配置</span>
+            </el-menu-item>
+            <el-menu-item v-if="authStore.username === SUPER_ADMIN_USERNAME" index="/date-parameters">
+              <el-icon><Calendar /></el-icon>
+              <span>日期参数</span>
+            </el-menu-item>
+            <el-menu-item index="/schedules/view">
+              <el-icon><View /></el-icon>
+              <span>排班查看</span>
+            </el-menu-item>
+            <el-menu-item v-if="authStore.username === SUPER_ADMIN_USERNAME" index="/audit-logs">
+              <el-icon><Document /></el-icon>
+              <span>审计日志</span>
+            </el-menu-item>
+            <el-menu-item index="/preferences">
+              <el-icon><DataAnalysis /></el-icon>
+              <span>偏好学习</span>
+            </el-menu-item>
+          </template>
+          <!-- 店长：功能多，保留分组 -->
+          <template v-else>
+            <el-menu-item index="/dashboard">
+              <el-icon><DataBoard /></el-icon>
+              <span>首页概览</span>
+            </el-menu-item>
+            <el-sub-menu index="basic">
+              <template #title><span>基础数据</span></template>
+              <el-menu-item index="/employees">员工管理</el-menu-item>
+              <el-menu-item index="/rules">规则配置</el-menu-item>
+            </el-sub-menu>
+            <!-- 门店级运营配置：仅店长可见 -->
+            <el-sub-menu index="store-ops">
+              <template #title><span>店长管理</span></template>
+              <el-menu-item index="/workstations">工作站管理</el-menu-item>
+              <el-menu-item index="/shift-templates">班次管理</el-menu-item>
+              <el-menu-item index="/staffing-requirements">人数需求</el-menu-item>
+              <el-menu-item index="/skill-matrix">技能等级</el-menu-item>
+            </el-sub-menu>
+            <el-sub-menu index="schedule">
+              <template #title><span>排班管理</span></template>
+              <el-menu-item index="/schedules/generate">一键排班</el-menu-item>
+              <el-menu-item index="/schedules/view">排班查看</el-menu-item>
+              <el-menu-item index="/reports">排班报表</el-menu-item>
+              <el-menu-item index="/preferences">偏好学习</el-menu-item>
+              <el-menu-item v-if="authStore.username === STORE_MANAGER_USERNAME" index="/leave-review">请假审批</el-menu-item>
+              <el-menu-item v-if="authStore.username === STORE_MANAGER_USERNAME" index="/swap-review">换班审批</el-menu-item>
+            </el-sub-menu>
+          </template>
         </template>
       </el-menu>
       <!-- 员工端入口固定在 sidebar 最底部，与菜单视觉分隔 -->
@@ -105,7 +137,7 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { ArrowDown, Bell, Calendar, DataBoard, Expand, Fold, Stamp, Switch } from '@element-plus/icons-vue'
+import { ArrowDown, Bell, Calendar, DataAnalysis, DataBoard, Document, Expand, Fold, Setting, Stamp, Switch, User, View } from '@element-plus/icons-vue'
 import { ElMessageBox } from 'element-plus'
 import { useAuthStore } from '../stores/auth'
 import { SUPER_ADMIN_USERNAME, STORE_MANAGER_USERNAME } from '../constants/config'
