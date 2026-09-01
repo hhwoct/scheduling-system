@@ -20,10 +20,6 @@
             <el-icon><Switch /></el-icon>
             <span>换班申请</span>
           </el-menu-item>
-          <el-menu-item index="/employee/notifications">
-            <el-icon><Bell /></el-icon>
-            <span>通知消息</span>
-          </el-menu-item>
         </template>
         <!-- 预览提示 -->
         <div v-if="authStore.role !== 'EMPLOYEE'" class="preview-tip">预览模式：仅供查看班表</div>
@@ -49,9 +45,10 @@
           <div class="header-title">{{ $route.meta.title }}</div>
         </div>
         <div class="u-row u-gap-6">
-          <el-badge class="u-clickable" v-if="authStore.role === 'EMPLOYEE'" :value="unreadCount" :hidden="unreadCount === 0" :max="99" @click="$router.push('/employee/notifications')">
-            <el-icon :size="20"><Bell /></el-icon>
-          </el-badge>
+          <NotificationsPanel
+            v-if="authStore.role === 'EMPLOYEE'"
+            view-all-path="/employee/notifications"
+          />
           <el-dropdown @command="handleCommand">
             <span class="user-info">
               {{ authStore.user?.nickname || '未登录' }}
@@ -75,36 +72,24 @@
 </template>
 
 <script setup>
-import { onMounted, onUnmounted, ref, watch } from 'vue'
-import { ArrowDown, ArrowLeft, Bell, Calendar, Document, Expand, Fold, Switch } from '@element-plus/icons-vue'
+import { onMounted, ref, watch } from 'vue'
+import { ArrowDown, ArrowLeft, Calendar, Document, Expand, Fold, Switch } from '@element-plus/icons-vue'
 import { ElMessageBox } from 'element-plus'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
-import { getUnreadCount } from '../api/notifications'
 import ChangePasswordDialog from '../components/ChangePasswordDialog.vue'
+import NotificationsPanel from '../components/NotificationsPanel.vue'
 
 const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
-const unreadCount = ref(0)
 // 侧边栏收起状态：与员工端独立持久化，刷新后保持
 const collapsed = ref(localStorage.getItem('emp-sidebar-collapsed') === '1')
 watch(collapsed, v => localStorage.setItem('emp-sidebar-collapsed', v ? '1' : '0'))
-let refreshTimer = null
 
 // 菜单切换（预览员工参数由「我的班表」页面自行管理）
 function handleMenuSelect(index) {
   router.push(index)
-}
-
-// P3-15: 未读计数定时刷新
-async function refreshUnreadCount() {
-  try {
-    const data = await getUnreadCount(undefined)
-    unreadCount.value = data?.count ?? 0
-  } catch (e) {
-    console.error('获取未读通知数失败', e)
-  }
 }
 
 onMounted(async () => {
@@ -126,23 +111,6 @@ onMounted(async () => {
       }
     }
   }
-  refreshUnreadCount()
-  refreshTimer = setInterval(refreshUnreadCount, 60000)
-  // 通知页标记已读/全部已读后刷新 header 红点
-  window.addEventListener('notifications-changed', refreshUnreadCount)
-})
-
-onUnmounted(() => {
-  if (refreshTimer) {
-    clearInterval(refreshTimer)
-    refreshTimer = null
-  }
-  window.removeEventListener('notifications-changed', refreshUnreadCount)
-})
-
-// 路由切换时刷新
-watch(() => route.path, () => {
-  refreshUnreadCount()
 })
 
 const changePwdVisible = ref(false)
