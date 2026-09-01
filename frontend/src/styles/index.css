@@ -1,0 +1,7 @@
+/**
+ * 样式入口。顺序有意义,不要调整:
+ *   tokens  -> 变量定义,必须最先
+ *   base    -> 文档级 reset,依赖 tokens
+ */
+@import './tokens.css';
+@import './base.css';

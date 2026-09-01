@@ -1,0 +1,89 @@
+/**
+ * 设计 token —— 项目自有变量
+ *
+ * 命名规则:--app-<类别>-<语义>
+ * Element Plus 自带的 --el-* 变量不在这里重复定义,直接用即可;
+ * 只有 Element 没有覆盖到的业务语义色才落到这里。
+ */
+
+:root {
+  /* ===== 品牌色 ===== */
+  /* 侧边栏与登录页的深蓝,是本系统唯一的品牌色来源 */
+  --app-brand: #0f3460;
+  --app-brand-hover: #12395c;
+  --app-brand-active: #0a2540;
+  /* 登录页渐变的两端 */
+  --app-brand-gradient-from: #001529;
+  --app-brand-gradient-to: #003a70;
+
+  /* ===== 侧边栏 ===== */
+  --app-sidebar-bg: var(--app-brand);
+  --app-sidebar-text: rgba(255, 255, 255, 0.65);
+  --app-sidebar-text-active: #ffffff;
+  --app-sidebar-border: rgba(255, 255, 255, 0.08);
+  --app-sidebar-hover-bg: rgba(255, 255, 255, 0.06);
+  --app-sidebar-width: 220px;
+
+  /* ===== 等级热力梯度 ===== */
+  /* 人数需求 / 技能矩阵共用的 4 档,由浅到深 */
+  --app-level-1: #d9ead3;
+  --app-level-2: #b6d7a8;
+  --app-level-3: #93c47d;
+  --app-level-4: #6aa84f;
+
+  /* ===== 兼职标识(绿色家族) ===== */
+  --app-parttime-bg: #f7fdf5;
+  --app-parttime-border: #c2e7b0;
+  --app-parttime-border-light: #e8f5e0;
+  --app-parttime-divider: #a3d98a;
+
+  /* ===== 营业时段标记 ===== */
+  /* 开门时间(琥珀) */
+  --app-marker-open: #f59e0b;
+  --app-marker-open-text: #d97706;
+  /* 次日 00:00(靛蓝) */
+  --app-marker-midnight: #8fa8ff;
+  --app-marker-midnight-text: #4c6fff;
+
+  /* ===== 强调 / 高亮 ===== */
+  /* 排班矩阵中定位某个员工时的高亮描边 */
+  --app-highlight: #ffb800;
+  --app-highlight-glow: rgba(255, 184, 0, 0.9);
+  /* 班次内的休息时段文字 */
+  --app-break-text: #ffe6a7;
+
+  /* ===== 间距(4px 基准) ===== */
+  --app-space-1: 2px;
+  --app-space-2: 4px;
+  --app-space-3: 8px;
+  --app-space-4: 12px;
+  --app-space-5: 16px;
+  --app-space-6: 24px;
+
+  /* ===== 字号 ===== */
+  /* 表格密集区最小到 xs,不再出现 9px / 10px */
+  --app-font-xs: 11px;
+  --app-font-sm: 12px;
+  --app-font-base: 13px;
+  --app-font-md: 14px;
+  --app-font-lg: 16px;
+  --app-font-xl: 18px;
+  --app-font-display: 28px;
+
+  /* ===== 圆角 ===== */
+  --app-radius-sm: 3px;
+  --app-radius-md: 6px;
+  --app-radius-lg: 10px;
+
+  /* ===== 阴影 ===== */
+  /* 半透明阴影而非实线边框,层级更自然 */
+  --app-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --app-shadow-md: 0 2px 8px rgba(0, 0, 0, 0.08);
+  --app-shadow-lg: 0 6px 24px rgba(0, 0, 0, 0.12);
+
+  /* ===== 动效 ===== */
+  --app-ease: cubic-bezier(0.32, 0.72, 0, 1);
+  --app-duration-fast: 120ms;
+  --app-duration: 200ms;
+  --app-duration-slow: 280ms;
+}
