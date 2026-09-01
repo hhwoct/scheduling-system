@@ -4,7 +4,19 @@
       <template #header>
         <div class="u-row-between">
           <span>排班查看</span>
-          <el-button type="primary" :loading="loading" @click="loadAll" :disabled="!planId">查询</el-button>
+          <div class="u-row u-gap-4">
+            <el-badge v-if="planId" :value="issuesList.length" :hidden="issuesList.length === 0" :max="99">
+              <el-button
+                :type="issuesOpen ? 'warning' : 'default'"
+                :icon="WarningFilled"
+                @click="toggleIssues"
+                :disabled="!planId"
+              >
+                {{ issuesOpen ? '返回排班' : '问题详情' }}
+              </el-button>
+            </el-badge>
+            <el-button type="primary" :loading="loading" @click="loadAll" :disabled="!planId">查询</el-button>
+          </div>
         </div>
       </template>
 
@@ -23,15 +35,13 @@
         </el-table-column>
       </el-table>
 
-      <el-radio-group class="u-mb-6" v-if="planId" v-model="viewMode" @change="onModeChange">
+      <el-radio-group class="u-mb-6" v-if="planId && !issuesOpen" v-model="viewMode" @change="onModeChange">
         <el-radio-button label="week">周视图</el-radio-button>
-        <el-radio-button label="whole">整月排班</el-radio-button>
         <el-radio-button label="month">月视图</el-radio-button>
         <el-radio-button label="day">日明细</el-radio-button>
-        <el-radio-button label="issues">问题详情</el-radio-button>
       </el-radio-group>
 
-      <div v-if="viewMode === 'week' || viewMode === 'whole'" v-loading="loading">
+      <div v-if="!issuesOpen && (viewMode === 'week' || viewMode === 'whole')" v-loading="loading">
         <el-date-picker class="u-mb-5" v-if="viewMode === 'week'" v-model="weekStart" type="date" value-format="YYYY-MM-DD" style="width: 150px" placeholder="选择起始日" :disabled-date="disabledDate" @change="loadWeek" />
         <div class="gantt">
           <div class="gantt-row gantt-header">
@@ -99,7 +109,7 @@
         </div>
       </div>
 
-      <div v-if="viewMode === 'month'" v-loading="loading">
+      <div v-if="!issuesOpen && viewMode === 'month'" v-loading="loading">
         <div class="calendar">
           <div class="cal-header">
             <div v-for="w in ['周一','周二','周三','周四','周五','周六','周日']" :key="w" class="cal-header-cell">{{ w }}</div>
@@ -130,44 +140,65 @@
               <span class="rt-info">{{ rangeSel.ws }} {{ rangeSelStart }} ~ {{ rangeSelEnd }}（{{ rangeSelCount }} 段）</span>
               <el-button size="small" type="primary" @click="openAddDialog">加人</el-button>
               <el-button size="small" type="primary" plain @click="openReplaceDialog">换人</el-button>
-              <el-button size="small" @click="moveRangeBy(-30)">◀ 左移</el-button>
-              <el-button size="small" @click="moveRangeBy(30)">右移 ▶</el-button>
               <el-select v-model="rangeSel.restEmployeeId" size="small" placeholder="员工" style="width: 110px">
                 <el-option v-for="e in rangeSelEmployees" :key="e.id" :value="e.id" :label="e.name" />
               </el-select>
               <el-button size="small" type="warning" :disabled="!rangeSel.restEmployeeId" @click="toggleRangeRest">{{ rangeSelRestLabel }}</el-button>
-              <el-button size="small" type="danger" @click="cancelRangeSchedule">取消排班{{ rangeSel.restEmployeeId ? '' : '（全部）' }}</el-button>
+              <el-dropdown trigger="click" @command="handleRangeMore">
+                <el-button size="small" :icon="MoreFilled" />
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item command="move-left">◀ 左移 30 分钟</el-dropdown-item>
+                    <el-dropdown-item command="move-right">右移 30 分钟 ▶</el-dropdown-item>
+                    <el-dropdown-item command="cancel" divided>取消排班{{ rangeSel.restEmployeeId ? '' : '（全部）' }}</el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
               <el-button size="small" link @click="clearRangeSel">✕</el-button>
             </div>
             <div class="m-row m-header"><div class="m-ws-col">工作站</div><div v-for="slot in slots" :key="slot.key" class="m-slot-col" :title="slot.display"><span v-if="isHour(slot)">{{ slot.display }}</span></div></div>
-            <div v-for="ws in dailyWorkstations" :key="ws" class="m-row"><div class="m-ws-col">{{ ws }}<el-tag class="u-ml-2" v-if="wsLowSkill(ws)" type="success" size="small">兼</el-tag></div><div v-for="(slot, si) in slots" :key="slot.key" class="m-slot-col" :class="[cellClass(ws, slot), { 'is-empty': dailyCellUsers(ws, slot).length === 0 }, (rangeSelected(ws, slot) || rangeSelSelected(ws, slot)) ? 'range-selected' : '', snapTarget.ws === ws && snapTarget.slotIdx === si ? 'snap-target' : '', batchSelected(ws, si) ? 'batch-selected' : '']" :data-slot="slot.key" :title="dailyCellUsers(ws, slot).length === 0 ? '点击添加人员，按住滑动可选多个时段' : '按住滑动可选择范围后操作（加人/换人/平移/休息）'" @mousedown="onCellMouseDown(ws, slot, $event)" @click="onCellClick(ws, slot)"><div v-if="dailySlotIssues(ws, slot).length" class="gap-flag" :class="{ 'gap-flag-low': lowSkillGapIssues(ws, slot).length > 0 }" :title="gapTooltip(ws, slot)">{{ lowSkillGapIssues(ws, slot).length > 0 ? '兼' : '缺' }}</div><div v-for="lane in cellLanes(ws, slot)" :key="'lane-' + lane.employeeId" class="emp-lane"><div v-if="lane.row" class="emp-chip" :class="{ 'is-parttime': lane.row.isParttime === 1, 'pt-first': lane.isFirstPtLane, 'is-break': inBreak(lane.row, slot), 'is-highlighted': highlightedEmpId === lane.row.employeeId }" :title="'单击高亮该员工当天全部色块；双击切换休息/上班；按住滑动可选择范围'" @click.stop="onChipClick(lane.row, slot)" @dblclick.stop="onChipDblClick(lane.row, slot)"><div class="emp-name">{{ lane.row.employeeName }}<span v-if="prefMatch(lane.row, ws)" class="pref-dot" title="与店长历史偏好一致" /> <span v-if="inBreak(lane.row, slot)" class="break-flag" :title="breakTip(lane.row)">休</span></div><div v-if="!inBreak(lane.row, slot)" class="emp-shift">{{ lane.row.shiftCode || '--' }}</div><div v-else class="emp-shift break-info" :title="breakTip(lane.row)">休息</div></div></div></div></div>
+            <div v-for="ws in dailyWorkstations" :key="ws" class="m-row"><div class="m-ws-col">{{ ws }}<el-tag class="u-ml-2" v-if="wsLowSkill(ws)" type="success" size="small">兼</el-tag></div><div v-for="(slot, si) in slots" :key="slot.key" class="m-slot-col" :class="[cellClass(ws, slot), { 'is-empty': dailyCellUsers(ws, slot).length === 0 }, (rangeSelected(ws, slot) || rangeSelSelected(ws, slot)) ? 'range-selected' : '', snapTarget.ws === ws && snapTarget.slotIdx === si ? 'snap-target' : '', batchSelected(ws, si) ? 'batch-selected' : '']" :data-slot="slot.key" :title="dailyCellUsers(ws, slot).length === 0 ? '点击添加人员，按住滑动可选多个时段' : '按住滑动可选择范围后操作（加人/换人/平移/休息）'" @mousedown="onCellMouseDown(ws, slot, $event)" @click="onCellClick(ws, slot)"><div v-if="dailySlotIssues(ws, slot).length" class="gap-flag" :class="{ 'gap-flag-low': lowSkillGapIssues(ws, slot).length > 0 }" :title="gapTooltip(ws, slot)">{{ lowSkillGapIssues(ws, slot).length > 0 ? '兼' : '缺' }}</div><div v-for="lane in cellLanes(ws, slot)" :key="'lane-' + lane.employeeId" class="emp-lane"><div v-if="lane.row" class="emp-chip" :class="{ 'is-parttime': lane.row.isParttime === 1, 'pt-first': lane.isFirstPtLane, 'is-break': inBreak(lane.row, slot), 'is-highlighted': highlightedEmpId === lane.row.employeeId }" :title="'点击高亮当天所有时段,双击切换休息/上班'" @click.stop="onChipClick(lane.row, slot)" @dblclick.stop="onChipDblClick(lane.row, slot)"><div class="emp-name">{{ lane.row.employeeName }}<span v-if="prefMatch(lane.row, ws)" class="pref-dot" title="与店长历史偏好一致" /> <span v-if="inBreak(lane.row, slot)" class="break-flag" :title="breakTip(lane.row)">休</span></div><div v-if="!inBreak(lane.row, slot)" class="emp-shift">{{ lane.row.shiftCode || '--' }}</div><div v-else class="emp-shift break-info" :title="breakTip(lane.row)">休息</div></div></div></div></div>
           </div></div>
         </div>
       </div>
 
-      <div v-if="viewMode === 'day'" v-loading="loading">
-        <el-date-picker class="u-mb-5" v-model="dayDate" type="date" value-format="YYYY-MM-DD" style="width: 150px" placeholder="选择日期" :disabled-date="disabledDate" @change="loadDay" />
+      <div v-if="!issuesOpen && viewMode === 'day'" v-loading="loading">
+        <div class="u-row u-gap-3 u-mb-4">
+          <el-date-picker v-model="dayDate" type="date" value-format="YYYY-MM-DD" style="width: 150px" placeholder="选择日期" :disabled-date="disabledDate" @change="loadDay" />
+          <span class="gesture-hint">点击色块高亮该员工全天时段 · 双击切换休息/上班 · 拖动色块可移动工作段 · 按住空白格滑动框选范围</span>
+        </div>
         <div v-if="dayDate" class="matrix-wrap"><div class="matrix" :class="{ 'has-chip-highlight': highlightedEmpId }" @click="highlightedEmpId = null">
           <div v-if="rangeSelect.active" class="range-hint">{{ rangeHint }}</div>
           <div v-if="rangeSel.visible" class="range-toolbar" @click.stop>
             <span class="rt-info">{{ rangeSel.ws }} {{ rangeSelStart }} ~ {{ rangeSelEnd }}（{{ rangeSelCount }} 段）</span>
             <el-button size="small" type="primary" @click="openAddDialog">加人</el-button>
             <el-button size="small" type="primary" plain @click="openReplaceDialog">换人</el-button>
-            <el-button size="small" @click="moveRangeBy(-30)">◀ 左移</el-button>
-            <el-button size="small" @click="moveRangeBy(30)">右移 ▶</el-button>
             <el-select v-model="rangeSel.restEmployeeId" size="small" placeholder="员工" style="width: 110px">
               <el-option v-for="e in rangeSelEmployees" :key="e.id" :value="e.id" :label="e.name" />
             </el-select>
             <el-button size="small" type="warning" :disabled="!rangeSel.restEmployeeId" @click="toggleRangeRest">{{ rangeSelRestLabel }}</el-button>
-            <el-button size="small" type="danger" @click="cancelRangeSchedule">取消排班{{ rangeSel.restEmployeeId ? '' : '（全部）' }}</el-button>
+            <el-dropdown trigger="click" @command="handleRangeMore">
+              <el-button size="small" :icon="MoreFilled" />
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="move-left">◀ 左移 30 分钟</el-dropdown-item>
+                  <el-dropdown-item command="move-right">右移 30 分钟 ▶</el-dropdown-item>
+                  <el-dropdown-item command="cancel" divided>取消排班{{ rangeSel.restEmployeeId ? '' : '（全部）' }}</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
             <el-button size="small" link @click="clearRangeSel">✕</el-button>
           </div>
           <div class="m-row m-header"><div class="m-ws-col">工作站</div><div v-for="slot in slots" :key="slot.key" class="m-slot-col" :title="slot.display"><span v-if="isHour(slot)">{{ slot.display }}</span></div></div>
-          <div v-for="ws in dailyWorkstations" :key="ws" class="m-row"><div class="m-ws-col">{{ ws }}<el-tag class="u-ml-2" v-if="wsLowSkill(ws)" type="success" size="small">兼</el-tag></div><div v-for="(slot, si) in slots" :key="slot.key" class="m-slot-col" :class="[cellClass(ws, slot), { 'is-empty': dailyCellUsers(ws, slot).length === 0 }, (rangeSelected(ws, slot) || rangeSelSelected(ws, slot)) ? 'range-selected' : '', snapTarget.ws === ws && snapTarget.slotIdx === si ? 'snap-target' : '', batchSelected(ws, si) ? 'batch-selected' : '']" :data-slot="slot.key" :title="dailyCellUsers(ws, slot).length === 0 ? '点击添加人员，按住滑动可选多个时段' : '按住滑动可选择范围后操作（加人/换人/平移/休息）'" @mousedown="onCellMouseDown(ws, slot, $event)" @click="onCellClick(ws, slot)"><div v-if="dailySlotIssues(ws, slot).length" class="gap-flag" :class="{ 'gap-flag-low': lowSkillGapIssues(ws, slot).length > 0 }" :title="gapTooltip(ws, slot)">{{ lowSkillGapIssues(ws, slot).length > 0 ? '兼' : '缺' }}</div><div v-for="lane in cellLanes(ws, slot)" :key="'lane-' + lane.employeeId" class="emp-lane"><div v-if="lane.row" class="emp-chip" :class="{ 'is-parttime': lane.row.isParttime === 1, 'pt-first': lane.isFirstPtLane, 'is-break': inBreak(lane.row, slot), 'is-highlighted': highlightedEmpId === lane.row.employeeId }" :title="'单击高亮该员工当天全部色块；双击切换休息/上班；按住滑动可选择范围'" @click.stop="onChipClick(lane.row, slot)" @dblclick.stop="onChipDblClick(lane.row, slot)"><div class="emp-name">{{ lane.row.employeeName }}<span v-if="prefMatch(lane.row, ws)" class="pref-dot" title="与店长历史偏好一致" /> <span v-if="inBreak(lane.row, slot)" class="break-flag" :title="breakTip(lane.row)">休</span></div><div v-if="!inBreak(lane.row, slot)" class="emp-shift">{{ lane.row.shiftCode || '--' }}</div><div v-else class="emp-shift break-info" :title="breakTip(lane.row)">休息</div></div></div></div></div>
+          <div v-for="ws in dailyWorkstations" :key="ws" class="m-row"><div class="m-ws-col">{{ ws }}<el-tag class="u-ml-2" v-if="wsLowSkill(ws)" type="success" size="small">兼</el-tag></div><div v-for="(slot, si) in slots" :key="slot.key" class="m-slot-col" :class="[cellClass(ws, slot), { 'is-empty': dailyCellUsers(ws, slot).length === 0 }, (rangeSelected(ws, slot) || rangeSelSelected(ws, slot)) ? 'range-selected' : '', snapTarget.ws === ws && snapTarget.slotIdx === si ? 'snap-target' : '', batchSelected(ws, si) ? 'batch-selected' : '']" :data-slot="slot.key" :title="dailyCellUsers(ws, slot).length === 0 ? '点击添加人员，按住滑动可选多个时段' : '按住滑动可选择范围后操作（加人/换人/平移/休息）'" @mousedown="onCellMouseDown(ws, slot, $event)" @click="onCellClick(ws, slot)"><div v-if="dailySlotIssues(ws, slot).length" class="gap-flag" :class="{ 'gap-flag-low': lowSkillGapIssues(ws, slot).length > 0 }" :title="gapTooltip(ws, slot)">{{ lowSkillGapIssues(ws, slot).length > 0 ? '兼' : '缺' }}</div><div v-for="lane in cellLanes(ws, slot)" :key="'lane-' + lane.employeeId" class="emp-lane"><div v-if="lane.row" class="emp-chip" :class="{ 'is-parttime': lane.row.isParttime === 1, 'pt-first': lane.isFirstPtLane, 'is-break': inBreak(lane.row, slot), 'is-highlighted': highlightedEmpId === lane.row.employeeId }" :title="'点击高亮当天所有时段,双击切换休息/上班'" @click.stop="onChipClick(lane.row, slot)" @dblclick.stop="onChipDblClick(lane.row, slot)"><div class="emp-name">{{ lane.row.employeeName }}<span v-if="prefMatch(lane.row, ws)" class="pref-dot" title="与店长历史偏好一致" /> <span v-if="inBreak(lane.row, slot)" class="break-flag" :title="breakTip(lane.row)">休</span></div><div v-if="!inBreak(lane.row, slot)" class="emp-shift">{{ lane.row.shiftCode || '--' }}</div><div v-else class="emp-shift break-info" :title="breakTip(lane.row)">休息</div></div></div></div></div>
         </div></div>
       </div>
 
-      <div v-if="viewMode === 'issues'" v-loading="issuesLoading">
+      <div v-if="issuesOpen" v-loading="issuesLoading">
+        <div class="u-row-between u-mb-5">
+          <strong>排班问题分析</strong>
+          <el-button size="small" :icon="Close" @click="closeIssues">返回排班视图</el-button>
+        </div>
         <el-row class="u-mb-6" :gutter="16">
           <el-col :span="6"><el-card shadow="hover"><div class="stat-num">{{ issuesList.length }}</div><div class="stat-label">问题总数</div></el-card></el-col>
           <el-col :span="6"><el-card shadow="hover"><div class="stat-num" style="color: var(--el-color-danger)">{{ issueStats.gapCount }}</div><div class="stat-label">岗位缺口</div></el-card></el-col>
@@ -301,12 +332,15 @@ import { getMonthView, getWeekView, getDailyView, getScheduleIssues, getSchedule
 import { getPreferenceMatrix } from '../api/preferences'
 import { getWorkstations } from '../api/workstations'
 import { SEVERITY_COLORS, FALLBACK_COLOR, CHART_INK } from '../constants/palette'
+import { Close, MoreFilled, WarningFilled } from '@element-plus/icons-vue'
 
 const route = useRoute()
 const planId = ref(route.query.planId || '')
 const loading = ref(false)
 const errorMsg = ref('')
 const viewMode = ref(route.query.mode || 'week')
+// 问题详情不再是视图模式,而是一个可开关的面板
+const issuesOpen = ref(false)
 const plans = ref([])
 const plansLoading = ref(false)
 const plansTableRef = ref(null)
@@ -416,7 +450,7 @@ const dailyWorkstations = computed(() => {
   return Array.from(set)
 })
 function isHour(s) { return s.key.endsWith(':00') }
-// 日期字符串加天数（返回 yyyy-MM-dd；与 DailyScheduleView/MonthScheduleView 工具口径一致）
+// 日期字符串加天数（返回 yyyy-MM-dd）
 function addDays(dateStr, days) {
   if (!dateStr) return ''
   const d = new Date(dateStr + 'T00:00:00')
@@ -974,13 +1008,24 @@ function cellClass(ws, slot) {
 async function loadAll() {
   loading.value = true; errorMsg.value = ''
   try {
-    if (viewMode.value === 'issues') await loadIssues()
-    else if (viewMode.value === 'week') await loadWeek()
+    if (issuesOpen.value) {
+      await loadIssues()
+    } else if (viewMode.value === 'week') await loadWeek()
     else if (viewMode.value === 'whole') await loadWhole()
     else if (viewMode.value === 'month') await loadMonth()
     else if (viewMode.value === 'day') await loadDay()
   } catch (e) { errorMsg.value = e.message }
   finally { loading.value = false }
+}
+
+function toggleIssues() {
+  issuesOpen.value = !issuesOpen.value
+  loadAll()
+}
+
+function closeIssues() {
+  issuesOpen.value = false
+  loadAll()
 }
 
 // 回退：从缺口描述计算每日合理度（缺N人/需求M）
@@ -1380,6 +1425,13 @@ function openAddDialog() {
   const keys = [...rangeSelKeys.value]
   if (!keys.length) return
   openAddSlot(rangeSel.ws, keys, 'add')
+}
+
+// 范围工具条「更多」菜单:左移/右移/取消排班
+function handleRangeMore(command) {
+  if (command === 'move-left') moveRangeBy(-30)
+  else if (command === 'move-right') moveRangeBy(30)
+  else if (command === 'cancel') cancelRangeSchedule()
 }
 
 // 左移/右移 30 分钟
@@ -1896,6 +1948,7 @@ onBeforeUnmount(() => {
 .range-hint { position: absolute; top: 6px; left: 6px; z-index: 20; background: var(--el-color-primary); color: var(--el-color-white); font-size: var(--app-font-sm); padding: var(--app-space-2) var(--app-space-5); border-radius: var(--app-radius-sm); width: fit-content; pointer-events: none; }
 .range-toolbar { position: absolute; top: 6px; left: 6px; z-index: 25; display: flex; align-items: center; gap: var(--app-space-4); background: var(--el-bg-color); border: 1px solid var(--el-color-primary); border-radius: var(--app-radius-md); padding: var(--app-space-3) 10px; box-shadow: 0 2px 12px rgba(0,0,0,0.15); }
 .range-toolbar .rt-info { font-size: var(--app-font-sm); color: var(--el-color-primary); font-weight: 600; white-space: nowrap; }
+.gesture-hint { font-size: var(--app-font-sm); color: var(--el-text-color-secondary); line-height: 32px; }
 .matrix { user-select: none; }
 .has-employee { background: var(--el-color-primary-light-9); }
 .next-day { background: var(--el-color-warning-light-9); }
