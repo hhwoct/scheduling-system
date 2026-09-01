@@ -1,30 +1,30 @@
 <template>
-  <div>
-    <el-row :gutter="16">
-      <el-col :span="8">
-        <el-card shadow="hover">
-          <div class="stat-value">{{ stats.employeeCount ?? '--' }}</div>
-          <div class="stat-label">员工数量</div>
-          <div class="stat-sub-label">{{ stats.fullTimeCount != null && stats.partTimeCount != null ? `${stats.fullTimeCount}全职 + ${stats.partTimeCount}兼职` : '' }}</div>
-        </el-card>
-      </el-col>
-      <el-col :span="8">
-        <el-card shadow="hover">
-          <div class="stat-value">{{ stats.shiftCount ?? '--' }}</div>
-          <div class="stat-label">班次数量</div>
-        </el-card>
-      </el-col>
-      <el-col :span="8">
-        <el-card shadow="hover">
-          <div class="stat-value">{{ stats.workstationCount ?? '--' }}</div>
-          <div class="stat-label">工作站数量</div>
-        </el-card>
-      </el-col>
-    </el-row>
+  <!-- 页面骨架规范模板页:
+       .page = 单列纵向流,hero 在顶 = 本页核心内容 -->
+  <div class="page">
+    <section class="page-hero">
+      <div class="page-hero__title">{{ store?.name || '--' }}</div>
+      <div class="page-hero__sub">门店编码 {{ store?.code || '--' }}{{ store?.address ? ' · ' + store.address : '' }}</div>
+      <div class="hero-stats">
+        <div class="hero-stat">
+          <div class="hero-stat__value">{{ stats.employeeCount ?? '--' }}</div>
+          <div class="hero-stat__label">员工总数</div>
+          <div class="hero-stat__sub">{{ stats.fullTimeCount != null && stats.partTimeCount != null ? stats.fullTimeCount + ' 全职 · ' + stats.partTimeCount + ' 兼职' : '' }}</div>
+        </div>
+        <div class="hero-stat">
+          <div class="hero-stat__value">{{ stats.shiftCount ?? '--' }}</div>
+          <div class="hero-stat__label">班次数量</div>
+        </div>
+        <div class="hero-stat">
+          <div class="hero-stat__value">{{ stats.workstationCount ?? '--' }}</div>
+          <div class="hero-stat__label">工作站</div>
+        </div>
+      </div>
+    </section>
 
-    <el-card class="u-mt-6">
-      <template #header>当前门店</template>
-      <el-descriptions :column="2" border>
+    <el-card>
+      <template #header>门店信息</template>
+      <el-descriptions :column="1" border>
         <el-descriptions-item label="门店编码">{{ store?.code || '--' }}</el-descriptions-item>
         <el-descriptions-item label="门店名称">{{ store?.name || '--' }}</el-descriptions-item>
         <el-descriptions-item label="地址">{{ store?.address || '--' }}</el-descriptions-item>
@@ -80,18 +80,5 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.stat-value {
-  font-size: var(--app-font-display);
-  font-weight: 700;
-  color: var(--el-color-primary);
-}
-.stat-label {
-  margin-top: var(--app-space-4);
-  color: var(--el-text-color-secondary);
-}
-.stat-sub-label {
-  margin-top: var(--app-space-2);
-  font-size: var(--app-font-base);
-  color: var(--el-color-success);
-}
+/* 模板页不再有私有布局样式:单列骨架、hero、卡片间距全部来自 page-layout.css */
 </style>
