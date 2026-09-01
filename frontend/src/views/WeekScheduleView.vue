@@ -86,9 +86,9 @@
       </div>
 
       <div style="margin-top: 12px; display: flex; gap: 16px; align-items: center">
-        <el-tag size="small" type="danger">休</el-tag><span style="font-size: 12px; color: #909399">休息</span>
-        <el-tag size="small" type="primary">班</el-tag><span style="font-size: 12px; color: #909399">班次（含时间与工时）</span>
-        <el-tag size="small" type="warning">休 HH:mm-HH:mm</el-tag><span style="font-size: 12px; color: #909399">班中休息（含顶岗人）</span>
+        <el-tag size="small" type="danger">休</el-tag><span style="font-size: 12px; color: var(--el-text-color-secondary)">休息</span>
+        <el-tag size="small" type="primary">班</el-tag><span style="font-size: 12px; color: var(--el-text-color-secondary)">班次（含时间与工时）</span>
+        <el-tag size="small" type="warning">休 HH:mm-HH:mm</el-tag><span style="font-size: 12px; color: var(--el-text-color-secondary)">班中休息（含顶岗人）</span>
       </div>
     </el-card>
 
@@ -111,7 +111,7 @@
                   <template #default="{ row: d }">{{ Number(d.workHours).toFixed(1) }}</template>
                 </el-table-column>
               </el-table>
-              <div v-if="!((employeeHourRows[`${planId}_${row.employeeId}`] || []).length)" style="font-size:12px;color:#909399">（点击右侧「工时明细」加载）</div>
+              <div v-if="!((employeeHourRows[`${planId}_${row.employeeId}`] || []).length)" style="font-size:12px;color:var(--el-text-color-secondary)">（点击右侧「工时明细」加载）</div>
             </div>
           </template>
         </el-table-column>
@@ -265,24 +265,24 @@ onMounted(loadData)
 <style scoped>
 .gantt-wrap { overflow-x: auto; }
 .gantt { min-width: 100%; }
-.gantt-row { display: flex; border-bottom: 1px solid #ebeef5; }
-.gantt-header { background: #f5f7fa; font-weight: 600; }
-.gantt-emp-col { width: 150px; flex-shrink: 0; padding: 6px 8px; border-right: 1px solid #ebeef5; position: sticky; left: 0; background: #fff; z-index: 3; }
-.gantt-header .gantt-emp-col { background: #f5f7fa; z-index: 4; }
+.gantt-row { display: flex; border-bottom: 1px solid var(--el-border-color-lighter); }
+.gantt-header { background: var(--el-fill-color-light); font-weight: 600; }
+.gantt-emp-col { width: 150px; flex-shrink: 0; padding: 6px 8px; border-right: 1px solid var(--el-border-color-lighter); position: sticky; left: 0; background: var(--el-bg-color); z-index: 3; }
+.gantt-header .gantt-emp-col { background: var(--el-fill-color-light); z-index: 4; }
 .emp-name { font-size: 13px; }
-.emp-sub { font-size: 11px; color: #909399; }
-.gantt-day-col { flex: 1; min-width: 120px; padding: 6px; border-right: 1px solid #f5f7fa; }
+.emp-sub { font-size: 11px; color: var(--el-text-color-secondary); }
+.gantt-day-col { flex: 1; min-width: 120px; padding: 6px; border-right: 1px solid var(--el-fill-color-light); }
 .gantt-day-col:last-child { border-right: none; }
 .day-label { font-size: 13px; text-align: center; }
-.day-sub { font-size: 11px; color: #909399; text-align: center; }
+.day-sub { font-size: 11px; color: var(--el-text-color-secondary); text-align: center; }
 .day-block { min-height: 84px; border-radius: 4px; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 4px 2px; }
-.shift-break { margin-top: 2px; font-size: 10px; color: #e6a23c; line-height: 1.4; text-align: center; }
-.rest-block { background: #fef0f0; color: #f56c6c; font-weight: 600; font-size: 14px; }
-.work-block { background: #ecf5ff; color: #409eff; }
+.shift-break { margin-top: 2px; font-size: 10px; color: var(--el-color-warning); line-height: 1.4; text-align: center; }
+.rest-block { background: var(--el-color-danger-light-9); color: var(--el-color-danger); font-weight: 600; font-size: 14px; }
+.work-block { background: var(--el-color-primary-light-9); color: var(--el-color-primary); }
 .shift-code { font-weight: 600; font-size: 13px; }
 .shift-time { font-size: 11px; }
-.shift-hours { font-size: 11px; color: #79bbff; }
-.empty-block { background: #fafafa; }
-.has-issue-person { box-shadow: inset 0 0 0 2px #f56c6c; }
-.issue-badge { margin-top: 2px; background: #f56c6c; color: #fff; font-size: 10px; border-radius: 2px; padding: 0 4px; }
+.shift-hours { font-size: 11px; color: var(--el-color-primary-light-3); }
+.empty-block { background: var(--el-fill-color-lighter); }
+.has-issue-person { box-shadow: inset 0 0 0 2px var(--el-color-danger); }
+.issue-badge { margin-top: 2px; background: var(--el-color-danger); color: var(--el-color-white); font-size: 10px; border-radius: 2px; padding: 0 4px; }
 </style>

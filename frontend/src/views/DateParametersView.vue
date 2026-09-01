@@ -219,7 +219,7 @@ onMounted(() => {
 }
 .cell {
   min-height: 64px;
-  border: 1px solid #e4e7ed;
+  border: 1px solid var(--el-border-color-light);
   border-radius: 4px;
   position: relative;
   text-align: center;
@@ -228,8 +228,8 @@ onMounted(() => {
 }
 .weekday-header {
   min-height: 28px;
-  background: #f5f7fa;
-  color: #606266;
+  background: var(--el-fill-color-light);
+  color: var(--el-text-color-regular);
   font-weight: 600;
   line-height: 28px;
   border: none;
@@ -240,18 +240,18 @@ onMounted(() => {
 }
 .cell.day {
   cursor: pointer;
-  background: #fff;
+  background: var(--el-bg-color);
   transition: background 0.15s;
 }
 .cell.day:hover {
-  outline: 2px solid #409eff;
+  outline: 2px solid var(--el-color-primary);
 }
 .cell.day.weekend {
-  background: #ecf5ff;
+  background: var(--el-color-primary-light-9);
   border-color: #b3d8ff;
 }
 .cell.day.holiday {
-  background: #fef0f0;
+  background: var(--el-color-danger-light-9);
   border-color: #fbc4c4;
 }
 .cell.day.unconfigured {
@@ -259,18 +259,18 @@ onMounted(() => {
   opacity: 0.75;
 }
 .cell.day.dirty {
-  outline: 2px solid #e6a23c;
+  outline: 2px solid var(--el-color-warning);
 }
 .cell.day.today .day-number {
-  color: #409eff;
+  color: var(--el-color-primary);
   font-weight: 700;
 }
 .legal-flag {
   position: absolute;
   top: 2px;
   right: 4px;
-  background: #f56c6c;
-  color: #fff;
+  background: var(--el-color-danger);
+  color: var(--el-color-white);
   font-size: 10px;
   line-height: 14px;
   border-radius: 3px;
@@ -282,7 +282,7 @@ onMounted(() => {
 }
 .day-type {
   font-size: 12px;
-  color: #909399;
+  color: var(--el-text-color-secondary);
   margin-top: 4px;
 }
 .legend {
@@ -291,7 +291,7 @@ onMounted(() => {
   gap: 16px;
   flex-wrap: wrap;
   font-size: 12px;
-  color: #606266;
+  color: var(--el-text-color-regular);
 }
 .legend-box {
   display: inline-block;
@@ -300,19 +300,19 @@ onMounted(() => {
   border-radius: 3px;
   vertical-align: -2px;
   margin-right: 4px;
-  border: 1px solid #dcdfe6;
+  border: 1px solid var(--el-border-color);
 }
-.legend-box.workday { background: #fff; }
-.legend-box.weekend { background: #ecf5ff; }
-.legend-box.holiday { background: #fef0f0; }
+.legend-box.workday { background: var(--el-bg-color); }
+.legend-box.weekend { background: var(--el-color-primary-light-9); }
+.legend-box.holiday { background: var(--el-color-danger-light-9); }
 .legend-box.legal-flag-box {
-  background: #f56c6c;
-  color: #fff;
+  background: var(--el-color-danger);
+  color: var(--el-color-white);
   font-size: 10px;
   text-align: center;
   line-height: 14px;
   border: none;
 }
 .legend-box.unconfigured { border-style: dashed; }
-.legend-box.dirty { outline: 2px solid #e6a23c; border: none; }
+.legend-box.dirty { outline: 2px solid var(--el-color-warning); border: none; }
 </style>

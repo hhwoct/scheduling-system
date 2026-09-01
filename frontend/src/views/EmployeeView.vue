@@ -421,7 +421,7 @@ onMounted(() => {
 <style scoped>
 .follow-hint {
   margin-left: 8px;
-  color: #909399;
+  color: var(--el-text-color-secondary);
   font-size: 12px;
 }
 .leave-line {
@@ -430,7 +430,7 @@ onMounted(() => {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  color: #606266;
+  color: var(--el-text-color-regular);
 }
 .early-return-tag {
   margin-right: 4px;

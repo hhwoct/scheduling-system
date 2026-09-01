@@ -184,7 +184,7 @@ async function handleCommand(command) {
   height: 60px;
   line-height: 60px;
   text-align: center;
-  color: #fff;
+  color: var(--el-color-white);
   font-size: 15px;
   font-weight: 600;
 }
@@ -219,7 +219,7 @@ async function handleCommand(command) {
   transform: translate(-100%, -50%);
 }
 .sidebar-tab:hover {
-  color: #fff;
+  color: var(--el-color-white);
   background-color: #12395c;
 }
 .emp-aside :deep(.el-menu) {
@@ -243,12 +243,12 @@ async function handleCommand(command) {
   user-select: none;
 }
 .emp-aside-footer:hover {
-  color: #fff;
+  color: var(--el-color-white);
   background-color: rgba(255, 255, 255, 0.06);
 }
 .preview-tip {
   padding: 6px 12px;
-  color: #67c23a;
+  color: var(--el-color-success);
   font-size: 12px;
   border-top: 1px solid rgba(255,255,255,0.1);
   margin-top: 4px;
@@ -258,8 +258,8 @@ async function handleCommand(command) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background-color: #fff;
-  border-bottom: 1px solid #e4e7ed;
+  background-color: var(--el-bg-color);
+  border-bottom: 1px solid var(--el-border-color-light);
 }
 .header-left {
   display: flex;
@@ -270,12 +270,12 @@ async function handleCommand(command) {
   cursor: pointer;
   padding: 6px;
   border-radius: 4px;
-  color: #606266;
+  color: var(--el-text-color-regular);
   transition: background-color 0.2s, color 0.2s;
 }
 .collapse-btn:hover {
   background-color: rgba(0, 0, 0, 0.06);
-  color: #409eff;
+  color: var(--el-color-primary);
 }
 .header-title {
   font-size: 16px;

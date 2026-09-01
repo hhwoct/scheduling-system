@@ -95,11 +95,11 @@
         </el-form-item>
         <el-form-item label="技能分">
           <el-input-number v-model="editForm.skillScore" :min="0" :max="5" :step="1" style="width: 160px" />
-          <span style="margin-left: 8px; font-size: 12px; color: #909399">0 = 无技能</span>
+          <span style="margin-left: 8px; font-size: 12px; color: var(--el-text-color-secondary)">0 = 无技能</span>
         </el-form-item>
         <el-form-item label="主技能">
           <el-switch v-model="editForm.isPrimarySkill" :active-value="1" :inactive-value="0" :disabled="editForm.skillScore === 0" />
-          <span style="margin-left: 8px; font-size: 12px; color: #909399">设为该员工的主技能岗位（会取消其他主技能）</span>
+          <span style="margin-left: 8px; font-size: 12px; color: var(--el-text-color-secondary)">设为该员工的主技能岗位（会取消其他主技能）</span>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -320,18 +320,18 @@ onBeforeUnmount(() => {
   border-radius: 4px;
   font-size: 12px;
   font-weight: 600;
-  color: #303133;
+  color: var(--el-text-color-primary);
 }
 .skill-badge.editable {
   cursor: pointer;
 }
 .skill-badge.editable:hover {
-  outline: 2px solid #409eff;
+  outline: 2px solid var(--el-color-primary);
   outline-offset: 1px;
 }
 .skill-badge.empty {
-  color: #c0c4cc;
-  background: #f5f7fa;
+  color: var(--el-text-color-disabled);
+  background: var(--el-fill-color-light);
 }
 .skill-badge.lv1 {
   background: #d9ead3;
@@ -344,7 +344,7 @@ onBeforeUnmount(() => {
 }
 .skill-badge.lv4 {
   background: #6aa84f;
-  color: #fff;
+  color: var(--el-color-white);
 }
 .legend {
   display: flex;
@@ -355,14 +355,14 @@ onBeforeUnmount(() => {
 }
 .legend-title {
   font-size: 12px;
-  color: #606266;
+  color: var(--el-text-color-regular);
 }
 .sw {
   padding: 2px 8px;
   border-radius: 4px;
   font-size: 11px;
-  color: #303133;
-  border: 1px solid #dcdfe6;
+  color: var(--el-text-color-primary);
+  border: 1px solid var(--el-border-color);
 }
 .sw.lv1 {
   background: #d9ead3;
@@ -375,6 +375,6 @@ onBeforeUnmount(() => {
 }
 .sw.lv4 {
   background: #6aa84f;
-  color: #fff;
+  color: var(--el-color-white);
 }
 </style>

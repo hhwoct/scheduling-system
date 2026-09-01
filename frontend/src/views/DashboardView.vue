@@ -83,15 +83,15 @@ onMounted(async () => {
 .stat-value {
   font-size: 32px;
   font-weight: 700;
-  color: #409eff;
+  color: var(--el-color-primary);
 }
 .stat-label {
   margin-top: 8px;
-  color: #909399;
+  color: var(--el-text-color-secondary);
 }
 .stat-sub-label {
   margin-top: 4px;
   font-size: 13px;
-  color: #67c23a;
+  color: var(--el-color-success);
 }
 </style>

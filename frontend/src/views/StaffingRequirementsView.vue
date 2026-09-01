@@ -118,7 +118,7 @@
         <span class="legend-title" style="margin-left: 18px">斜纹 = 有「最好」目标：</span>
         <span class="sw lv2 soft">2,3</span>
         <span class="legend-title" style="margin-left: 18px">● 角标 = 有备注（悬停查看）：</span>
-        <span class="sw lv1" style="position: relative">1<i style="position: absolute; top: 2px; right: 2px; width: 5px; height: 5px; border-radius: 50%; background: #e6a23c"></i></span>
+        <span class="sw lv1" style="position: relative">1<i style="position: absolute; top: 2px; right: 2px; width: 5px; height: 5px; border-radius: 50%; background: var(--el-color-warning)"></i></span>
       </div>
 
       <div
@@ -217,7 +217,7 @@
         />
         <el-form-item label=" ">
           <el-button size="small" :loading="aiTesting" @click="handleAiTest">测试连接</el-button>
-          <span v-if="aiTestResult" style="margin-left: 8px; font-size: 13px; color: #606266">{{ aiTestResult }}</span>
+          <span v-if="aiTestResult" style="margin-left: 8px; font-size: 13px; color: var(--el-text-color-regular)">{{ aiTestResult }}</span>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -1248,32 +1248,32 @@ onBeforeUnmount(() => {
   flex: 1;
   min-width: 150px;
   background: #f7f9fc;
-  border: 1px solid #e4e7ed;
+  border: 1px solid var(--el-border-color-light);
   border-radius: 6px;
   padding: 10px 14px;
 }
 .stat-box.total {
-  background: #ecf5ff;
-  border-color: #d9ecff;
+  background: var(--el-color-primary-light-9);
+  border-color: var(--el-color-primary-light-8);
 }
 .stat-label {
   font-size: 12px;
-  color: #909399;
+  color: var(--el-text-color-secondary);
   margin-bottom: 4px;
 }
 .stat-value {
   font-size: 22px;
   font-weight: 700;
-  color: #303133;
+  color: var(--el-text-color-primary);
 }
 .stat-unit {
   font-size: 12px;
   font-weight: 400;
-  color: #606266;
+  color: var(--el-text-color-regular);
 }
 .stat-sub {
   font-size: 11px;
-  color: #909399;
+  color: var(--el-text-color-secondary);
   margin-top: 2px;
 }
 
@@ -1281,7 +1281,7 @@ onBeforeUnmount(() => {
   overflow: auto;
   max-height: calc(100vh - 310px);
   min-height: 260px;
-  border: 1px solid #e4e7ed;
+  border: 1px solid var(--el-border-color-light);
   border-radius: 4px;
 }
 .gantt-inner {
@@ -1290,8 +1290,8 @@ onBeforeUnmount(() => {
 }
 .gantt-header {
   display: flex;
-  background: #f5f7fa;
-  border-bottom: 1px solid #dcdfe6;
+  background: var(--el-fill-color-light);
+  border-bottom: 1px solid var(--el-border-color);
   position: sticky;
   top: 0;
   z-index: 3;
@@ -1302,8 +1302,8 @@ onBeforeUnmount(() => {
   padding: 8px 5px;
   font-weight: 600;
   font-size: 12px;
-  color: #606266;
-  border-right: 1px solid #dcdfe6;
+  color: var(--el-text-color-regular);
+  border-right: 1px solid var(--el-border-color);
 }
 .gantt-axis {
   display: flex;
@@ -1315,13 +1315,13 @@ onBeforeUnmount(() => {
   line-height: 30px;
   text-align: center;
   font-size: 10px;
-  color: #909399;
-  border-right: 1px solid #ebeef5;
+  color: var(--el-text-color-secondary);
+  border-right: 1px solid var(--el-border-color-lighter);
 }
 .axis-cell.hour {
-  color: #303133;
+  color: var(--el-text-color-primary);
   font-weight: 600;
-  border-right-color: #dcdfe6;
+  border-right-color: var(--el-border-color);
 }
 .axis-cell.midnight {
   border-left: 2px solid #8fa8ff;
@@ -1335,7 +1335,7 @@ onBeforeUnmount(() => {
 
 .gantt-row {
   display: flex;
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid var(--el-border-color-lighter);
 }
 .gantt-row:last-child {
   border-bottom: none;
@@ -1347,9 +1347,9 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   font-size: 12px;
-  color: #303133;
-  background: #fff;
-  border-right: 1px solid #dcdfe6;
+  color: var(--el-text-color-primary);
+  background: var(--el-bg-color);
+  border-right: 1px solid var(--el-border-color);
   position: sticky;
   left: 0;
   z-index: 2;
@@ -1368,13 +1368,13 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   font-size: 10px;
-  color: #303133;
+  color: var(--el-text-color-primary);
   border-right: 1px solid #f0f2f5;
   cursor: pointer;
   position: relative;
 }
 .gantt-cell:hover {
-  outline: 2px solid #409eff;
+  outline: 2px solid var(--el-color-primary);
   outline-offset: -2px;
 }
 .gantt-cell.midnight {
@@ -1398,11 +1398,11 @@ onBeforeUnmount(() => {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #e6a23c;
+  background: var(--el-color-warning);
   pointer-events: none;
 }
 .lv0 {
-  background: #f5f7fa;
+  background: var(--el-fill-color-light);
 }
 .lv1 {
   background: #d9ead3;
@@ -1415,7 +1415,7 @@ onBeforeUnmount(() => {
 }
 .lv4 {
   background: #6aa84f;
-  color: #fff;
+  color: var(--el-color-white);
 }
 .gantt-cell.soft {
   background-image: repeating-linear-gradient(135deg, rgba(0, 0, 0, 0.08) 0 4px, transparent 4px 8px);
@@ -1426,12 +1426,12 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 6px;
   padding: 8px 10px;
-  border-top: 1px solid #dcdfe6;
+  border-top: 1px solid var(--el-border-color);
   flex-wrap: wrap;
 }
 .legend-title {
   font-size: 12px;
-  color: #606266;
+  color: var(--el-text-color-regular);
 }
 .sw {
   width: 30px;
@@ -1440,8 +1440,8 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   font-size: 10px;
-  color: #303133;
-  border: 1px solid #dcdfe6;
+  color: var(--el-text-color-primary);
+  border: 1px solid var(--el-border-color);
   border-radius: 3px;
 }
 
@@ -1450,7 +1450,7 @@ onBeforeUnmount(() => {
   z-index: 3200;
   max-width: 240px;
   background: rgba(31, 45, 61, 0.95);
-  color: #fff;
+  color: var(--el-color-white);
   font-size: 12px;
   border-radius: 6px;
   padding: 8px 10px;
@@ -1474,8 +1474,8 @@ onBeforeUnmount(() => {
   position: fixed;
   z-index: 3000;
   width: 220px;
-  background: #fff;
-  border: 1px solid #dcdfe6;
+  background: var(--el-bg-color);
+  border: 1px solid var(--el-border-color);
   border-radius: 6px;
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.15);
   padding: 12px;
@@ -1483,7 +1483,7 @@ onBeforeUnmount(() => {
 .editor-title {
   font-size: 13px;
   font-weight: 600;
-  color: #303133;
+  color: var(--el-text-color-primary);
   margin-bottom: 10px;
 }
 .editor-row {
@@ -1494,7 +1494,7 @@ onBeforeUnmount(() => {
 .editor-label {
   width: 44px;
   font-size: 12px;
-  color: #606266;
+  color: var(--el-text-color-regular);
 }
 .editor-quick {
   display: flex;

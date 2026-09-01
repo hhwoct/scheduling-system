@@ -225,19 +225,19 @@ onMounted(() => {
 .plan-title {
   font-weight: 600;
   margin-bottom: 8px;
-  color: #303133;
+  color: var(--el-text-color-primary);
 }
 .cover-note {
   margin-left: 6px;
   font-size: 12px;
-  color: #409eff;
+  color: var(--el-color-primary);
 }
 .cover-list {
   margin-top: 10px;
 }
 .cover-title {
   font-weight: 600;
-  color: #e6a23c;
+  color: var(--el-color-warning);
   font-size: 13px;
 }
 </style>

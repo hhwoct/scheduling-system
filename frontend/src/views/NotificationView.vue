@@ -26,7 +26,7 @@
               </div>
               <el-button v-if="item.isRead === 0" link type="primary" size="small" @click="handleRead(item.id)">标为已读</el-button>
             </div>
-            <div style="margin-top: 8px; color: #606266">{{ item.content }}</div>
+            <div style="margin-top: 8px; color: var(--el-text-color-regular)">{{ item.content }}</div>
           </el-card>
         </el-timeline-item>
       </el-timeline>
@@ -149,6 +149,6 @@ watch(employeeNo, () => {
 
 <style scoped>
 .unread {
-  border-left: 3px solid #409eff;
+  border-left: 3px solid var(--el-color-primary);
 }
 </style>

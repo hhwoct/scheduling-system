@@ -147,11 +147,11 @@ onMounted(() => {
 .stat-row { margin-bottom: 8px; }
 .stat-card {
   background: #f7f8fa; border-radius: 8px; padding: 14px; text-align: center;
-  border: 1px solid #ebeef5;
+  border: 1px solid var(--el-border-color-lighter);
 }
-.stat-num { font-size: 26px; font-weight: 700; color: #409eff; }
-.stat-card.trend-up .stat-num { color: #67c23a; }
-.stat-label { font-size: 12px; color: #909399; margin-top: 4px; }
-.weight-tip { font-size: 12px; color: #909399; margin: 6px 0 12px; }
+.stat-num { font-size: 26px; font-weight: 700; color: var(--el-color-primary); }
+.stat-card.trend-up .stat-num { color: var(--el-color-success); }
+.stat-label { font-size: 12px; color: var(--el-text-color-secondary); margin-top: 4px; }
+.weight-tip { font-size: 12px; color: var(--el-text-color-secondary); margin: 6px 0 12px; }
 .section { margin-bottom: 16px; }
 </style>

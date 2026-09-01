@@ -14,7 +14,7 @@
           <el-date-picker v-model="refDate" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
         </el-form-item>
         <el-form-item label="排班周期">
-          <span style="font-size: 14px; color: #606266">{{ startDate }} ~ {{ endDate }}（{{ rangeDays }} 天）</span>
+          <span style="font-size: 14px; color: var(--el-text-color-regular)">{{ startDate }} ~ {{ endDate }}（{{ rangeDays }} 天）</span>
         </el-form-item>
         <el-form-item label="计划名称">
           <el-input v-model="planName" placeholder="留空自动生成" />
@@ -49,7 +49,7 @@
           <el-tag type="warning" style="margin-right: 8px">问题 {{ result.issueCount }} 条</el-tag>
           <el-tag v-if="result.demandShiftCount > 0" type="primary" style="margin-right: 8px">按需补班 {{ result.demandShiftCount }} 个</el-tag>
         </div>
-        <div style="margin-top: 12px; font-size: 13px; color: #606266">
+        <div style="margin-top: 12px; font-size: 13px; color: var(--el-text-color-regular)">
           需求覆盖：最少 {{ result.demandMinHours }} 人·时 / 最好 {{ result.demandIdealHours }} 人·时 ｜
           已覆盖 {{ result.coveredHours }} 人·时 ｜ 缺口 {{ result.gapHours }} 人·时 ｜
           覆盖率 {{ result.coveragePct }}%

@@ -219,7 +219,7 @@ async function handleForgotPassword() {
   margin-top: -4px;
   margin-bottom: 8px;
   font-size: 12px;
-  color: #e6a23c;
+  color: var(--el-color-warning);
   text-align: center;
 }
 </style>

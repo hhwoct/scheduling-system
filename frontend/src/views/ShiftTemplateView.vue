@@ -233,7 +233,7 @@ onMounted(loadData)
 <style scoped>
 .form-tip {
   font-size: 12px;
-  color: #909399;
+  color: var(--el-text-color-secondary);
   line-height: 1.4;
   margin-top: 2px;
 }
@@ -260,8 +260,8 @@ onMounted(loadData)
   transform: translateX(-50%);
   font-size: 9px;
   text-align: center;
-  color: #909399;
-  border-left: 1px solid #e4e7ed;
+  color: var(--el-text-color-secondary);
+  border-left: 1px solid var(--el-border-color-light);
   line-height: 20px;
   flex-shrink: 0;
   white-space: nowrap;
@@ -280,14 +280,14 @@ onMounted(loadData)
   font-size: 12px;
   padding-right: 8px;
   text-align: right;
-  color: #606266;
+  color: var(--el-text-color-regular);
   line-height: 28px;
 }
 .gantt-row .gantt-bar-area {
   flex: 1;
   position: relative;
   height: 28px;
-  background: #f5f7fa;
+  background: var(--el-fill-color-light);
   border-radius: 4px;
   overflow: hidden;
 }
@@ -296,7 +296,7 @@ onMounted(loadData)
   top: 4px;
   height: 20px;
   border-radius: 10px;
-  color: #fff;
+  color: var(--el-color-white);
   font-size: 11px;
   text-align: center;
   line-height: 20px;

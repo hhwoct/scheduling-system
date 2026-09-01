@@ -283,7 +283,7 @@ onMounted(loadData)
 }
 .daily-hours-summary {
   font-size: 12px;
-  color: #606266;
+  color: var(--el-text-color-regular);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -295,7 +295,7 @@ onMounted(loadData)
   align-items: center;
   gap: 4px;
   font-size: 12px;
-  color: #909399;
+  color: var(--el-text-color-secondary);
   white-space: nowrap;
 }
 .daily-hours-list {
@@ -304,7 +304,7 @@ onMounted(loadData)
   gap: 8px 16px;
   margin-top: 8px;
   padding: 8px 10px;
-  background: #f5f7fa;
+  background: var(--el-fill-color-light);
   border-radius: 4px;
 }
 .daily-hours-item {
@@ -317,12 +317,12 @@ onMounted(loadData)
   display: flex;
   align-items: center;
   font-size: 13px;
-  color: #303133;
+  color: var(--el-text-color-primary);
   white-space: nowrap;
 }
 .daily-hours-unit {
   font-size: 12px;
-  color: #606266;
+  color: var(--el-text-color-regular);
   white-space: nowrap;
 }
 </style>
