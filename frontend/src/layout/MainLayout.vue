@@ -47,9 +47,9 @@
           </el-sub-menu>
           <el-sub-menu index="schedule">
             <template #title><span>排班管理</span></template>
-            <el-menu-item index="/schedules/generate">一键排班</el-menu-item>
+            <el-menu-item v-if="authStore.role === 'STORE_MANAGER'" index="/schedules/generate">一键排班</el-menu-item>
             <el-menu-item index="/schedules/view">排班查看</el-menu-item>
-            <el-menu-item index="/reports">排班报表</el-menu-item>
+            <el-menu-item v-if="authStore.role === 'STORE_MANAGER'" index="/reports">排班报表</el-menu-item>
             <el-menu-item v-if="authStore.username === SUPER_ADMIN_USERNAME" index="/audit-logs">审计日志</el-menu-item>
             <el-menu-item index="/preferences">偏好学习</el-menu-item>
             <el-menu-item v-if="authStore.username === STORE_MANAGER_USERNAME" index="/leave-review">请假审批</el-menu-item>
