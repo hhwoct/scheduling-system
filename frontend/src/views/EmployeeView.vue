@@ -181,6 +181,10 @@ async function loadData() {
 // 已批准请假：员工工号 → 请假时间段（仅保留今天及以后的休假，历史已结束的休假不显示）
 const leaveMap = ref({})
 async function loadLeaveMap() {
+  // 请假审批列表仅店长账号可访问(后端按用户名放行);
+  // admin 不请求,避免页面加载时弹出 403「无权限」
+  const role = localStorage.getItem('shift_role') || ''
+  if (role !== 'STORE_MANAGER') return
   try {
     const list = await getLeaveReviewList('APPROVED')
     const map = {}
