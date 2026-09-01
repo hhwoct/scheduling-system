@@ -326,6 +326,31 @@ api.MapGet("/stores/current", async (ShiftSchedulingDbContext dbContext, ICurren
     return ApiResponse.Ok(store, "获取当前门店成功");
 }).RequireAuthorization();
 
+// ============ 门店总览(超管:旗下所有门店 + 每店核心指标) ============
+api.MapGet("/stores", async (ShiftSchedulingDbContext dbContext, CancellationToken cancellationToken) =>
+{
+    var stores = await dbContext.Stores
+        .AsNoTracking()
+        .Where(x => x.Status == 1)
+        .OrderBy(x => x.Id)
+        .Select(x => new
+        {
+            x.Id,
+            x.Code,
+            x.Name,
+            x.Address,
+            x.MaxEmployeeCount,
+            EmployeeCount = dbContext.Employees.Count(e => e.StoreId == x.Id && e.Status == 1),
+            FullTimeCount = dbContext.Employees.Count(e => e.StoreId == x.Id && e.Status == 1 && e.IsParttime == 0),
+            PartTimeCount = dbContext.Employees.Count(e => e.StoreId == x.Id && e.Status == 1 && e.IsParttime == 1),
+            ShiftCount = dbContext.ShiftTemplates.Count(s => s.StoreId == x.Id && s.Status == 1),
+            WorkstationCount = dbContext.Workstations.Count(w => w.StoreId == x.Id && w.Status == 1)
+        })
+        .ToListAsync(cancellationToken);
+
+    return ApiResponse.Ok(stores, "获取门店列表成功");
+}).RequireAuthorization("SystemAdminOnly");
+
 // ============ 仪表盘统计 ============
 api.MapGet("/dashboard/stats", async (
     ICurrentUser currentUser,
@@ -352,18 +377,24 @@ api.MapGet("/employees", async (
     string? name = null,
     string? employeeNo = null,
     string? department = null,
+    long? storeId = null,
     int? status = null,
     CancellationToken cancellationToken = default) =>
 {
-    var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
+    // 超管跨全部门店查看(员工列表不含兼职),并可按 storeId 筛选;其他角色限定本店
+    var isSystemAdmin = currentUser.Role == "SYSTEM_ADMIN";
+    var scopeStoreId = isSystemAdmin
+        ? (long?)null
+        : currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
     if (page < 1 || page > 100000 || pageSize is < 1 or > 100)
     {
         throw new BusinessException("分页参数不正确", "INVALID_PAGINATION");
     }
 
     var result = await employeeService.QueryAsync(
-        new EmployeeQueryRequest(page, pageSize, name, employeeNo, department, status),
-        storeId,
+        new EmployeeQueryRequest(page, pageSize, name, employeeNo, department, status, storeId),
+        scopeStoreId,
+        isSystemAdmin,
         cancellationToken);
 
     return ApiResponse.Ok(result, "获取员工列表成功");
@@ -2694,6 +2725,11 @@ api.MapGet("/schedules/{planId:long}/issues", async (
         .Where(x => x.StoreId == storeId)
         .ToDictionaryAsync(x => x.Id, x => new { x.Name, x.IsLowSkill }, cancellationToken);
 
+    var employeeInfo = await dbContext.Employees
+        .AsNoTracking()
+        .Where(x => x.StoreId == storeId)
+        .ToDictionaryAsync(x => x.Id, x => new { x.Name, x.EmployeeNo }, cancellationToken);
+
     var issues = await dbContext.ScheduleIssues
         .AsNoTracking()
         .Where(x => x.PlanId == planId && x.StoreId == storeId)
@@ -2720,6 +2756,8 @@ api.MapGet("/schedules/{planId:long}/issues", async (
         x.WorkDate,
         x.TimeSlot,
         x.EmployeeId,
+        EmployeeName = x.EmployeeId is null ? null : employeeInfo.GetValueOrDefault(x.EmployeeId.Value)?.Name,
+        EmployeeNo = x.EmployeeId is null ? null : employeeInfo.GetValueOrDefault(x.EmployeeId.Value)?.EmployeeNo,
         x.WorkstationId,
         WorkstationName = x.WorkstationId is null ? null : workstationInfo.GetValueOrDefault(x.WorkstationId.Value)?.Name,
         IsLowSkill = x.WorkstationId is not null && workstationInfo.TryGetValue(x.WorkstationId.Value, out var ws2) && ws2.IsLowSkill == 1,

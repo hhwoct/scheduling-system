@@ -11,7 +11,9 @@ public sealed record EmployeeListItem(
     decimal MaxWeeklyHours,
     int WeeklyHoursFollowDefault,
     int IsParttime,
-    int Status);
+    int Status,
+    long StoreId,
+    string? StoreName);
 
 public sealed record EmployeeDetail(
     long Id,
@@ -44,4 +46,5 @@ public sealed record EmployeeQueryRequest(
     string? Name = null,
     string? EmployeeNo = null,
     string? Department = null,
-    int? Status = null);
+    int? Status = null,
+    long? StoreId = null);

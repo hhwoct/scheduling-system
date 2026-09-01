@@ -9,8 +9,11 @@
           <el-input v-model="query.employeeNo" placeholder="工号" clearable style="width: 160px" @keyup.enter="search" />
         </el-form-item>
         <el-form-item label="部门">
-          <el-select v-model="query.department" placeholder="全部" clearable style="width: 140px" @change="search">
-            <el-option v-for="d in departments" :key="d" :label="d" :value="d" />
+          <el-input v-model="query.department" placeholder="部门(模糊)" clearable style="width: 140px" @keyup.enter="search" @clear="search" />
+        </el-form-item>
+        <el-form-item v-if="isSystemAdmin" label="门店">
+          <el-select v-model="query.storeId" placeholder="全部门店" clearable style="width: 160px" @change="search">
+            <el-option v-for="s in stores" :key="s.id" :label="s.name" :value="s.id" />
           </el-select>
         </el-form-item>
         <el-form-item>
@@ -24,6 +27,9 @@
         <el-table-column prop="employeeNo" label="工号" width="100" />
         <el-table-column label="姓名" width="140">
           <template #default="{ row }">{{ row.name }}<el-tag class="u-ml-2" v-if="row.isParttime === 1" type="warning" size="small">兼</el-tag></template>
+        </el-table-column>
+        <el-table-column v-if="isSystemAdmin" prop="storeName" label="门店" width="160">
+          <template #default="{ row }">{{ row.storeName || '--' }}</template>
         </el-table-column>
         <el-table-column prop="department" label="部门" width="100" />
         <el-table-column prop="primaryPosition" label="主岗" />
@@ -126,12 +132,26 @@
 </template>
 
 <script setup>
-import { nextTick, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { createEmployee, deactivateEmployee, getEmployeeSkills, getEmployees, saveEmployeeSkills, updateEmployee } from '../api/employees'
 import { getWorkstations } from '../api/workstations'
 import { getLeaveReviewList } from '../api/leave'
 import { getRules } from '../api/rules'
+import { getStores } from '../api/store'
+
+// 超管:跨全部门店查看员工(不含兼职),带门店筛选
+const isSystemAdmin = computed(() => (localStorage.getItem('shift_role') || '') === 'SYSTEM_ADMIN')
+const stores = ref([])
+
+async function loadStores() {
+  if (!isSystemAdmin.value) return
+  try {
+    stores.value = await getStores()
+  } catch {
+    stores.value = []
+  }
+}
 
 const departments = ['管理', '行政', '工程', '保洁', '楼面', '厨房', '吧台']
 
@@ -145,7 +165,8 @@ const query = reactive({
   pageSize: 10,
   name: '',
   employeeNo: '',
-  department: ''
+  department: '',
+  storeId: null
 })
 
 // P3-3: 搜索重置页码
@@ -168,7 +189,8 @@ async function loadData() {
       pageSize: query.pageSize,
       name: query.name || undefined,
       employeeNo: query.employeeNo || undefined,
-      department: query.department || undefined
+      department: query.department || undefined,
+      storeId: query.storeId || undefined
     })
     if (seq !== requestSeq) return
     list.value = res.items
@@ -417,6 +439,7 @@ async function loadGlobalMaxWeeklyHours() {
 }
 
 onMounted(() => {
+  loadStores()
   loadData()
   loadGlobalMaxWeeklyHours()
 })

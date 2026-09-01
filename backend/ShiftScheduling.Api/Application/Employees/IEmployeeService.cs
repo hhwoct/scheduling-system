@@ -4,7 +4,7 @@ namespace ShiftScheduling.Api.Application.Employees;
 
 public interface IEmployeeService
 {
-    Task<PagedResult<EmployeeListItem>> QueryAsync(EmployeeQueryRequest request, long storeId, CancellationToken cancellationToken);
+    Task<PagedResult<EmployeeListItem>> QueryAsync(EmployeeQueryRequest request, long? storeId, bool excludeParttime, CancellationToken cancellationToken);
 
     Task<EmployeeDetail> GetByIdAsync(long id, long storeId, CancellationToken cancellationToken);
 

@@ -21,13 +21,30 @@ public sealed class EmployeeService : IEmployeeService
     private bool ExistsEmployeeNo(long storeId, string employeeNo)
         => _dbContext.Employees.Any(x => x.StoreId == storeId && x.EmployeeNo == employeeNo);
 
-    public async Task<PagedResult<EmployeeListItem>> QueryAsync(EmployeeQueryRequest request, long storeId, CancellationToken cancellationToken)
+    public async Task<PagedResult<EmployeeListItem>> QueryAsync(EmployeeQueryRequest request, long? storeId, bool excludeParttime, CancellationToken cancellationToken)
     {
         // 修复 EF Core 无法比较 int 与 int?：将 nullable 提升为局部变量
         var defaultStatus = request.Status ?? 1;
         var query = _dbContext.Employees
             .AsNoTracking()
-            .Where(x => x.StoreId == storeId && x.Status == defaultStatus);
+            .Where(x => x.Status == defaultStatus);
+
+        // 数据范围:storeId 为 null 表示跨全部门店(超管);否则限定本店
+        if (storeId.HasValue)
+        {
+            query = query.Where(x => x.StoreId == storeId.Value);
+        }
+
+        // 超管视角的员工列表不含兼职
+        if (excludeParttime)
+        {
+            query = query.Where(x => x.IsParttime == 0);
+        }
+
+        if (request.StoreId.HasValue)
+        {
+            query = query.Where(x => x.StoreId == request.StoreId.Value);
+        }
 
         if (!string.IsNullOrWhiteSpace(request.Name))
         {
@@ -41,7 +58,7 @@ public sealed class EmployeeService : IEmployeeService
 
         if (!string.IsNullOrWhiteSpace(request.Department))
         {
-            query = query.Where(x => x.Department == request.Department);
+            query = query.Where(x => x.Department.Contains(request.Department));
         }
 
         var total = await query.CountAsync(cancellationToken);
@@ -50,20 +67,26 @@ public sealed class EmployeeService : IEmployeeService
             .OrderBy(x => x.EmployeeNo)
             .Skip((request.Page - 1) * request.PageSize)
             .Take(request.PageSize)
-            .Select(x => new EmployeeListItem(
-                x.Id,
-                x.EmployeeNo,
-                x.Name,
-                x.Phone,
-                x.Department,
-                x.HireDate,
-                x.PrimaryPosition,
-                x.MaxWeeklyHours,
-                x.WeeklyHoursFollowDefault,
-                x.IsParttime,
-                x.Status))
+            .Select(x => new
+            {
+                Row = new EmployeeListItem(
+                    x.Id,
+                    x.EmployeeNo,
+                    x.Name,
+                    x.Phone,
+                    x.Department,
+                    x.HireDate,
+                    x.PrimaryPosition,
+                    x.MaxWeeklyHours,
+                    x.WeeklyHoursFollowDefault,
+                    x.IsParttime,
+                    x.Status,
+                    x.StoreId,
+                    ""),
+                StoreName = _dbContext.Stores.Where(s => s.Id == x.StoreId).Select(s => s.Name).FirstOrDefault()
+            })
             .ToListAsync(cancellationToken))
-            .Select(x => x with { Phone = MaskPhone(x.Phone) })
+            .Select(x => x.Row with { Phone = MaskPhone(x.Row.Phone), StoreName = x.StoreName })
             .ToList();
 
         return PagedResult<EmployeeListItem>.Create(request.Page, request.PageSize, total, items);
