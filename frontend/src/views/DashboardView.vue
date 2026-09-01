@@ -14,9 +14,9 @@
             <div class="hero-stat__label">门店数</div>
           </div>
           <div class="hero-stat">
-            <div class="hero-stat__value">{{ totalEmployees ?? '--' }}</div>
-            <div class="hero-stat__label">员工总数</div>
-            <div class="hero-stat__sub">{{ totalFullTime != null && totalPartTime != null ? totalFullTime + ' 全职 · ' + totalPartTime + ' 兼职' : '' }}</div>
+            <div class="hero-stat__value">{{ totalFullTime ?? '--' }}</div>
+            <div class="hero-stat__label">正式员工</div>
+            <div class="hero-stat__sub">{{ totalPartTime != null ? '另有 ' + totalPartTime + ' 名兼职' : '' }}</div>
           </div>
           <div class="hero-stat">
             <div class="hero-stat__value">{{ totalShifts ?? '--' }}</div>
@@ -39,8 +39,12 @@
             </div>
             <div class="store-card__metrics">
               <div class="metric">
-                <div class="metric__value">{{ s.employeeCount ?? '--' }}</div>
-                <div class="metric__label">员工</div>
+                <div class="metric__value">{{ s.fullTimeCount ?? '--' }}</div>
+                <div class="metric__label">正式员工</div>
+              </div>
+              <div class="metric">
+                <div class="metric__value">{{ s.partTimeCount ?? '--' }}</div>
+                <div class="metric__label">兼职</div>
               </div>
               <div class="metric">
                 <div class="metric__value">{{ s.shiftCount ?? '--' }}</div>
@@ -63,9 +67,9 @@
         <div class="page-hero__sub">门店编码 {{ store?.code || '--' }}{{ store?.address ? ' · ' + store.address : '' }}</div>
         <div class="hero-stats">
           <div class="hero-stat">
-            <div class="hero-stat__value">{{ stats.employeeCount ?? '--' }}</div>
-            <div class="hero-stat__label">员工总数</div>
-            <div class="hero-stat__sub">{{ stats.fullTimeCount != null && stats.partTimeCount != null ? stats.fullTimeCount + ' 全职 · ' + stats.partTimeCount + ' 兼职' : '' }}</div>
+            <div class="hero-stat__value">{{ stats.fullTimeCount ?? '--' }}</div>
+            <div class="hero-stat__label">正式员工</div>
+            <div class="hero-stat__sub">{{ stats.partTimeCount != null ? '另有 ' + stats.partTimeCount + ' 名兼职' : '' }}</div>
           </div>
           <div class="hero-stat">
             <div class="hero-stat__value">{{ stats.shiftCount ?? '--' }}</div>
@@ -113,10 +117,6 @@ const stores = ref([])
 const storesLoading = ref(false)
 const storesFailed = ref(false)
 
-const totalEmployees = computed(() => {
-  if (!stores.value.length) return null
-  return stores.value.reduce((sum, s) => sum + (s.employeeCount || 0), 0)
-})
 const totalFullTime = computed(() => {
   if (!stores.value.length) return null
   return stores.value.reduce((sum, s) => sum + (s.fullTimeCount || 0), 0)
