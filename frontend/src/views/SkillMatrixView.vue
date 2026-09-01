@@ -9,17 +9,17 @@
             <el-select v-model="department" placeholder="全部部门" clearable size="small" style="width: 150px">
               <el-option v-for="d in departments" :key="d" :label="d" :value="d" />
             </el-select>
-            <el-checkbox v-model="onlySkilled" size="small" style="margin-left: var(--app-space-2)">只看有技能</el-checkbox>
+            <el-checkbox class="u-ml-2" v-model="onlySkilled" size="small">只看有技能</el-checkbox>
           </div>
         </div>
       </template>
 
-      <el-alert
+      <el-alert class="u-mb-5"
         type="info"
         :closable="false"
         show-icon
         title="数字为技能分（0-5，0 表示无该岗位技能）；★ 为主技能岗位。点击任意色块可直接修改（管理员与店长均可操作）。「通岗」= 大部分楼面工作都能做（传送/保洁/咨客/服务等），开启后自动为这些岗位写入至少 3 分，取消时清 0。兼职员工不参与评级。"
-        style="margin-bottom: var(--app-space-5)"
+       
       />
 
       <div v-if="stats" class="stats-line">
@@ -38,7 +38,7 @@
           <el-table-column label="姓名" width="120" fixed>
             <template #default="{ row }">
               {{ row.name }}
-              <el-tag v-if="row.isGeneralist === 1" type="success" size="small" style="margin-left: var(--app-space-2)">通</el-tag>
+              <el-tag class="u-ml-2" v-if="row.isGeneralist === 1" type="success" size="small">通</el-tag>
             </template>
           </el-table-column>
           <el-table-column prop="department" label="部门" width="90" fixed />
@@ -81,7 +81,7 @@
         <span class="sw lv2">3 中级</span>
         <span class="sw lv3">4 熟练</span>
         <span class="sw lv4">5 精通</span>
-        <span class="legend-title" style="margin-left: 14px">★ = 主技能岗位（每人仅一个）</span>
+        <span class="legend-title u-ml-6">★ = 主技能岗位（每人仅一个）</span>
       </div>
     </el-card>
 
@@ -95,11 +95,11 @@
         </el-form-item>
         <el-form-item label="技能分">
           <el-input-number v-model="editForm.skillScore" :min="0" :max="5" :step="1" style="width: 160px" />
-          <span style="margin-left: var(--app-space-4); font-size: var(--app-font-sm); color: var(--el-text-color-secondary)">0 = 无技能</span>
+          <span class="u-text-hint u-ml-4">0 = 无技能</span>
         </el-form-item>
         <el-form-item label="主技能">
           <el-switch v-model="editForm.isPrimarySkill" :active-value="1" :inactive-value="0" :disabled="editForm.skillScore === 0" />
-          <span style="margin-left: var(--app-space-4); font-size: var(--app-font-sm); color: var(--el-text-color-secondary)">设为该员工的主技能岗位（会取消其他主技能）</span>
+          <span class="u-text-hint u-ml-4">设为该员工的主技能岗位（会取消其他主技能）</span>
         </el-form-item>
       </el-form>
       <template #footer>

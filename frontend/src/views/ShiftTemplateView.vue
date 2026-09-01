@@ -1,6 +1,6 @@
 <template>
   <div>
-    <el-card style="margin-bottom: var(--app-space-6)">
+    <el-card class="u-mb-6">
       <template #header>班次甘特图（13:00 ~ 次日 06:00）</template>
       <div class="gantt-wrap">
         <!-- 时间轴刻度 -->
@@ -58,7 +58,7 @@
         <el-table-column prop="priority" label="优先级" width="80" />
         <el-table-column prop="coveredWorkstations" label="覆盖工作站">
           <template #default="{ row }">
-            <el-tag v-for="ws in (Array.isArray(row.coveredWorkstations) ? row.coveredWorkstations : String(row.coveredWorkstations || '').split(',').filter(Boolean))" :key="ws" size="small" style="margin-right: var(--app-space-2)">{{ ws }}</el-tag>
+            <el-tag class="u-mr-2" v-for="ws in (Array.isArray(row.coveredWorkstations) ? row.coveredWorkstations : String(row.coveredWorkstations || '').split(',').filter(Boolean))" :key="ws" size="small">{{ ws }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column label="操作" width="120">
@@ -75,10 +75,10 @@
           <el-input v-model="form.name" />
         </el-form-item>
         <el-form-item label="开始时间" required>
-          <el-time-select v-model="form.startTime" start="00:00" step="00:30" end="23:30" style="width: 100%" />
+          <el-time-select class="u-w-full" v-model="form.startTime" start="00:00" step="00:30" end="23:30" />
         </el-form-item>
         <el-form-item label="结束时间" required>
-          <el-time-select v-model="form.endTime" start="00:00" step="00:30" end="23:30" style="width: 100%" />
+          <el-time-select class="u-w-full" v-model="form.endTime" start="00:00" step="00:30" end="23:30" />
         </el-form-item>
         <el-form-item label="跨天">
           <el-switch v-model="form.isCrossDay" :active-value="1" :inactive-value="0" active-text="是" inactive-text="否" />

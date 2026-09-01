@@ -60,9 +60,9 @@
     <!-- 矩阵 -->
     <el-card class="section">
       <template #header>
-        <div style="display:flex;justify-content:space-between;align-items:center">
+        <div class="u-row-between">
           <span>工作站偏好矩阵（freq ≥ 3 的样本）</span>
-          <el-select v-model="matrixDayType" style="width:140px" @change="loadMatrix">
+          <el-select v-model="matrixDayType" style="width: 140px" @change="loadMatrix">
             <el-option label="全部类型" value="" />
             <el-option label="平日" value="WORKDAY" />
             <el-option label="周末" value="WEEKEND" />

@@ -2,7 +2,7 @@
   <div>
     <el-card>
       <template #header>
-        <div style="display: flex; align-items: center; justify-content: space-between">
+        <div class="u-row-between">
           <span>通知消息</span>
           <el-button size="small" :disabled="unreadCount === 0" @click="handleReadAll">全部标为已读</el-button>
         </div>
@@ -19,20 +19,20 @@
           :type="item.isRead === 0 ? 'primary' : 'info'"
         >
           <el-card :class="{ unread: item.isRead === 0 }" shadow="hover">
-            <div style="display: flex; align-items: center; justify-content: space-between">
+            <div class="u-row-between">
               <div>
-                <el-tag size="small" style="margin-right: var(--app-space-4)">{{ typeName(item.notificationType) }}</el-tag>
+                <el-tag class="u-mr-4" size="small">{{ typeName(item.notificationType) }}</el-tag>
                 <strong>{{ item.title }}</strong>
               </div>
               <el-button v-if="item.isRead === 0" link type="primary" size="small" @click="handleRead(item.id)">标为已读</el-button>
             </div>
-            <div style="margin-top: var(--app-space-4); color: var(--el-text-color-regular)">{{ item.content }}</div>
+            <div class="u-mt-4" style="color: var(--el-text-color-regular)">{{ item.content }}</div>
           </el-card>
         </el-timeline-item>
       </el-timeline>
 
-      <el-pagination
-        style="margin-top: var(--app-space-6); justify-content: center"
+      <el-pagination class="u-mt-6"
+        style="justify-content: center"
         layout="total, prev, pager, next"
         :total="total"
         :page-size="pageSize"

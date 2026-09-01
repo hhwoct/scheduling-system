@@ -24,7 +24,7 @@
                 <div v-for="item in dailyHoursItems" :key="item.key" class="daily-hours-item">
                   <span class="daily-hours-item-label">
                     {{ item.label }}
-                    <el-tag v-if="item.custom" size="small" type="warning" style="margin-left:var(--app-space-2)">自定义</el-tag>
+                    <el-tag class="u-ml-2" v-if="item.custom" size="small" type="warning">自定义</el-tag>
                   </span>
                   <el-input-number
                     :model-value="item.value"
@@ -34,7 +34,7 @@
                     :controls="false"
                     size="small"
                     :disabled="!isSystemAdmin"
-                    style="width:90px"
+                    style="width: 90px"
                     title="小时/天（0 = 不限制）"
                     @update:model-value="v => setDailyHoursValue(item.key, v)"
                   />
@@ -49,7 +49,7 @@
         <el-table-column label="值" :width="colWidths['值']" header-align="center">
           <template #default="{ row }">
             <!-- 统一 65px 并水平居中 -->
-            <div style="display: flex; justify-content: center">
+            <div class="u-row-center">
               <!-- 偏好学习权重：0~1 两位小数数字输入，禁止任意字符串 -->
               <el-input-number
                 v-if="row.ruleKey === 'preference_learning_weight'"
@@ -77,7 +77,7 @@
           </template>
         </el-table-column>
       </el-table>
-      <div style="margin-top: var(--app-space-6); text-align: right">
+      <div class="u-mt-6" style="text-align: right">
         <el-button v-if="isSystemAdmin" type="primary" :loading="saving" @click="handleSave">保存全部</el-button>
         <el-alert v-else type="info" :closable="false" show-icon title="仅系统管理员可修改排班规则，当前为只读模式" />
       </div>

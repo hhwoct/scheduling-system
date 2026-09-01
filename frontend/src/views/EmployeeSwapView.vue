@@ -5,22 +5,22 @@
 
       <el-form :model="form" label-width="80px" style="max-width: 500px">
         <el-form-item label="排班计划" required>
-          <el-select v-model="form.planId" style="width: 100%" @change="onPlanChange">
+          <el-select class="u-w-full" v-model="form.planId" @change="onPlanChange">
             <el-option v-for="p in plans" :key="p.id" :label="`${p.planName}（${p.startDate} ~ ${p.endDate}）`" :value="p.id" />
           </el-select>
         </el-form-item>
         <el-form-item label="换班日期" required>
-          <el-date-picker
+          <el-date-picker class="u-w-full"
             v-model="form.swapDate"
             type="date"
             value-format="YYYY-MM-DD"
-            style="width: 100%"
+           
             :disabled-date="disabledDate"
             @change="onDateChange"
           />
         </el-form-item>
         <el-form-item label="换班同事" required>
-          <el-select v-model="form.targetEmployeeId" style="width: 100%" :disabled="!form.swapDate || !form.planId">
+          <el-select class="u-w-full" v-model="form.targetEmployeeId" :disabled="!form.swapDate || !form.planId">
             <el-option v-for="c in candidates" :key="c.id" :label="`${c.name}（${c.department}）`" :value="c.id" />
           </el-select>
         </el-form-item>
@@ -33,7 +33,7 @@
       </el-form>
     </el-card>
 
-    <el-card style="margin-top: var(--app-space-6)">
+    <el-card class="u-mt-6">
       <template #header>我的换班记录</template>
       <el-table :data="mine" v-loading="loading" border stripe size="small">
         <el-table-column prop="id" label="ID" width="60" />

@@ -22,7 +22,7 @@
       </el-col>
     </el-row>
 
-    <el-card style="margin-top: var(--app-space-6)">
+    <el-card class="u-mt-6">
       <template #header>当前门店</template>
       <el-descriptions :column="2" border>
         <el-descriptions-item label="门店编码">{{ store?.code || '--' }}</el-descriptions-item>

@@ -2,16 +2,16 @@
   <div>
     <el-card>
       <template #header>
-        <div style="display: flex; align-items: center; justify-content: space-between">
+        <div class="u-row-between">
           <span>排班视图</span>
           <div>
-            <el-input v-model="planId" placeholder="排班计划 ID" style="width: 200px; margin-right: var(--app-space-4)" />
+            <el-input class="u-mr-4" v-model="planId" placeholder="排班计划 ID" style="width: 200px" />
             <el-button type="primary" :loading="loading" @click="loadData">查询</el-button>
           </div>
         </div>
       </template>
 
-      <el-alert v-if="errorMsg" :title="errorMsg" type="warning" :closable="false" style="margin-bottom: var(--app-space-5)" />
+      <el-alert class="u-mb-5" v-if="errorMsg" :title="errorMsg" type="warning" :closable="false" />
 
       <!-- ========== 日历矩阵 ========== -->
       <div v-loading="loading" class="calendar">
@@ -38,10 +38,10 @@
       </div>
 
       <!-- ========== 日明细 ========== -->
-      <div v-if="selectedDate" style="margin-top: var(--app-space-7)">
+      <div class="u-mt-7" v-if="selectedDate">
         <el-divider content-position="left">{{ selectedDate }} 排班明细</el-divider>
 
-        <el-alert v-if="dailyError" :title="dailyError" type="warning" :closable="false" style="margin-bottom: var(--app-space-5)" />
+        <el-alert class="u-mb-5" v-if="dailyError" :title="dailyError" type="warning" :closable="false" />
 
         <div v-loading="dailyLoading" class="matrix-wrap">
           <div class="matrix">

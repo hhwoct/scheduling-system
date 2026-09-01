@@ -2,9 +2,9 @@
   <div>
     <el-card>
       <template #header>
-        <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--app-space-4)">
+        <div class="u-row-between u-wrap u-gap-4">
           <span>排班报表</span>
-          <div style="display: flex; align-items: center; gap: var(--app-space-4)">
+          <div class="u-row u-gap-4">
             <el-select
               v-model="planId"
               placeholder="请选择已发布的排班计划"
@@ -29,7 +29,7 @@
       <el-empty v-if="!plansLoading && !plans.length" description="暂未发布排班安排，请发布后再查看" />
 
       <template v-else>
-        <el-alert v-if="errorMsg" :title="errorMsg" type="warning" :closable="false" style="margin-bottom: var(--app-space-5)" />
+        <el-alert class="u-mb-5" v-if="errorMsg" :title="errorMsg" type="warning" :closable="false" />
 
         <div v-loading="loading || plansLoading">
           <template v-if="rows.length">
@@ -52,7 +52,7 @@
                   <div class="gantt-emp-col">
                     <div class="emp-name">
                       {{ row.employeeName }}
-                      <el-tag v-if="row.isParttime === 1" type="success" size="small" style="margin-left: var(--app-space-2)">兼</el-tag>
+                      <el-tag class="u-ml-2" v-if="row.isParttime === 1" type="success" size="small">兼</el-tag>
                     </div>
                     <div class="emp-sub">{{ row.department }} · {{ row.employeeNo }}</div>
                   </div>

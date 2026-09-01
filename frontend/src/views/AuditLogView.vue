@@ -2,9 +2,9 @@
   <div>
     <el-card>
       <template #header>
-        <div style="display: flex; align-items: center; justify-content: space-between">
+        <div class="u-row-between">
           <span>审计日志</span>
-          <div style="display: flex; gap: var(--app-space-4); align-items: center">
+          <div class="u-row u-gap-4">
             <el-select v-model="actionType" placeholder="操作类型" clearable style="width: 180px">
               <el-option v-for="opt in actionOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
             </el-select>
@@ -36,8 +36,8 @@
         <el-table-column prop="remark" label="备注" min-width="220" />
       </el-table>
 
-      <el-pagination
-        style="margin-top: var(--app-space-6)"
+      <el-pagination class="u-mt-6"
+       
         layout="total, prev, pager, next"
         :total="total"
         :page-size="pageSize"

@@ -29,12 +29,12 @@
         </div>
       </template>
 
-      <el-alert
+      <el-alert class="u-mb-5"
         type="info"
         :closable="false"
         show-icon
         title="点击日期可切换类型：平日 → 周末 → 节假日 → 平日；法定节假日自动带「法」标记，调休补班日请把周末点回「平日」。虚线格子 = 数据库中尚未配置（当前为按规则的建议值）。"
-        style="margin-bottom: var(--app-space-5)"
+       
       />
 
       <div v-loading="loading" class="calendar">

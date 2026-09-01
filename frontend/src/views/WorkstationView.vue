@@ -1,7 +1,7 @@
 <template>
   <div>
     <el-card>
-      <div style="margin-bottom: var(--app-space-5); display: flex; gap: var(--app-space-4)">
+      <div class="u-gap-4 u-mb-5" style="display: flex">
         <el-button type="primary" @click="openCreate">新增工作站</el-button>
         <el-button @click="loadData">刷新</el-button>
       </div>

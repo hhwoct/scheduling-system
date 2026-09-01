@@ -32,12 +32,12 @@
         </div>
       </template>
 
-      <el-alert
+      <el-alert class="u-mb-5"
         type="info"
         :closable="false"
         show-icon
         title="时间轴为营业时段 12:00 至次日 06:00（00:00 起为次日；06:00-11:30 闭店时段不在图中，其数据保留）。单元格含义：单数字 N = 该时段该岗位最少 N 人；写成 M,N（如 2,3）= 最少 M 人、最好 N 人。一键排班优先保证最少人数，人手有余时尽量补到最好人数。点击单元格编辑；按住拖动框选区域后可批量修改人数并附备注（Esc 或点空白处取消选区）；带备注的格子右上角有橙点，悬停可查看。"
-        style="margin-bottom: var(--app-space-5)"
+       
       />
 
       <div class="stats-bar">
@@ -115,9 +115,9 @@
         <span class="sw lv2">2</span>
         <span class="sw lv3">3</span>
         <span class="sw lv4">4+</span>
-        <span class="legend-title" style="margin-left: 18px">斜纹 = 有「最好」目标：</span>
+        <span class="legend-title u-ml-6">斜纹 = 有「最好」目标：</span>
         <span class="sw lv2 soft">2,3</span>
-        <span class="legend-title" style="margin-left: 18px">● 角标 = 有备注（悬停查看）：</span>
+        <span class="legend-title u-ml-6">● 角标 = 有备注（悬停查看）：</span>
         <span class="sw lv1" style="position: relative">1<i style="position: absolute; top: 2px; right: 2px; width: 5px; height: 5px; border-radius: 50%; background: var(--el-color-warning)"></i></span>
       </div>
 
@@ -201,23 +201,23 @@
         <el-form-item label="模型">
           <el-input v-model="aiForm.model" placeholder="deepseek-chat" />
         </el-form-item>
-        <el-alert
+        <el-alert class="u-mb-4"
           type="info"
           :closable="false"
           show-icon
           :title="aiConfigHint"
-          style="margin-bottom: var(--app-space-4)"
+         
         />
-        <el-alert
+        <el-alert class="u-mb-4"
           type="warning"
           :closable="false"
           show-icon
           title="表格（Excel/CSV）识别所有文本模型均支持；图片识别需要模型支持视觉输入（如 deepseek-vl 系列），当前默认模型仅支持表格。"
-          style="margin-bottom: var(--app-space-4)"
+         
         />
         <el-form-item label=" ">
           <el-button size="small" :loading="aiTesting" @click="handleAiTest">测试连接</el-button>
-          <span v-if="aiTestResult" style="margin-left: var(--app-space-4); font-size: var(--app-font-base); color: var(--el-text-color-regular)">{{ aiTestResult }}</span>
+          <span class="u-ml-4" v-if="aiTestResult" style="font-size: var(--app-font-base); color: var(--el-text-color-regular)">{{ aiTestResult }}</span>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -229,7 +229,7 @@
     <el-dialog v-model="copyDialogVisible" title="从其他日期类型复制" width="420px">
       <el-form label-width="100px">
         <el-form-item label="源类型">
-          <el-select v-model="copySource" style="width: 100%">
+          <el-select class="u-w-full" v-model="copySource">
             <el-option v-for="dt in otherDayTypes" :key="dt.value" :label="dt.label" :value="dt.value" />
           </el-select>
         </el-form-item>

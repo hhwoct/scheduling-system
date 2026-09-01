@@ -14,7 +14,7 @@
         <el-input v-model="form.confirmPassword" type="password" show-password placeholder="再次输入新密码" autocomplete="new-password" />
       </el-form-item>
     </el-form>
-    <div style="font-size: var(--app-font-sm); color: var(--el-text-color-secondary)">手机号需与员工档案中的注册手机号一致（管理员账号无档案，不校验）。修改成功后当前登录立即失效，需要使用新密码重新登录。</div>
+    <div class="u-text-hint">手机号需与员工档案中的注册手机号一致（管理员账号无档案，不校验）。修改成功后当前登录立即失效，需要使用新密码重新登录。</div>
     <template #footer>
       <el-button @click="visible = false">取消</el-button>
       <el-button type="primary" :loading="saving" @click="submit">确定修改</el-button>

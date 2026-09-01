@@ -5,7 +5,7 @@
 
       <el-form :model="form" label-width="80px" style="max-width: 460px">
         <el-form-item label="请假类型" required>
-          <el-select v-model="form.leaveType" style="width: 100%">
+          <el-select class="u-w-full" v-model="form.leaveType">
             <el-option label="事假" value="PERSONAL" />
             <el-option label="病假" value="SICK" />
             <el-option label="年假" value="ANNUAL" />
@@ -13,20 +13,20 @@
           </el-select>
         </el-form-item>
         <el-form-item label="开始日期" required>
-          <el-date-picker
+          <el-date-picker class="u-w-full"
             v-model="form.startDate"
             type="date"
             value-format="YYYY-MM-DD"
-            style="width: 100%"
+           
             :disabled-date="disabledStartDate"
           />
         </el-form-item>
         <el-form-item label="结束日期" required>
-          <el-date-picker
+          <el-date-picker class="u-w-full"
             v-model="form.endDate"
             type="date"
             value-format="YYYY-MM-DD"
-            style="width: 100%"
+           
             :disabled-date="disabledEndDate"
           />
         </el-form-item>
@@ -39,9 +39,9 @@
       </el-form>
     </el-card>
 
-    <el-card style="margin-top: var(--app-space-6)">
+    <el-card class="u-mt-6">
       <template #header>
-        <div style="display: flex; align-items: center; justify-content: space-between">
+        <div class="u-row-between">
           <span>我的请假记录</span>
           <el-alert v-if="errorMsg" :title="errorMsg" type="warning" :closable="false" style="width: 260px" />
         </div>

@@ -2,30 +2,30 @@
   <div>
     <el-card>
       <template #header>
-        <div style="display: flex; align-items: center; justify-content: space-between">
+        <div class="u-row-between">
           <span>日排班明细（工作站 × 时间矩阵）</span>
           <div>
-            <el-input v-model="planId" placeholder="排班计划 ID" style="width: 160px; margin-right: var(--app-space-4)" />
-            <el-date-picker v-model="workDate" type="date" value-format="YYYY-MM-DD" style="width: 150px; margin-right: var(--app-space-4)" />
+            <el-input class="u-mr-4" v-model="planId" placeholder="排班计划 ID" style="width: 160px" />
+            <el-date-picker class="u-mr-4" v-model="workDate" type="date" value-format="YYYY-MM-DD" style="width: 150px" />
             <el-button type="primary" :loading="loading" @click="loadData">查询</el-button>
           </div>
         </div>
       </template>
 
-      <el-alert v-if="errorMsg" :title="errorMsg" type="warning" :closable="false" style="margin-bottom: var(--app-space-5)" />
+      <el-alert class="u-mb-5" v-if="errorMsg" :title="errorMsg" type="warning" :closable="false" />
 
       <!-- 整周期问题：无具体日期（工时超限等） -->
-      <el-alert
+      <el-alert class="u-mb-5"
         v-if="summaryIssues.length"
         type="warning"
         :closable="false"
-        style="margin-bottom: var(--app-space-5)"
+       
       >
         <template #title>整周期问题（{{ summaryIssues.length }} 条）</template>
-        <div v-for="(si, idx) in summaryIssues.slice(0, 5)" :key="idx" style="font-size: var(--app-font-sm); margin-top: var(--app-space-1)">
+        <div class="u-text-sm u-mt-1" v-for="(si, idx) in summaryIssues.slice(0, 5)" :key="idx">
           {{ si.description }}
         </div>
-        <span v-if="summaryIssues.length > 5" style="font-size: var(--app-font-sm)">… 等 {{ summaryIssues.length }} 条</span>
+        <span class="u-text-sm" v-if="summaryIssues.length > 5">… 等 {{ summaryIssues.length }} 条</span>
       </el-alert>
 
       <div v-loading="loading" class="matrix-wrap">
@@ -57,11 +57,11 @@
         </div>
       </div>
 
-      <div style="margin-top: var(--app-space-5); display: flex; gap: var(--app-space-6); align-items: center; flex-wrap: wrap">
-        <span style="font-size: var(--app-font-sm); color: var(--el-text-color-secondary)">色块从上到下：名字 / 班次 / 职位；时间轴从当日 13:00 到次日 05:30（+1 表示次日，覆盖 06:00 下班的班次）</span>
+      <div class="u-row u-wrap u-mt-5 u-gap-6">
+        <span class="u-text-hint">色块从上到下：名字 / 班次 / 职位；时间轴从当日 13:00 到次日 05:30（+1 表示次日，覆盖 06:00 下班的班次）</span>
         <el-tag size="small" type="warning">次日</el-tag>
         <el-tag size="small" type="danger">缺</el-tag>
-        <span style="font-size: var(--app-font-sm); color: var(--el-text-color-secondary)">该工作站该时段存在岗位缺口</span>
+        <span class="u-text-hint">该工作站该时段存在岗位缺口</span>
       </div>
     </el-card>
   </div>

@@ -11,7 +11,7 @@
           </el-radio-group>
         </el-form-item>
         <el-form-item label="参考日期" required>
-          <el-date-picker v-model="refDate" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
+          <el-date-picker class="u-w-full" v-model="refDate" type="date" value-format="YYYY-MM-DD" />
         </el-form-item>
         <el-form-item label="排班周期">
           <span style="font-size: var(--app-font-md); color: var(--el-text-color-regular)">{{ startDate }} ~ {{ endDate }}（{{ rangeDays }} 天）</span>
@@ -35,32 +35,32 @@
         </el-table-column>
       </el-table>
 
-      <el-alert
+      <el-alert class="u-mt-6"
         v-if="result"
         type="success"
         :closable="false"
-        style="margin-top: var(--app-space-6)"
+       
         :title="'生成完成：' + result.planName"
       >
-        <div style="margin-top: var(--app-space-4)">
-          <el-tag style="margin-right: var(--app-space-4)">休息日 {{ result.restDayCount }} 条</el-tag>
-          <el-tag type="info" style="margin-right: var(--app-space-4)">班次分配 {{ result.shiftAssignmentCount }} 条</el-tag>
-          <el-tag type="info" style="margin-right: var(--app-space-4)">工作站 {{ result.workstationAssignmentCount }} 条</el-tag>
-          <el-tag type="warning" style="margin-right: var(--app-space-4)">问题 {{ result.issueCount }} 条</el-tag>
-          <el-tag v-if="result.demandShiftCount > 0" type="primary" style="margin-right: var(--app-space-4)">按需补班 {{ result.demandShiftCount }} 个</el-tag>
+        <div class="u-mt-4">
+          <el-tag class="u-mr-4">休息日 {{ result.restDayCount }} 条</el-tag>
+          <el-tag class="u-mr-4" type="info">班次分配 {{ result.shiftAssignmentCount }} 条</el-tag>
+          <el-tag class="u-mr-4" type="info">工作站 {{ result.workstationAssignmentCount }} 条</el-tag>
+          <el-tag class="u-mr-4" type="warning">问题 {{ result.issueCount }} 条</el-tag>
+          <el-tag class="u-mr-4" v-if="result.demandShiftCount > 0" type="primary">按需补班 {{ result.demandShiftCount }} 个</el-tag>
         </div>
-        <div style="margin-top: var(--app-space-5); font-size: var(--app-font-base); color: var(--el-text-color-regular)">
+        <div class="u-mt-5" style="font-size: var(--app-font-base); color: var(--el-text-color-regular)">
           需求覆盖：最少 {{ result.demandMinHours }} 人·时 / 最好 {{ result.demandIdealHours }} 人·时 ｜
           已覆盖 {{ result.coveredHours }} 人·时 ｜ 缺口 {{ result.gapHours }} 人·时 ｜
           覆盖率 {{ result.coveragePct }}%
         </div>
-        <div style="margin-top: var(--app-space-5)">
+        <div class="u-mt-5">
           <el-button type="primary" size="small" @click="goToPlan(result.planId)">查看排班计划</el-button>
         </div>
       </el-alert>
     </el-card>
 
-    <el-card style="margin-top: var(--app-space-6)">
+    <el-card class="u-mt-6">
       <template #header>历史排班计划</template>
       <el-table :data="plans" v-loading="plansLoading" border stripe>
         <el-table-column prop="id" label="ID" width="60" />
@@ -86,8 +86,8 @@
           </template>
         </el-table-column>
       </el-table>
-      <el-pagination
-        style="margin-top: var(--app-space-6)"
+      <el-pagination class="u-mt-6"
+       
         layout="total, prev, pager, next"
         :total="plansTotal"
         :page-size="pageSize"

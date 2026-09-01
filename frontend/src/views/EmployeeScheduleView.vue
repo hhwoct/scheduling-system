@@ -2,17 +2,17 @@
   <div class="emp-wrap">
     <el-card>
       <template #header>
-        <div style="display: flex; align-items: center; justify-content: space-between">
+        <div class="u-row-between">
           <span>我的班表</span>
           <div>
             <!-- 管理员/店长预览：选择员工（放时间选择器旁边） -->
-            <el-select
+            <el-select class="u-mr-4"
               v-if="authStore.role && authStore.role !== 'EMPLOYEE'"
               :model-value="employeeNo || undefined"
               placeholder="选择预览员工"
               clearable
               filterable
-              style="width: 160px; margin-right: var(--app-space-4)"
+              style="width: 160px"
               @update:model-value="onPreviewChange"
             >
               <el-option
@@ -22,12 +22,12 @@
                 :value="emp.employeeNo"
               />
             </el-select>
-            <el-date-picker
+            <el-date-picker class="u-mr-4"
               v-model="month"
               type="month"
               value-format="YYYY-MM"
               :clearable="false"
-              style="width: 140px; margin-right: var(--app-space-4)"
+              style="width: 140px"
             />
             <el-button type="primary" :loading="loading" @click="loadData">查询</el-button>
           </div>
@@ -35,7 +35,7 @@
       </template>
 
       <!-- 员工信息 -->
-      <el-descriptions v-if="employee" :column="4" border style="margin-bottom: var(--app-space-5)">
+      <el-descriptions class="u-mb-5" v-if="employee" :column="4" border>
         <el-descriptions-item label="工号">{{ employee.employeeNo }}</el-descriptions-item>
         <el-descriptions-item label="姓名">{{ employee.name }}</el-descriptions-item>
         <el-descriptions-item label="部门">{{ employee.department }}</el-descriptions-item>
@@ -46,7 +46,7 @@
       <el-empty v-else-if="!loading && plans.length === 0" description="本月暂无已发布的排班" />
 
       <!-- 每个已发布计划一张周表 -->
-      <div v-for="plan in plans" :key="plan.id" style="margin-bottom: 20px">
+      <div class="u-mb-7" v-for="plan in plans" :key="plan.id">
         <div class="plan-title">{{ plan.planName }}（{{ plan.startDate }} ~ {{ plan.endDate }}）</div>
         <el-table :data="plan.days" border stripe size="small" max-height="260">
           <el-table-column label="日期" width="120">
@@ -82,7 +82,7 @@
       <!-- 顶岗记录：独立于具体计划，全局展示 -->
       <div v-if="covers.length" class="cover-list">
         <div class="cover-title">我顶岗的记录</div>
-        <el-table :data="covers" border stripe size="small" max-height="200" style="margin-top: var(--app-space-3)">
+        <el-table class="u-mt-3" :data="covers" border stripe size="small" max-height="200">
           <el-table-column prop="workDate" label="日期" width="120" />
           <el-table-column label="时段" width="130">
             <template #default="{ row }">{{ fmtTime(row.breakStartTime) }}-{{ fmtTime(row.breakEndTime) }}</template>

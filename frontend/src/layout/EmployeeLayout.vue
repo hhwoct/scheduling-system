@@ -48,8 +48,8 @@
         <div class="header-left">
           <div class="header-title">{{ $route.meta.title }}</div>
         </div>
-        <div style="display: flex; align-items: center; gap: var(--app-space-6)">
-          <el-badge v-if="authStore.role === 'EMPLOYEE'" :value="unreadCount" :hidden="unreadCount === 0" :max="99" style="cursor: pointer" @click="$router.push('/employee/notifications')">
+        <div class="u-row u-gap-6">
+          <el-badge class="u-clickable" v-if="authStore.role === 'EMPLOYEE'" :value="unreadCount" :hidden="unreadCount === 0" :max="99" @click="$router.push('/employee/notifications')">
             <el-icon :size="20"><Bell /></el-icon>
           </el-badge>
           <el-dropdown @command="handleCommand">

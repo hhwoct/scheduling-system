@@ -2,38 +2,38 @@
   <div>
     <el-card>
       <template #header>
-        <div style="display: flex; align-items: center; justify-content: space-between">
+        <div class="u-row-between">
           <span>周排班视图（资源时间线）</span>
           <div>
-            <el-input v-model="planId" placeholder="排班计划 ID" style="width: 180px; margin-right: var(--app-space-4)" />
-            <el-date-picker v-model="weekStart" type="date" value-format="YYYY-MM-DD" style="width: 150px; margin-right: var(--app-space-4)" placeholder="周起始日" />
+            <el-input class="u-mr-4" v-model="planId" placeholder="排班计划 ID" style="width: 180px" />
+            <el-date-picker class="u-mr-4" v-model="weekStart" type="date" value-format="YYYY-MM-DD" style="width: 150px" placeholder="周起始日" />
             <el-button type="primary" :loading="loading" @click="loadData">查询</el-button>
           </div>
         </div>
       </template>
 
-      <el-alert v-if="errorMsg" :title="errorMsg" type="warning" :closable="false" style="margin-bottom: var(--app-space-5)" />
+      <el-alert class="u-mb-5" v-if="errorMsg" :title="errorMsg" type="warning" :closable="false" />
 
       <!-- 整周期级问题（无具体日期，如工时超限） -->
-      <el-alert
+      <el-alert class="u-mb-5"
         v-if="summaryIssues.length"
         type="warning"
         :closable="false"
-        style="margin-bottom: var(--app-space-5)"
+       
       >
         <template #title>
           整周期问题（{{ summaryIssues.length }} 条）
         </template>
-        <div v-for="(si, idx) in summaryIssues.slice(0, 5)" :key="idx" style="font-size: var(--app-font-sm); margin-top: var(--app-space-1)">
+        <div class="u-text-sm u-mt-1" v-for="(si, idx) in summaryIssues.slice(0, 5)" :key="idx">
           {{ si.description }}
         </div>
-        <span v-if="summaryIssues.length > 5" style="font-size: var(--app-font-sm)">… 等 {{ summaryIssues.length }} 条</span>
+        <span class="u-text-sm" v-if="summaryIssues.length > 5">… 等 {{ summaryIssues.length }} 条</span>
 
-        <el-button
+        <el-button class="u-mt-4"
           v-if="summaryIssues.length"
           type="primary"
           size="small"
-          style="margin-top: var(--app-space-4)"
+         
           @click="showOvertimeDetail = true"
         >
           查看详情
@@ -85,16 +85,16 @@
         </div>
       </div>
 
-      <div style="margin-top: var(--app-space-5); display: flex; gap: var(--app-space-6); align-items: center">
-        <el-tag size="small" type="danger">休</el-tag><span style="font-size: var(--app-font-sm); color: var(--el-text-color-secondary)">休息</span>
-        <el-tag size="small" type="primary">班</el-tag><span style="font-size: var(--app-font-sm); color: var(--el-text-color-secondary)">班次（含时间与工时）</span>
-        <el-tag size="small" type="warning">休 HH:mm-HH:mm</el-tag><span style="font-size: var(--app-font-sm); color: var(--el-text-color-secondary)">班中休息（含顶岗人）</span>
+      <div class="u-row u-mt-5 u-gap-6">
+        <el-tag size="small" type="danger">休</el-tag><span class="u-text-hint">休息</span>
+        <el-tag size="small" type="primary">班</el-tag><span class="u-text-hint">班次（含时间与工时）</span>
+        <el-tag size="small" type="warning">休 HH:mm-HH:mm</el-tag><span class="u-text-hint">班中休息（含顶岗人）</span>
       </div>
     </el-card>
 
     <!-- 整周期问题详情弹窗 -->
     <el-dialog v-model="showOvertimeDetail" title="整周期问题详情（工时超限）" width="760px">
-      <el-alert type="info" :closable="false" style="margin-bottom: var(--app-space-5)">
+      <el-alert class="u-mb-5" type="info" :closable="false">
         以下员工排班周期内总工时超过上限（58h）。点击「工时明细」可查看该员工每天的班次与工时，定位超时来源。
       </el-alert>
       <el-table :data="summaryIssues" border stripe size="small" max-height="440">
@@ -111,7 +111,7 @@
                   <template #default="{ row: d }">{{ Number(d.workHours).toFixed(1) }}</template>
                 </el-table-column>
               </el-table>
-              <div v-if="!((employeeHourRows[`${planId}_${row.employeeId}`] || []).length)" style="font-size:var(--app-font-sm);color:var(--el-text-color-secondary)">（点击右侧「工时明细」加载）</div>
+              <div class="u-text-hint" v-if="!((employeeHourRows[`${planId}_${row.employeeId}`] || []).length)">（点击右侧「工时明细」加载）</div>
             </div>
           </template>
         </el-table-column>

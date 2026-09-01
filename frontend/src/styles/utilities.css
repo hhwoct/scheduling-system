@@ -1,0 +1,98 @@
+/**
+ * 工具类
+ *
+ * 只收录在多个页面重复出现的组合。一次性的尺寸(具体 width)仍留在行内 ——
+ * 把它们也搬进来只会制造一堆用一次的类名,得不偿失。
+ *
+ * 注意:Vue scoped 样式带 [data-v-*],特异性高于这里的单类选择器。
+ * 如果某元素的 scoped 规则已经定义了同名属性,不要指望用工具类去覆盖它。
+ */
+
+/* ===== 行布局 ===== */
+.u-row {
+  display: flex;
+  align-items: center;
+}
+
+.u-row-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.u-row-start {
+  display: flex;
+  align-items: flex-start;
+}
+
+.u-row-center {
+  display: flex;
+  justify-content: center;
+}
+
+.u-wrap {
+  flex-wrap: wrap;
+}
+
+/* ===== 间隙 ===== */
+.u-gap-1 { gap: var(--app-space-1); }
+.u-gap-2 { gap: var(--app-space-2); }
+.u-gap-3 { gap: var(--app-space-3); }
+.u-gap-4 { gap: var(--app-space-4); }
+.u-gap-5 { gap: var(--app-space-5); }
+.u-gap-6 { gap: var(--app-space-6); }
+.u-gap-7 { gap: var(--app-space-7); }
+
+/* ===== 外边距 ===== */
+.u-mt-1 { margin-top: var(--app-space-1); }
+.u-mt-2 { margin-top: var(--app-space-2); }
+.u-mt-3 { margin-top: var(--app-space-3); }
+.u-mt-4 { margin-top: var(--app-space-4); }
+.u-mt-5 { margin-top: var(--app-space-5); }
+.u-mt-6 { margin-top: var(--app-space-6); }
+.u-mt-7 { margin-top: var(--app-space-7); }
+
+.u-mb-1 { margin-bottom: var(--app-space-1); }
+.u-mb-2 { margin-bottom: var(--app-space-2); }
+.u-mb-3 { margin-bottom: var(--app-space-3); }
+.u-mb-4 { margin-bottom: var(--app-space-4); }
+.u-mb-5 { margin-bottom: var(--app-space-5); }
+.u-mb-6 { margin-bottom: var(--app-space-6); }
+.u-mb-7 { margin-bottom: var(--app-space-7); }
+
+.u-ml-1 { margin-left: var(--app-space-1); }
+.u-ml-2 { margin-left: var(--app-space-2); }
+.u-ml-3 { margin-left: var(--app-space-3); }
+.u-ml-4 { margin-left: var(--app-space-4); }
+.u-ml-5 { margin-left: var(--app-space-5); }
+.u-ml-6 { margin-left: var(--app-space-6); }
+.u-ml-7 { margin-left: var(--app-space-7); }
+
+.u-mr-1 { margin-right: var(--app-space-1); }
+.u-mr-2 { margin-right: var(--app-space-2); }
+.u-mr-3 { margin-right: var(--app-space-3); }
+.u-mr-4 { margin-right: var(--app-space-4); }
+.u-mr-5 { margin-right: var(--app-space-5); }
+.u-mr-6 { margin-right: var(--app-space-6); }
+.u-mr-7 { margin-right: var(--app-space-7); }
+
+/* ===== 尺寸 ===== */
+.u-w-full {
+  width: 100%;
+}
+
+/* ===== 排版 ===== */
+.u-text-sm {
+  font-size: var(--app-font-sm);
+}
+
+/* 表单/图例下方的灰色小字说明,全站最常见的一种文本 */
+.u-text-hint {
+  font-size: var(--app-font-sm);
+  color: var(--el-text-color-secondary);
+}
+
+/* ===== 交互 ===== */
+.u-clickable {
+  cursor: pointer;
+}

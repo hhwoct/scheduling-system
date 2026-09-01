@@ -1,18 +1,18 @@
 <template>
   <el-card class="peak-section">
     <template #header>
-      <div style="display: flex; align-items: center; justify-content: space-between">
+      <div class="u-row-between">
         <span>高峰禁休时段</span>
         <el-button type="primary" size="small" @click="openCreate">新增时段</el-button>
       </div>
     </template>
 
-    <el-alert
+    <el-alert class="u-mb-5"
       type="info"
       :closable="false"
       show-icon
       title="员工班中休息（30 分钟）不会安排在这些时段内，休息与高峰时段完全不重叠。"
-      style="margin-bottom: var(--app-space-5)"
+     
     />
 
     <el-table :data="list" v-loading="loading" border stripe size="small">
@@ -39,23 +39,23 @@
     <el-dialog v-model="dialogVisible" :title="editingId ? '编辑高峰时段' : '新增高峰时段'" width="440px">
       <el-form label-width="90px">
         <el-form-item label="开始时间">
-          <el-time-picker
+          <el-time-picker class="u-w-full"
             v-model="form.startTime"
             format="HH:mm"
             value-format="HH:mm"
             placeholder="开始时间"
             :disabled-minutes="disabledMinutes"
-            style="width: 100%"
+           
           />
         </el-form-item>
         <el-form-item label="结束时间">
-          <el-time-picker
+          <el-time-picker class="u-w-full"
             v-model="form.endTime"
             format="HH:mm"
             value-format="HH:mm"
             placeholder="结束时间"
             :disabled-minutes="disabledMinutes"
-            style="width: 100%"
+           
           />
         </el-form-item>
         <el-form-item label="启用">
