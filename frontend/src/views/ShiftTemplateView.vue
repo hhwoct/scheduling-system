@@ -37,31 +37,30 @@
       </div>
     </el-card>
 
-    <!-- 高峰禁休时段设置（原独立页面迁入：泳道图下方、班次表格上方） -->
-    <PeakHoursSection />
+    <!-- 高峰禁休时段已迁入「规则配置」页 -->
 
     <el-card>
-      <el-table :data="list" v-loading="loading" border stripe>
-        <el-table-column prop="code" label="班次" width="80" />
-        <el-table-column prop="name" label="名称" width="180" />
-        <el-table-column label="开始时间" width="120">
+      <el-table :data="list" v-loading="loading" border stripe :cell-style="{ textAlign: 'center' }" :header-cell-style="{ textAlign: 'center' }">
+        <el-table-column prop="code" label="班次" min-width="70" show-overflow-tooltip />
+        <el-table-column prop="name" label="名称" min-width="120" show-overflow-tooltip />
+        <el-table-column label="开始时间" min-width="95" show-overflow-tooltip>
           <template #default="{ row }">{{ formatTime(row.startTime) }}</template>
         </el-table-column>
-        <el-table-column label="结束时间" width="120">
+        <el-table-column label="结束时间" min-width="95" show-overflow-tooltip>
           <template #default="{ row }">{{ formatTime(row.endTime) }}</template>
         </el-table-column>
-        <el-table-column label="跨天" width="80">
+        <el-table-column label="跨天" min-width="60" show-overflow-tooltip>
           <template #default="{ row }">
             <el-tag :type="isCrossDayShift(row.startTime, row.endTime) ? 'warning' : 'info'">{{ isCrossDayShift(row.startTime, row.endTime) ? '是' : '否' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="priority" label="优先级" width="80" />
-        <el-table-column prop="coveredWorkstations" label="覆盖工作站">
+        <el-table-column prop="priority" label="优先级" min-width="60" show-overflow-tooltip />
+        <el-table-column prop="coveredWorkstations" label="覆盖工作站" min-width="350">
           <template #default="{ row }">
             <el-tag class="u-mr-2" v-for="ws in (Array.isArray(row.coveredWorkstations) ? row.coveredWorkstations : String(row.coveredWorkstations || '').split(',').filter(Boolean))" :key="ws" size="small">{{ ws }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="120">
+        <el-table-column label="操作" min-width="120">
           <template #default="{ row }">
             <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
           </template>
@@ -105,7 +104,6 @@
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getShiftTemplates, updateShiftTemplate } from '../api/shiftTemplates'
-import PeakHoursSection from '../components/PeakHoursSection.vue'
 import { colorAt } from '../constants/palette'
 
 const loading = ref(false)

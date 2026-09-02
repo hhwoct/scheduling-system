@@ -14,7 +14,7 @@ public interface IScheduleService
     Task<PagedResult<SchedulePlanItem>> ListPlansAsync(
         int page,
         int pageSize,
-        long storeId,
+        long? storeId,
         string? status,
         CancellationToken cancellationToken);
 

@@ -24,18 +24,7 @@
         </el-form-item>
       </el-form>
 
-      <el-divider content-position="left">周期需求概览（营业日 12:00-次日 06:00 口径）</el-divider>
-      <el-table :data="previewRows" v-loading="previewLoading" border size="small" style="max-width: 720px">
-        <el-table-column prop="label" label="日期类型" width="110" />
-        <el-table-column prop="days" label="天数" width="70" align="center" />
-        <el-table-column prop="minHours" label="最少需求（人·时）" width="150" align="center" />
-        <el-table-column prop="idealHours" label="最好需求（人·时）" width="150" align="center" />
-        <el-table-column label="峰值并发（最少/最好）" width="180" align="center">
-          <template #default="{ row }">{{ row.peakMin }} / {{ row.peakIdeal }} 人</template>
-        </el-table-column>
-      </el-table>
-
-      <el-alert class="u-mt-6"
+      <el-alert
         v-if="result"
         type="success"
         :closable="false"
@@ -63,23 +52,26 @@
     <el-card class="u-mt-6">
       <template #header>历史排班计划</template>
       <el-table :data="plans" v-loading="plansLoading" border stripe>
-        <el-table-column prop="id" label="ID" width="60" />
-        <el-table-column prop="planName" label="计划名称" />
-        <el-table-column label="周期" width="220">
-          <template #default="{ row }">{{ row.startDate }} ~ {{ row.endDate }}</template>
-        </el-table-column>
-        <el-table-column prop="employeeCount" label="员工数" width="80" />
-        <el-table-column prop="issueCount" label="问题数" width="80" />
-        <el-table-column label="状态" width="100">
+        <el-table-column label="计划名称" min-width="200" show-overflow-tooltip>
           <template #default="{ row }">
-            <el-tag :type="row.status === 'PUBLISHED' ? 'success' : 'info'">{{ row.status === 'PUBLISHED' ? '已发布' : '草稿' }}</el-tag>
+            {{ row.planName }}
+            <el-tag class="u-ml-2" size="small" :type="row.status === 'PUBLISHED' ? 'success' : 'info'">{{ row.status === 'PUBLISHED' ? '已发布' : '草稿' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="320">
+        <el-table-column label="周期" min-width="150" show-overflow-tooltip>
+          <template #default="{ row }">{{ fmtPeriod(row.startDate, row.endDate) }}</template>
+        </el-table-column>
+        <el-table-column label="概况" min-width="150" show-overflow-tooltip>
+          <template #default="{ row }">
+            <span>{{ row.employeeCount ?? '--' }} 人</span>
+            <span class="u-ml-3" :class="{ 'plan-issue-red': (row.issueCount || 0) > 0 }">{{ row.issueCount ?? 0 }} 问题</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" min-width="430">
           <template #default="{ row }">
             <el-button link type="primary" @click="goView(row.id)">查看排班</el-button>
             <el-button v-if="row.status === 'DRAFT'" link type="success" @click="handlePublish(row)">发布</el-button>
-            <el-button v-if="row.status === 'PUBLISHED'" link type="danger" @click="handleUnpublish(row)">取消发布</el-button>
+            <el-button v-else link type="danger" @click="handleUnpublish(row)">取消发布</el-button>
             <el-button v-if="row.status === 'DRAFT'" link type="primary" @click="handleCopyPrevious(row)">复制上周</el-button>
             <el-button link type="warning" @click="openAdjustments(row)">调整记录</el-button>
             <el-button link type="danger" @click="handleDelete(row)">删除</el-button>
@@ -98,24 +90,24 @@
 
     <!-- 调整记录明细（店长修改全程记录） -->
     <el-dialog v-model="adjustDialog.visible" :title="'调整记录 - ' + adjustDialog.planName" width="860px" destroy-on-close>
-      <el-table :data="adjustDialog.items" size="small" max-height="420">
-        <el-table-column label="时间" width="150">
+      <el-table :data="adjustDialog.items" size="small">
+        <el-table-column label="时间" min-width="150" show-overflow-tooltip>
           <template #default="{ row }">{{ formatAdjTime(row.createdAt) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="110">
+        <el-table-column label="操作" min-width="110">
           <template #default="{ row }">
             <el-tag :type="actionTagType(row.actionType)" size="small">{{ actionLabel(row.actionType) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="employeeNo" label="工号" width="80" />
-        <el-table-column prop="employeeName" label="员工" width="90" />
-        <el-table-column label="日期/时段" width="140">
+        <el-table-column prop="employeeNo" label="工号" min-width="80" show-overflow-tooltip />
+        <el-table-column prop="employeeName" label="员工" min-width="90" show-overflow-tooltip />
+        <el-table-column label="日期/时段" min-width="140" show-overflow-tooltip>
           <template #default="{ row }">{{ row.workDate ? String(row.workDate).slice(0, 10) : '-' }}{{ row.timeSlot ? ' ' + String(row.timeSlot).slice(0, 5) : '' }}</template>
         </el-table-column>
-        <el-table-column label="调整内容" min-width="200">
+        <el-table-column label="调整内容" min-width="200" show-overflow-tooltip>
           <template #default="{ row }">{{ describeAdjustment(row) }}</template>
         </el-table-column>
-        <el-table-column prop="operatorName" label="操作人" width="100" />
+        <el-table-column prop="operatorName" label="操作人" min-width="100" show-overflow-tooltip />
       </el-table>
       <template #footer>
         <el-pagination
@@ -137,7 +129,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { generateSchedule, getSchedules, publishSchedule, unpublishSchedule, deleteSchedule, getScheduleIssues, getAdjustmentSummary, getScheduleAdjustments, copyPreviousWeek, getDemandInsights } from '../api/schedules'
-import { getStaffingRequirementPreview } from '../api/staffingRequirements'
+
 import { getWorkstations } from '../api/workstations'
 import { getShiftTemplates } from '../api/shiftTemplates'
 
@@ -159,46 +151,7 @@ const plansLoading = ref(false)
 const page = ref(1)
 const pageSize = 10
 
-// 周期需求概览
-const previewRows = ref([])
-const previewLoading = ref(false)
-const DAY_TYPE_LABELS = { WORKDAY: '平日', WEEKEND: '周末', HOLIDAY: '节假日' }
-
-async function loadPreview() {
-  if (!startDate.value || !endDate.value) {
-    previewRows.value = []
-    return
-  }
-  previewLoading.value = true
-  try {
-    const data = await getStaffingRequirementPreview({ startDate: startDate.value, endDate: endDate.value })
-    const rows = Object.entries(data.byType || {})
-      // 周期内没有该日期类型（如无节假日）时不展示该行，避免出现一排 0
-      .filter(([, v]) => (v.days || 0) > 0)
-      .map(([type, v]) => ({
-        label: DAY_TYPE_LABELS[type] || type,
-        days: v.days,
-        minHours: v.minHours,
-        idealHours: v.idealHours,
-        peakMin: v.peakMin,
-        peakIdeal: v.peakIdeal
-      }))
-    rows.push({
-      label: '合计',
-      days: '-',
-      minHours: data.totalMinHours,
-      idealHours: data.totalIdealHours,
-      peakMin: '-',
-      peakIdeal: '-'
-    })
-    previewRows.value = rows
-  } catch {
-    previewRows.value = []
-  } finally {
-    previewLoading.value = false
-  }
-}
-
+// 周期需求概览已按需求移除(2026-09):人数需求数据改在「人数需求」页查看
 // 根据排班方式 + 参考日期计算起止
 function computeRange() {
     if (!refDate.value) return null
@@ -247,10 +200,6 @@ function refreshRange() {
 }
 
 watch([scheduleMode, refDate], refreshRange, { immediate: true })
-// 修复：watch2 需 immediate——否则 watch1(immediate) 同步执行 refreshRange 更新日期后，
-// watch2 才注册并收集依赖（初始值已是更新后的日期），首次进入页面概览永远不加载。
-watch([startDate, endDate], loadPreview, { immediate: true })
-
 async function handleGenerate() {
   if (generating.value) return
   if (!startDate.value || !endDate.value) {
@@ -275,6 +224,16 @@ async function handleGenerate() {
 
 function goToPlan(id) { goView(id) }
 function goView(id) { router.push({ path: '/schedules/view', query: { planId: id } }) }
+
+// 同年省略年份的周期显示,如 09-01 ~ 09-30
+function fmtPeriod(startDate, endDate) {
+  if (!startDate) return '--'
+  const s = String(startDate)
+  const e = String(endDate || startDate)
+  const year = s.slice(0, 4)
+  const sameYear = e.startsWith(year)
+  return sameYear ? `${s.slice(5)} ~ ${e.slice(5)}` : `${s} ~ ${e}`
+}
 
 async function loadPlans(current = 1) {
   page.value = current
@@ -588,3 +547,16 @@ async function handleDelete(row) {
 
 onMounted(() => loadPlans(1))
 </script>
+
+<style scoped>
+/* 历史计划概况:有问题时红色突出 */
+.plan-issue-red {
+  color: var(--el-color-danger);
+  font-weight: 600;
+}
+
+/* 操作列按钮不换行不省略 */
+:deep(.el-table__row td:last-child .cell) {
+  white-space: nowrap;
+}
+</style>

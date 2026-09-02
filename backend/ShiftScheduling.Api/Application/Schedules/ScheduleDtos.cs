@@ -15,7 +15,9 @@ public sealed record SchedulePlanItem(
     DateTime? PublishedAt,
     DateTime CreatedAt,
     int EmployeeCount,
-    int IssueCount);
+    int IssueCount,
+    string Source = "ALGO",
+    string? StoreName = null);
 
 public sealed record GenerateScheduleResult(
     long PlanId,

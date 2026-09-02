@@ -13,31 +13,31 @@
         </div>
       </template>
 
-      <el-table :data="list" v-loading="loading" border stripe>
-        <el-table-column prop="id" label="ID" width="60" />
-        <el-table-column label="申请人" width="160">
+      <el-table :data="list" v-loading="loading" border stripe :cell-style="{ textAlign: 'center' }" :header-cell-style="{ textAlign: 'center', whiteSpace: 'nowrap' }">
+        <el-table-column prop="id" label="ID" min-width="60" show-overflow-tooltip />
+        <el-table-column label="申请人" min-width="130" show-overflow-tooltip>
           <template #default="{ row }">{{ row.requester?.name || '--' }}（{{ row.requester?.employeeNo || '--' }}）</template>
         </el-table-column>
-        <el-table-column label="申请人部门" width="100">
+        <el-table-column label="申请人部门" min-width="100" show-overflow-tooltip>
           <template #default="{ row }">{{ row.requester?.department || '--' }}</template>
         </el-table-column>
-        <el-table-column label="换班对象" width="160">
+        <el-table-column label="换班对象" min-width="130" show-overflow-tooltip>
           <template #default="{ row }">{{ row.target?.name || '--' }}（{{ row.target?.employeeNo || '--' }}）</template>
         </el-table-column>
-        <el-table-column label="对象部门" width="100">
+        <el-table-column label="对象部门" min-width="100" show-overflow-tooltip>
           <template #default="{ row }">{{ row.target?.department || '--' }}</template>
         </el-table-column>
-        <el-table-column prop="swapDate" label="换班日期" width="120" />
-        <el-table-column prop="reason" label="原因" min-width="140" />
-        <el-table-column label="状态" width="90">
+        <el-table-column prop="swapDate" label="换班日期" min-width="120" show-overflow-tooltip />
+        <el-table-column prop="reason" label="原因" min-width="120" show-overflow-tooltip />
+        <el-table-column label="状态" min-width="80" show-overflow-tooltip>
           <template #default="{ row }">
             <el-tag :type="statusType(row.status)" size="small">{{ statusName(row.status) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="审批意见" min-width="110">
+        <el-table-column label="审批意见" min-width="100" show-overflow-tooltip>
           <template #default="{ row }">{{ row.reviewRemark || '--' }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="150">
+        <el-table-column label="操作" min-width="150">
           <template #default="{ row }">
             <template v-if="row.status === 'PENDING'">
               <el-button link type="success" @click="handleReview(row, true)">批准</el-button>
@@ -100,3 +100,10 @@ async function handleReview(row, approved) {
 
 onMounted(loadData)
 </script>
+
+<style scoped>
+/* 表头强制单行(如「申请人部门」五字不换行) */
+:deep(.el-table__header .cell) {
+  white-space: nowrap;
+}
+</style>

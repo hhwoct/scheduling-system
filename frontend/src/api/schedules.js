@@ -57,6 +57,11 @@ export function getScheduleIssues(planId) {
   return request.get(API_ROUTES.SCHEDULES.ISSUES(planId)).then(res => res.data)
 }
 
+// 真实班表 vs 算法排班对比（长沙滚滚：验证算法贴合度）
+export function compareSchedule(algoPlanId, realPlanId) {
+  return request.get(API_ROUTES.SCHEDULES.COMPARE, { params: { algoPlanId, realPlanId } }).then(res => res.data)
+}
+
 export function deleteSchedule(planId) {
   return request.delete(API_ROUTES.SCHEDULES.DETAIL(planId)).then(res => res.data)
 }

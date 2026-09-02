@@ -22,13 +22,23 @@
 
       <el-alert v-if="errorMsg" :title="errorMsg" type="warning" closable @close="errorMsg=''" />
 
+      <div v-if="isSystemAdmin" class="u-row u-gap-3 u-mb-4">
+        <span class="u-text-sm">门店</span>
+        <el-select v-model="storeFilterId" placeholder="全部门店" clearable size="small" style="width: 180px" @change="onStoreFilterChange">
+          <el-option v-for="s in storeOptions" :key="s.id" :label="s.name" :value="s.id" />
+        </el-select>
+      </div>
+
       <el-table class="u-mb-6" ref="plansTableRef" :data="plans" v-loading="plansLoading" border stripe size="small" highlight-current-row @current-change="selectPlan">
-        <el-table-column prop="id" label="ID" width="60" />
-        <el-table-column prop="planName" label="计划名称" />
-        <el-table-column label="周期" width="200">
+        <el-table-column prop="id" label="ID" min-width="60" show-overflow-tooltip />
+        <el-table-column v-if="isSystemAdmin" prop="storeName" label="门店" min-width="130" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.storeName || '--' }}</template>
+        </el-table-column>
+        <el-table-column prop="planName" label="计划名称" show-overflow-tooltip />
+        <el-table-column label="周期" min-width="200" show-overflow-tooltip>
           <template #default="{ row }">{{ row.startDate }} ~ {{ row.endDate }}</template>
         </el-table-column>
-        <el-table-column label="状态" width="100">
+        <el-table-column label="状态" min-width="100" show-overflow-tooltip>
           <template #default="{ row }">
             <el-tag :type="row.status === 'PUBLISHED' ? 'success' : 'info'">{{ row.status === 'PUBLISHED' ? '已发布' : '草稿' }}</el-tag>
           </template>
@@ -239,12 +249,12 @@
             </el-card>
           </el-col>
         </el-row>
-        <el-table :data="filteredIssues" border stripe size="small" max-height="400">
-          <el-table-column prop="workDate" label="日期" width="110" />
-          <el-table-column label="时段" width="90"><template #default="{ row }">{{ row.timeSlot ? String(row.timeSlot).substring(0, 5) : '整周期' }}</template></el-table-column>
-          <el-table-column prop="workstationName" label="工作站" width="120"><template #default="{ row }">{{ row.workstationName || '--' }}</template></el-table-column>
-          <el-table-column label="类型" width="110"><template #default="{ row }"><el-tag v-if="row.issueType === 'STAFFING_GAP'" type="danger" size="small">岗位缺口</el-tag><el-tag v-else-if="row.issueType === 'SKILL_MISMATCH'" type="warning" size="small">技能不匹配</el-tag><el-tag v-else-if="row.issueType === 'OVERTIME'" type="info" size="small">工时超限</el-tag><el-tag v-else-if="row.issueType === 'CONSECUTIVE_WORK'" type="info" size="small">连续工作超限</el-tag><el-tag v-else-if="row.issueType === 'BREAK_BORROW_INEXPERIENCED'" type="info" size="small">不熟练顶岗</el-tag><el-tag v-else-if="row.issueType === 'MIN_DAILY_HOURS'" type="warning" size="small">每日工时不足</el-tag><el-tag v-else size="small">{{ row.issueType }}</el-tag></template></el-table-column>
-          <el-table-column prop="severity" label="严重度" width="80"><template #default="{ row }"><el-tag :type="row.severity === 'ERROR' ? 'danger' : (row.severity === 'INFO' ? 'info' : 'warning')" size="small">{{ row.severity === 'ERROR' ? '错误' : (row.severity === 'INFO' ? '提示' : '警告') }}</el-tag></template></el-table-column>
+        <el-table :data="filteredIssues" border stripe size="small">
+          <el-table-column prop="workDate" label="日期" min-width="110" show-overflow-tooltip />
+          <el-table-column label="时段" min-width="90" show-overflow-tooltip><template #default="{ row }">{{ row.timeSlot ? String(row.timeSlot).substring(0, 5) : '整周期' }}</template></el-table-column>
+          <el-table-column prop="workstationName" label="工作站" min-width="120" show-overflow-tooltip><template #default="{ row }">{{ row.workstationName || '--' }}</template></el-table-column>
+          <el-table-column label="类型" min-width="110" show-overflow-tooltip><template #default="{ row }"><el-tag v-if="row.issueType === 'STAFFING_GAP'" type="danger" size="small">岗位缺口</el-tag><el-tag v-else-if="row.issueType === 'SKILL_MISMATCH'" type="warning" size="small">技能不匹配</el-tag><el-tag v-else-if="row.issueType === 'OVERTIME'" type="info" size="small">工时超限</el-tag><el-tag v-else-if="row.issueType === 'CONSECUTIVE_WORK'" type="info" size="small">连续工作超限</el-tag><el-tag v-else-if="row.issueType === 'BREAK_BORROW_INEXPERIENCED'" type="info" size="small">不熟练顶岗</el-tag><el-tag v-else-if="row.issueType === 'MIN_DAILY_HOURS'" type="warning" size="small">每日工时不足</el-tag><el-tag v-else size="small">{{ row.issueType }}</el-tag></template></el-table-column>
+          <el-table-column prop="severity" label="严重度" min-width="80" show-overflow-tooltip><template #default="{ row }"><el-tag :type="row.severity === 'ERROR' ? 'danger' : (row.severity === 'INFO' ? 'info' : 'warning')" size="small">{{ row.severity === 'ERROR' ? '错误' : (row.severity === 'INFO' ? '提示' : '警告') }}</el-tag></template></el-table-column>
           <el-table-column prop="description" label="说明" min-width="280" show-overflow-tooltip />
         </el-table>
       </div>
@@ -333,6 +343,29 @@ import { getPreferenceMatrix } from '../api/preferences'
 import { getWorkstations } from '../api/workstations'
 import { SEVERITY_COLORS, FALLBACK_COLOR, CHART_INK } from '../constants/palette'
 import { Close, MoreFilled, WarningFilled } from '@element-plus/icons-vue'
+import { getStores } from '../api/store'
+
+// 超管(用户名 admin)可按门店筛选排班计划
+const isSystemAdmin = computed(() => localStorage.getItem('shift_username') === 'admin')
+const storeOptions = ref([])
+const storeFilterId = ref(null)
+
+async function loadStores() {
+  if (!isSystemAdmin.value) return
+  try {
+    storeOptions.value = await getStores()
+  } catch {
+    storeOptions.value = []
+  }
+}
+
+function onStoreFilterChange() {
+  // 切换门店:清掉旧计划选中状态,重新拉计划
+  planId.value = ''
+  currentPlan.value = null
+  plansTableRef.value?.setCurrentRow()
+  loadPlans()
+}
 
 const route = useRoute()
 const planId = ref(route.query.planId || '')
@@ -620,7 +653,6 @@ function onChipDblClick(emp, slot) {
 function updateDragGhost(clientX, clientY) {
   const matrixEl = dragMove.matrixEl
   if (!matrixEl) return
-  const rows = matrixEl.querySelectorAll('.m-row:not(.m-header)')
   let rowIdx = -1
   rows.forEach((row, i) => {
     const rect = row.getBoundingClientRect()
@@ -1760,7 +1792,7 @@ function selectPlan(row) {
 async function loadPlans() {
   plansLoading.value = true
   try {
-    const res = await getSchedules({ page: 1, pageSize: 100 })
+    const res = await getSchedules({ page: 1, pageSize: 100, storeId: storeFilterId.value || undefined })
     plans.value = res.items || []
     // 自动选中当前 planId 对应的排班方案：高亮表格行并记录其周期范围
     if (planId.value) {
@@ -1873,6 +1905,7 @@ watch(rationalityData, () => {
 })
 
 onMounted(() => {
+  loadStores()
   loadPlans()
   loadPreferenceMap() // P2：偏好匹配角标数据
   if (planId.value) loadAll()
@@ -1931,14 +1964,16 @@ onBeforeUnmount(() => {
 .cal-parttime { font-size: var(--app-font-sm); color: var(--el-color-success); }
 .cal-rest { font-size: var(--app-font-sm); color: var(--el-color-danger); }
 .cal-shift { font-size: var(--app-font-xs); color: var(--el-text-color-secondary); margin-top: var(--app-space-2); }
-.matrix-wrap { overflow: auto; max-height: 560px; position: relative; }
+.matrix-wrap { overflow-x: auto; overflow-y: hidden; position: relative; }
 .matrix { border: 1px solid var(--el-border-color-lighter); border-radius: var(--app-radius-sm); }
-.m-row { display: flex; border-bottom: 1px solid var(--el-border-color-lighter); }
+.m-row { display: flex; border-bottom: 2px solid var(--el-border-color-light); }
 .m-row:last-child { border-bottom: none; }
+/* 不同工作站的排班行之间留出间距,视觉上分组 */
+.m-row:not(.m-header) { margin-top: var(--app-space-3); }
 .m-header { background: var(--el-fill-color-light); font-weight: 600; position: sticky; top: 0; z-index: 4; }
-.m-ws-col { width: 130px; flex-shrink: 0; padding: var(--app-space-3) var(--app-space-4); border-right: 1px solid var(--el-border-color-lighter); display: flex; align-items: center; position: sticky; left: 0; background: var(--el-bg-color); z-index: 3; }
+.m-ws-col { width: 75px; flex-shrink: 0; padding: var(--app-space-3) var(--app-space-4); border-right: 1px solid var(--el-border-color-lighter); display: flex; align-items: center; position: sticky; left: 0; background: var(--el-bg-color); z-index: 3; }
 .m-header .m-ws-col { background: var(--el-fill-color-light); z-index: 5; }
-.m-slot-col { width: 72px; min-height: 48px; flex-shrink: 0; padding: var(--app-space-1) var(--app-space-2); border-right: 1px solid var(--el-fill-color-light); font-size: var(--app-font-xs); text-align: center; position: relative; }
+.m-slot-col { width: 72px; min-width: 72px; min-height: 48px; padding: var(--app-space-1) var(--app-space-2); border-right: 1px solid var(--el-fill-color-light); font-size: var(--app-font-xs); text-align: center; position: relative; }
 .m-slot-col:last-child { border-right: none; }
 /* P3 空位加人：空格子可点击，悬停显示 + 提示；滑动选择多时段 */
 .m-slot-col.is-empty { cursor: pointer; }
@@ -1956,7 +1991,7 @@ onBeforeUnmount(() => {
 .has-gap-low-skill { box-shadow: inset 0 0 0 2px var(--el-color-success); background: var(--el-color-success-light-9); }
 .gap-flag { position: absolute; top: 1px; right: 1px; background: var(--el-color-danger); color: var(--el-color-white); font-size: var(--app-font-micro); border-radius: var(--app-radius-sm); padding: 0 var(--app-space-2); line-height: 14px; }
 .gap-flag-low { background: var(--el-color-success); }
-.emp-chip { background: var(--el-color-primary); color: var(--el-color-white); border-radius: var(--app-radius-sm); padding: var(--app-space-1) var(--app-space-2); margin-bottom: var(--app-space-1); font-size: var(--app-font-xs); }
+.emp-chip { background: var(--el-color-primary); color: var(--el-color-white); border-radius: var(--app-radius-sm); padding: var(--app-space-1) var(--app-space-2); margin-bottom: var(--app-space-1); font-size: var(--app-font-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .emp-chip .emp-name { font-weight: 600; }
 /* P2：偏好匹配角标——与店长历史偏好一致的色块显示绿点 */
 .pref-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--el-color-success); margin-left: var(--app-space-2); vertical-align: middle; box-shadow: 0 0 0 1px var(--el-color-white); }

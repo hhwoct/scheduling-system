@@ -6,29 +6,10 @@
         :default-active="$route.path"
         @select="handleMenuSelect"
       >
-        <!-- 长沙滚滚（store_id=2）：精简菜单 排班明细 + 审批 -->
-        <template v-if="isCsgg && authStore.role !== 'EMPLOYEE'">
-          <el-menu-item index="/schedules/detail">
-            <el-icon><Calendar /></el-icon>
-            <span>排班明细</span>
-          </el-menu-item>
-          <el-menu-item v-if="isCsggManager" index="/leave-review">
-            <el-icon><Stamp /></el-icon>
-            <span>请假审批</span>
-          </el-menu-item>
-          <el-menu-item v-if="isCsggManager" index="/swap-review">
-            <el-icon><Switch /></el-icon>
-            <span>换班审批</span>
-          </el-menu-item>
-          <el-menu-item index="/notifications">
-            <el-icon><Bell /></el-icon>
-            <span>通知消息</span>
-          </el-menu-item>
-        </template>
-        <!-- 其他门店：admin 扁平菜单 / 店长分组菜单 -->
-        <template v-else-if="authStore.role !== 'EMPLOYEE'">
+        <!-- 所有门店统一:admin 扁平菜单 / 店长分组菜单 -->
+        <template v-if="authStore.role !== 'EMPLOYEE'">
           <!-- admin：页面不多，不再分组 -->
-          <template v-if="authStore.role !== 'STORE_MANAGER'">
+          <template v-if="!isStoreManager">
             <el-menu-item index="/dashboard">
               <el-icon><DataBoard /></el-icon>
               <span>首页概览</span>
@@ -52,10 +33,6 @@
             <el-menu-item v-if="authStore.username === SUPER_ADMIN_USERNAME" index="/audit-logs">
               <el-icon><Document /></el-icon>
               <span>审计日志</span>
-            </el-menu-item>
-            <el-menu-item index="/preferences">
-              <el-icon><DataAnalysis /></el-icon>
-              <span>偏好学习</span>
             </el-menu-item>
           </template>
           <!-- 店长：功能多，保留分组 -->
@@ -82,9 +59,8 @@
               <el-menu-item index="/schedules/generate">一键排班</el-menu-item>
               <el-menu-item index="/schedules/view">排班查看</el-menu-item>
               <el-menu-item index="/reports">排班报表</el-menu-item>
-              <el-menu-item index="/preferences">偏好学习</el-menu-item>
-              <el-menu-item v-if="authStore.username === STORE_MANAGER_USERNAME" index="/leave-review">请假审批</el-menu-item>
-              <el-menu-item v-if="authStore.username === STORE_MANAGER_USERNAME" index="/swap-review">换班审批</el-menu-item>
+              <el-menu-item v-if="isStoreManager" index="/leave-review">请假审批</el-menu-item>
+              <el-menu-item v-if="isStoreManager" index="/swap-review">换班审批</el-menu-item>
             </el-sub-menu>
           </template>
         </template>
@@ -137,7 +113,7 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { ArrowDown, Bell, Calendar, DataAnalysis, DataBoard, Document, Expand, Fold, Setting, Stamp, Switch, User, View } from '@element-plus/icons-vue'
+import { ArrowDown, Calendar, DataBoard, Document, Expand, Fold, Setting, User, View } from '@element-plus/icons-vue'
 import { ElMessageBox } from 'element-plus'
 import { useAuthStore } from '../stores/auth'
 import { SUPER_ADMIN_USERNAME, STORE_MANAGER_USERNAME } from '../constants/config'
@@ -147,9 +123,9 @@ import NotificationsPanel from '../components/NotificationsPanel.vue'
 const router = useRouter()
 const authStore = useAuthStore()
 
-// 长沙滚滚（store_id=2）：精简菜单；店长账号 A001 才能看到审批入口
-const isCsgg = computed(() => authStore.storeId === '2')
-const isCsggManager = computed(() => isCsgg.value && authStore.username === 'A001')
+// 店长判定:按「角色或店长用户名」双条件
+// (E001/A001 的数据库角色可能是 SYSTEM_ADMIN,按角色判定会失效)
+const isStoreManager = computed(() => authStore.role === 'STORE_MANAGER' || authStore.username === STORE_MANAGER_USERNAME || authStore.username === 'A001')
 
 // 侧边栏收起状态：本地持久化，刷新后保持
 const collapsed = ref(localStorage.getItem('sidebar-collapsed') === '1')
@@ -168,7 +144,8 @@ onMounted(async () => {
 // 管理员进入员工端时默认选择第一个员工（昆明 E001 / 长沙 A002）预览
 function handleMenuSelect(index) {
   if (index === '/employee/schedule') {
-    router.push({ path: index, query: { employeeNo: isCsgg.value ? 'A002' : 'E001' } })
+    // 预览员工端:各门店店长默认看自己门店第一个全职员工
+    router.push({ path: index, query: { employeeNo: authStore.storeId === '2' ? 'A002' : 'E001' } })
   } else {
     router.push(index)
   }
@@ -322,8 +299,5 @@ async function handleCommand(command) {
   margin: 0 auto;
   width: 100%;
 }
-.main-content :deep(.el-table__body-wrapper) {
-  max-height: calc(100vh - 240px);
-  overflow-y: auto;
-}
+/* 表格不再限高:内容多长表格多长,整页滚动,避免表格内嵌套滚动条 */
 </style>

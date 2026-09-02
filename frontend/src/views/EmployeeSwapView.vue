@@ -36,22 +36,22 @@
     <el-card class="u-mt-6">
       <template #header>我的换班记录</template>
       <el-table :data="mine" v-loading="loading" border stripe size="small">
-        <el-table-column prop="id" label="ID" width="60" />
-        <el-table-column label="换班日期" width="120">
+        <el-table-column prop="id" label="ID" min-width="60" show-overflow-tooltip />
+        <el-table-column label="换班日期" min-width="120" show-overflow-tooltip>
           <template #default="{ row }">{{ row.swapDate }}</template>
         </el-table-column>
-        <el-table-column label="换班对象" width="200">
+        <el-table-column label="换班对象" min-width="140" show-overflow-tooltip>
           <template #default="{ row }">
             我 ↔ {{ row.target?.name || '--' }}（{{ row.target?.department || '--' }}）
           </template>
         </el-table-column>
-        <el-table-column prop="reason" label="原因" min-width="150" />
-        <el-table-column label="状态" width="90">
+        <el-table-column prop="reason" label="原因" min-width="120" show-overflow-tooltip />
+        <el-table-column label="状态" min-width="80" show-overflow-tooltip>
           <template #default="{ row }">
             <el-tag :type="statusType(row.status)" size="small">{{ statusName(row.status) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="审批意见" min-width="120">
+        <el-table-column label="审批意见" min-width="110" show-overflow-tooltip>
           <template #default="{ row }">{{ row.reviewRemark || '--' }}</template>
         </el-table-column>
       </el-table>

@@ -29,14 +29,14 @@
     <el-card class="section" v-if="trends.length">
       <template #header>贴合率趋势（每期已发布排班）</template>
       <el-table :data="trends" size="small">
-        <el-table-column prop="planName" label="排班计划" min-width="220" />
-        <el-table-column label="发布时间" width="160">
+        <el-table-column prop="planName" label="排班计划" min-width="220" show-overflow-tooltip />
+        <el-table-column label="发布时间" min-width="160" show-overflow-tooltip>
           <template #default="{ row }">{{ formatTime(row.publishedAt) }}</template>
         </el-table-column>
-        <el-table-column prop="adherencePct" label="贴合率" width="100"><template #default="{ row }">{{ row.adherencePct }}%</template></el-table-column>
-        <el-table-column prop="coveragePct" label="覆盖率" width="100"><template #default="{ row }">{{ row.coveragePct }}%</template></el-table-column>
-        <el-table-column prop="sampleDays" label="学习样本" width="100" />
-        <el-table-column prop="adjustments" label="店长调整数" width="100"><template #default="{ row }">{{ row.adjustments ?? '-' }}</template></el-table-column>
+        <el-table-column prop="adherencePct" label="贴合率" min-width="100" show-overflow-tooltip><template #default="{ row }">{{ row.adherencePct }}%</template></el-table-column>
+        <el-table-column prop="coveragePct" label="覆盖率" min-width="100" show-overflow-tooltip><template #default="{ row }">{{ row.coveragePct }}%</template></el-table-column>
+        <el-table-column prop="sampleDays" label="学习样本" min-width="100" show-overflow-tooltip />
+        <el-table-column prop="adjustments" label="店长调整数" min-width="100" show-overflow-tooltip><template #default="{ row }">{{ row.adjustments ?? '-' }}</template></el-table-column>
       </el-table>
       <div class="weight-tip">店长调整数 = 发布时与生成时「员工×日期」安排不一致的条数；随学习生效应逐步下降。</div>
     </el-card>
@@ -44,16 +44,16 @@
     <!-- Top 偏好 -->
     <el-card class="section">
       <template #header>Top 偏好（店长认可最多的安排）</template>
-      <el-table :data="top" size="small" max-height="360">
-        <el-table-column prop="employeeNo" label="工号" width="80" />
-        <el-table-column prop="employeeName" label="姓名" width="90" />
-        <el-table-column label="日期类型" width="90">
+      <el-table :data="top" size="small">
+        <el-table-column prop="employeeNo" label="工号" min-width="80" show-overflow-tooltip />
+        <el-table-column prop="employeeName" label="姓名" min-width="90" show-overflow-tooltip />
+        <el-table-column label="日期类型" min-width="90" show-overflow-tooltip>
           <template #default="{ row }">{{ dayTypeLabel(row.dayType) }}</template>
         </el-table-column>
-        <el-table-column label="偏好安排" min-width="160">
+        <el-table-column label="偏好安排" min-width="160" show-overflow-tooltip>
           <template #default="{ row }">{{ row.shiftCode ? row.shiftCode + ' 班次' : (row.freq >= 0 ? '工作站/休息' : '') }}</template>
         </el-table-column>
-        <el-table-column prop="freq" label="认可次数" width="90" />
+        <el-table-column prop="freq" label="认可次数" min-width="90" show-overflow-tooltip />
       </el-table>
     </el-card>
 
@@ -70,14 +70,14 @@
           </el-select>
         </div>
       </template>
-      <el-table :data="matrix" size="small" max-height="420">
-        <el-table-column prop="employeeNo" label="工号" width="80" />
-        <el-table-column prop="employeeName" label="姓名" width="90" />
-        <el-table-column prop="workstationCode" label="工作站" min-width="110" />
-        <el-table-column label="日期类型" width="90">
+      <el-table :data="matrix" size="small">
+        <el-table-column prop="employeeNo" label="工号" min-width="80" show-overflow-tooltip />
+        <el-table-column prop="employeeName" label="姓名" min-width="90" show-overflow-tooltip />
+        <el-table-column prop="workstationCode" label="工作站" min-width="110" show-overflow-tooltip />
+        <el-table-column label="日期类型" min-width="90" show-overflow-tooltip>
           <template #default="{ row }">{{ dayTypeLabel(row.dayType) }}</template>
         </el-table-column>
-        <el-table-column label="认可频次" width="140">
+        <el-table-column label="认可频次" min-width="140" show-overflow-tooltip>
           <template #default="{ row }">
             <el-progress :percentage="Math.min(row.freq, 100)" :stroke-width="12" :format="() => row.freq + ' 次'" />
           </template>

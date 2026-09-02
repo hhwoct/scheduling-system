@@ -14,6 +14,9 @@ public sealed class SchedulePlanEntity
 
     public string Status { get; set; } = "DRAFT";
 
+    /// <summary>计划来源：ALGO=算法生成（默认）；REAL=外部导入的真实班表，仅作为算法对比基线，不参与生成冲突判定。</summary>
+    public string Source { get; set; } = "ALGO";
+
     public long? CreatedBy { get; set; }
 
     public DateTime? PublishedAt { get; set; }

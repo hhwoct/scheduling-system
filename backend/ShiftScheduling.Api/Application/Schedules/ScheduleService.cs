@@ -58,7 +58,7 @@ public sealed class ScheduleService : IScheduleService
         // 若存在 DRAFT 草稿计划，则重新生成时在同一事务内级联替换（使算法更新可重新应用）。
         var existingPlan = await _dbContext.SchedulePlans
             .AsNoTracking()
-            .FirstOrDefaultAsync(x => x.StoreId == storeId && x.StartDate == request.StartDate && x.EndDate == request.EndDate, cancellationToken);
+            .FirstOrDefaultAsync(x => x.StoreId == storeId && x.StartDate == request.StartDate && x.EndDate == request.EndDate && x.Source != "REAL", cancellationToken);
         if (existingPlan is not null && existingPlan.Status == "PUBLISHED")
         {
             throw new BusinessException("该排班周期已存在已发布的排班计划，请勿重复生成", "DUPLICATE_SCHEDULE_PLAN");
@@ -109,6 +109,7 @@ public sealed class ScheduleService : IScheduleService
             StartDate = request.StartDate,
             EndDate = request.EndDate,
             Status = "DRAFT",
+            Source = "ALGO",
             CreatedBy = operatorUserId,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow,
@@ -247,13 +248,19 @@ public sealed class ScheduleService : IScheduleService
     public async Task<PagedResult<SchedulePlanItem>> ListPlansAsync(
         int page,
         int pageSize,
-        long storeId,
+        long? storeId,
         string? status,
         CancellationToken cancellationToken)
     {
         var query = _dbContext.SchedulePlans
             .AsNoTracking()
-            .Where(x => x.StoreId == storeId);
+            .Where(x => true);
+
+        // storeId 为 null 表示跨全部门店(超管)
+        if (storeId.HasValue)
+        {
+            query = query.Where(x => x.StoreId == storeId.Value);
+        }
 
         if (!string.IsNullOrWhiteSpace(status))
         {
@@ -284,6 +291,12 @@ public sealed class ScheduleService : IScheduleService
             .Select(g => new { PlanId = g.Key, Count = g.Count() })
             .ToDictionaryAsync(x => x.PlanId, x => x.Count, cancellationToken);
 
+        var storeIds = plans.Select(p => p.StoreId).Distinct().ToList();
+        var storeNames = await _dbContext.Stores
+            .AsNoTracking()
+            .Where(s => storeIds.Contains(s.Id))
+            .ToDictionaryAsync(s => s.Id, s => s.Name, cancellationToken);
+
         var items = plans.Select(p => new SchedulePlanItem(
             p.Id,
             p.PlanName,
@@ -294,7 +307,9 @@ public sealed class ScheduleService : IScheduleService
             p.PublishedAt,
             p.CreatedAt,
             employeeCounts.GetValueOrDefault(p.Id),
-            issueCounts.GetValueOrDefault(p.Id))).ToList();
+            issueCounts.GetValueOrDefault(p.Id),
+            p.Source,
+            storeNames.GetValueOrDefault(p.StoreId))).ToList();
 
         return PagedResult<SchedulePlanItem>.Create(page, pageSize, total, items);
     }

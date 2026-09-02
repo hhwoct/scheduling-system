@@ -268,8 +268,5 @@ async function handleCommand(command) {
   margin: 0 auto;
   width: 100%;
 }
-.emp-content :deep(.el-table__body-wrapper) {
-  max-height: calc(100vh - 240px);
-  overflow-y: auto;
-}
+/* 表格不再限高:内容多长表格多长,整页滚动,避免表格内嵌套滚动条 */
 </style>

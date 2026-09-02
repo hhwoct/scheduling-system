@@ -1,5 +1,5 @@
 <template>
-  <div>
+  <div class="page">
     <el-card>
       <template #header>
         <div class="u-row-between">
@@ -13,30 +13,30 @@
         </div>
       </template>
 
-      <el-table :data="list" v-loading="loading" border stripe>
-        <el-table-column prop="id" label="ID" width="60" />
-        <el-table-column label="员工" width="160">
+      <el-table :data="list" v-loading="loading" border stripe size="small" style="width: 1040px; max-width: 100%" :cell-style="{ textAlign: 'center' }" :header-cell-style="{ textAlign: 'center', whiteSpace: 'nowrap' }">
+        <el-table-column prop="id" label="ID" min-width="50" show-overflow-tooltip />
+        <el-table-column label="员工" min-width="130" show-overflow-tooltip>
           <template #default="{ row }">{{ row.employee?.name || '--' }}（{{ row.employee?.employeeNo || '--' }}）</template>
         </el-table-column>
-        <el-table-column prop="employee" label="部门" width="100">
+        <el-table-column prop="employee" label="部门" min-width="70" show-overflow-tooltip>
           <template #default="{ row }">{{ row.employee?.department || '--' }}</template>
         </el-table-column>
-        <el-table-column label="类型" width="90">
+        <el-table-column label="类型" min-width="70" show-overflow-tooltip>
           <template #default="{ row }">{{ typeName(row.leaveType) }}</template>
         </el-table-column>
-        <el-table-column label="期间" width="400">
-          <template #default="{ row }">{{ row.startDate }} ~ {{ row.endDate }}</template>
+        <el-table-column label="期间" min-width="130" show-overflow-tooltip>
+          <template #default="{ row }">{{ fmtPeriod(row.startDate, row.endDate) }}</template>
         </el-table-column>
-        <el-table-column prop="reason" label="原因" min-width="140" />
-        <el-table-column label="状态" width="90">
+        <el-table-column prop="reason" label="原因" min-width="160" show-overflow-tooltip />
+        <el-table-column label="状态" min-width="80" show-overflow-tooltip>
           <template #default="{ row }">
             <el-tag :type="statusType(row.status)" size="small">{{ statusName(row.status) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="审批意见" min-width="110">
+        <el-table-column label="审批意见" min-width="120" show-overflow-tooltip>
           <template #default="{ row }">{{ row.reviewRemark || '--' }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="150">
+        <el-table-column label="操作" min-width="130">
           <template #default="{ row }">
             <template v-if="row.status === 'PENDING'">
               <el-button link type="success" @click="handleReview(row, true)">批准</el-button>
@@ -57,6 +57,15 @@ import { getLeaveReviewList, reviewLeave } from '../api/leave'
 const list = ref([])
 const loading = ref(false)
 const statusFilter = ref('')
+
+// 同年省略年份,如 09-01 ~ 09-03;跨年显示完整日期
+function fmtPeriod(startDate, endDate) {
+  if (!startDate) return '--'
+  const s = String(startDate)
+  const e = String(endDate || startDate)
+  const year = s.slice(0, 4)
+  return e.startsWith(year) ? `${s.slice(5)} ~ ${e.slice(5)}` : `${s} ~ ${e}`
+}
 
 function typeName(t) {
   return { PERSONAL: '事假', SICK: '病假', ANNUAL: '年假', OTHER: '其他' }[t] || t

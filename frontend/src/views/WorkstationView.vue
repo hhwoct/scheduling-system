@@ -6,22 +6,22 @@
         <el-button @click="loadData">刷新</el-button>
       </div>
       <el-table :data="list" v-loading="loading" border stripe>
-        <el-table-column prop="code" label="编码" min-width="140" show-overflow-tooltip />
-        <el-table-column prop="name" label="名称" min-width="120" />
-        <el-table-column prop="sortOrder" label="排序" width="80" />
-        <el-table-column label="低技能" width="90">
+        <el-table-column prop="code" label="编码" min-width="110" show-overflow-tooltip />
+        <el-table-column prop="name" label="名称" min-width="110" show-overflow-tooltip />
+        <el-table-column prop="sortOrder" label="排序" min-width="70" show-overflow-tooltip />
+        <el-table-column label="低技能" min-width="90" show-overflow-tooltip>
           <template #default="{ row }">
             <el-tag v-if="row.isLowSkill === 1" type="success" size="small">可兼职</el-tag>
             <el-tag v-else type="info" size="small">否</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="remark" label="备注" />
-        <el-table-column label="状态" width="100">
+        <el-table-column prop="remark" label="备注" min-width="120" show-overflow-tooltip />
+        <el-table-column label="状态" min-width="80" show-overflow-tooltip>
           <template #default="{ row }">
             <el-tag :type="row.status === 1 ? 'success' : 'info'">{{ row.status === 1 ? '启用' : '停用' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="120">
+        <el-table-column label="操作" min-width="120">
           <template #default="{ row }">
             <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
           </template>

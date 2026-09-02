@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using ShiftScheduling.Api.Algorithm.Steps;
+using ShiftScheduling.Api.Application.RuleConfigs;
 using ShiftScheduling.Api.Infrastructure.Persistence;
 
 namespace ShiftScheduling.Api.Algorithm;
@@ -301,10 +302,7 @@ public sealed class SchedulingEngine
             .OrderBy(x => x.StartTime)
             .ToList();
 
-        var rules = await _dbContext.RuleConfigs
-            .AsNoTracking()
-            .Where(x => x.StoreId == storeId && x.Status == 1)
-            .ToDictionaryAsync(x => x.RuleKey, x => x.RuleValue, cancellationToken);
+        var rules = await RuleConfigQuery.GetEffectiveAsync(_dbContext, storeId, cancellationToken);
 
         var defaultMonthlyRestDays = GetRuleInt(rules, "default_monthly_rest_days", 4);
         var maxConsecutiveWorkDays = GetRuleInt(rules, "max_consecutive_work_days", 6);

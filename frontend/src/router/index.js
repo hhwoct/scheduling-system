@@ -106,6 +106,13 @@ const routes = [
         meta: { title: '排班查看' }
       },
       {
+        // 长沙滚滚专用：排班明细（周/整月/日明细 + 生成重排 + 真实vs算法对比）
+        path: 'schedules/detail',
+        name: 'ScheduleDetail',
+        component: () => import('../views/ScheduleDetailView.vue'),
+        meta: { title: '排班明细', csggOnly: true }
+      },
+      {
         path: 'reports',
         name: 'Reports',
         component: () => import('../views/ReportView.vue'),
@@ -117,12 +124,8 @@ const routes = [
         component: () => import('../views/AuditLogView.vue'),
         meta: { title: '审计日志', adminOnly: true }
       },
-      {
-        path: 'preferences',
-        name: 'Preferences',
-        component: () => import('../views/PreferencesView.vue'),
-        meta: { title: '偏好学习' }
-      },
+      // 偏好学习页面对所有人隐藏(功能保留:偏好矩阵仍在排班查看页
+      // 通过 api/preferences 使用),页面文件 PreferencesView.vue 未删除
       {
         path: 'leave-review',
         name: 'LeaveReview',
@@ -174,7 +177,8 @@ router.beforeEach((to) => {
 
   // 已登录访问登录页 -> 按角色跳
   if (to.path === '/login' && token) {
-    return role === 'EMPLOYEE' ? { path: '/employee' } : { path: '/' }
+    if (role === 'EMPLOYEE') return { path: '/employee' }
+    return { path: '/' }
   }
 
   // 员工只允许访问员工端
@@ -197,11 +201,11 @@ router.beforeEach((to) => {
     }
   }
 
-  // 仅店长账号可访问的页面（请假/换班审批）：按用户名判定（店长账号由 STORE_MANAGER_USERNAME 配置），
-  // 与角色无关——张店长 E001 虽是 SYSTEM_ADMIN 角色，但作为店长可访问，而 admin 等其他账号不可访问。
+  // 仅店长账号可访问的页面（请假/换班审批）：按用户名判定
+  // (与角色无关——店长账号的数据库角色可能是 SYSTEM_ADMIN)
   if (to.meta?.storeManagerOnly) {
     const username = localStorage.getItem('shift_username') || ''
-    if (username !== STORE_MANAGER_USERNAME) {
+    if (username !== STORE_MANAGER_USERNAME && username !== 'A001') {
       return { path: '/dashboard' }
     }
   }

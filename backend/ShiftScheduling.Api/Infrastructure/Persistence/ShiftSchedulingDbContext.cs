@@ -231,8 +231,10 @@ public sealed class ShiftSchedulingDbContext : DbContext
             entity.Property(x => x.StartDate).HasColumnName("start_date");
             entity.Property(x => x.EndDate).HasColumnName("end_date");
             entity.Property(x => x.Status).HasColumnName("status");
+            entity.Property(x => x.Source).HasColumnName("source");
             entity.HasIndex(x => new { x.StoreId, x.PlanName }).IsUnique();
-            entity.HasIndex(x => new { x.StoreId, x.StartDate, x.EndDate }).IsUnique();
+            // 同门店同周期唯一：加入 source 后允许「真实班表(REAL)」与「算法排班(ALGO)」同周期并存以便对比
+            entity.HasIndex(x => new { x.StoreId, x.StartDate, x.EndDate, x.Source }).IsUnique();
             entity.HasIndex(x => new { x.StoreId, x.Status });
             entity.Property(x => x.CreatedBy).HasColumnName("created_by");
             entity.Property(x => x.PublishedAt).HasColumnName("published_at");

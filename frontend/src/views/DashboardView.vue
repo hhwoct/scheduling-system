@@ -101,10 +101,9 @@ const authStore = useAuthStore()
 const store = ref(null)
 const stats = reactive({})
 
-// 超管(admin 用户名 或 SYSTEM_ADMIN 角色)看全部门店
-const isSystemAdmin = computed(() =>
-  authStore.role === 'SYSTEM_ADMIN' || authStore.username === SUPER_ADMIN_USERNAME
-)
+// 超管看全部门店。口径与审计日志/日期参数一致:按用户名判定,
+// 因为环境里 E001(店长)的数据库角色也是 SYSTEM_ADMIN,按角色判定会误伤
+const isSystemAdmin = computed(() => authStore.username === SUPER_ADMIN_USERNAME)
 
 // ===== 超管门店总览 =====
 const stores = ref([])

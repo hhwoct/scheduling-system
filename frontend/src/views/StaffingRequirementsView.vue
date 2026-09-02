@@ -1278,14 +1278,14 @@ onBeforeUnmount(() => {
 }
 
 .gantt-wrap {
-  overflow: auto;
-  max-height: calc(100vh - 310px);
+  /* 矩阵固定适配页面宽度:无横向/纵向内部滚动,整页滚动 */
+  overflow: hidden;
   min-height: 260px;
   border: 1px solid var(--el-border-color-light);
   border-radius: var(--app-radius-sm);
 }
 .gantt-inner {
-  min-width: max-content;
+  width: 100%;
   user-select: none;
 }
 .gantt-header {
@@ -1307,10 +1307,12 @@ onBeforeUnmount(() => {
 }
 .gantt-axis {
   display: flex;
+  flex: 1;
 }
 .axis-cell {
-  width: 40px;
-  min-width: 40px;
+  flex: 1;
+  width: 26px;
+  min-width: 26px;
   height: 30px;
   line-height: 30px;
   text-align: center;
@@ -1359,10 +1361,12 @@ onBeforeUnmount(() => {
 }
 .gantt-cells {
   display: flex;
+  flex: 1;
 }
 .gantt-cell {
-  width: 40px;
-  min-width: 40px;
+  flex: 1;
+  width: 26px;
+  min-width: 26px;
   height: 34px;
   display: flex;
   align-items: center;

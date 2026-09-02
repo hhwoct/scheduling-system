@@ -47,23 +47,23 @@
         </div>
       </template>
       <el-table :data="mine" v-loading="loading" border stripe size="small">
-        <el-table-column prop="id" label="ID" width="60" />
-        <el-table-column label="类型" width="90">
+        <el-table-column prop="id" label="ID" min-width="60" show-overflow-tooltip />
+        <el-table-column label="类型" min-width="90" show-overflow-tooltip>
           <template #default="{ row }">{{ typeName(row.leaveType) }}</template>
         </el-table-column>
-        <el-table-column label="期间" width="210">
+        <el-table-column label="期间" min-width="150" show-overflow-tooltip>
           <template #default="{ row }">{{ row.startDate }} ~ {{ row.endDate }}</template>
         </el-table-column>
-        <el-table-column prop="reason" label="原因" min-width="150" />
-        <el-table-column label="状态" width="90">
+        <el-table-column prop="reason" label="原因" min-width="120" show-overflow-tooltip />
+        <el-table-column label="状态" min-width="80" show-overflow-tooltip>
           <template #default="{ row }">
             <el-tag :type="statusType(row.status)" size="small">{{ statusName(row.status) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="审批意见" min-width="120">
+        <el-table-column label="审批意见" min-width="110" show-overflow-tooltip>
           <template #default="{ row }">{{ row.reviewRemark || '--' }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="110" fixed="right">
+        <el-table-column label="操作" min-width="110" fixed="right">
           <template #default="{ row }">
             <el-button v-if="row.status === 'APPROVED'" link type="primary" @click="handleEarlyReturn(row)">提前返岗</el-button>
           </template>

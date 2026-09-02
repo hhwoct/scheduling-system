@@ -31,18 +31,15 @@
       </div>
 
       <div class="matrix-wrap">
-        <el-table :data="filteredEmployees" v-loading="loading" border size="small" :max-height="tableMaxHeight" class="matrix-table">
-          <el-table-column label="工号" width="90" fixed align="center">
+        <el-table :data="filteredEmployees" v-loading="loading" border size="small" class="matrix-table" :cell-style="{ textAlign: 'center' }" :header-cell-style="{ textAlign: 'center', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }">
+          <el-table-column label="工号" min-width="35" show-overflow-tooltip fixed align="center">
             <template #default="{ row }">{{ row.employeeNo }}</template>
           </el-table-column>
-          <el-table-column label="姓名" width="120" fixed>
-            <template #default="{ row }">
-              {{ row.name }}
-              <el-tag class="u-ml-2" v-if="row.isGeneralist === 1" type="success" size="small">通</el-tag>
-            </template>
+          <el-table-column label="姓名" min-width="75" show-overflow-tooltip fixed>
+            <template #default="{ row }">{{ row.name }}</template>
           </el-table-column>
-          <el-table-column prop="department" label="部门" width="90" fixed />
-          <el-table-column label="通岗" width="70" align="center">
+          <el-table-column prop="department" label="部门" min-width="45" show-overflow-tooltip fixed />
+          <el-table-column label="通岗" min-width="50" show-overflow-tooltip align="center">
             <template #default="{ row }">
               <el-switch
                 :model-value="row.isGeneralist === 1"
@@ -51,25 +48,22 @@
               />
             </template>
           </el-table-column>
-          <el-table-column label="技能数" width="70" align="center">
+          <el-table-column label="技能数" min-width="60" show-overflow-tooltip align="center">
             <template #default="{ row }">{{ skilledCount(row) }}</template>
           </el-table-column>
           <el-table-column
             v-for="ws in workstations"
             :key="ws.id"
             :label="ws.name"
-            :min-width="72"
+            :min-width="wsColumnWidth(ws)" show-overflow-tooltip
             align="center"
           >
             <template #default="{ row }">
               <span
-                class="skill-badge editable"
-                :class="cellOf(row.id, ws.id)?.skillScore > 0 ? skillClass(cellOf(row.id, ws.id).skillScore) : 'empty'"
+                class="skill-score"
                 :title="(cellOf(row.id, ws.id)?.skillScore > 0 ? ws.name + '：' + cellOf(row.id, ws.id).skillScore + ' 分' + (cellOf(row.id, ws.id).isPrimarySkill === 1 ? '（主技能）' : '') : ws.name + '：无技能') + '（点击修改）'"
                 @click="openEdit(row, ws)"
-              >
-                {{ cellOf(row.id, ws.id)?.skillScore > 0 ? (cellOf(row.id, ws.id).isPrimarySkill === 1 ? '★' : '') + cellOf(row.id, ws.id).skillScore : '—' }}
-              </span>
+              >{{ cellOf(row.id, ws.id)?.skillScore > 0 ? (cellOf(row.id, ws.id).isPrimarySkill === 1 ? '★' : '') + cellOf(row.id, ws.id).skillScore : '—' }}</span>
             </template>
           </el-table-column>
         </el-table>
@@ -150,6 +144,13 @@ function cellOf(employeeId, workstationId) {
   return cellIndex.value.get(employeeId)?.get(workstationId)
 }
 
+// 工作站列宽:四字名(文员仓管/工程维修/网络维护/客户经理)放宽,两字名紧凑
+function wsColumnWidth(ws) {
+  const name = ws?.name || ''
+  const len = [...name].length
+  return len >= 4 ? 66 : 44
+}
+
 function skilledCount(row) {
   const byWs = cellIndex.value.get(row.id)
   if (!byWs) return 0
@@ -158,13 +159,6 @@ function skilledCount(row) {
     if (c.skillScore > 0) count++
   }
   return count
-}
-
-function skillClass(score) {
-  if (score <= 2) return 'lv1'
-  if (score === 3) return 'lv2'
-  if (score === 4) return 'lv3'
-  return 'lv4'
 }
 
 const filteredEmployees = computed(() => {
@@ -256,12 +250,7 @@ async function handleGeneralist(row, val) {
   }
 }
 
-// 表格固定表头：内部滚动，题头始终可见
-const tableMaxHeight = ref(560)
-function updateTableHeight() {
-  tableMaxHeight.value = Math.max(320, window.innerHeight - 330)
-}
-
+// 表格不再限高,整页滚动(与全站口径一致)
 async function loadData() {
   loading.value = true
   try {
@@ -278,12 +267,11 @@ async function loadData() {
 
 onMounted(() => {
   loadData()
-  updateTableHeight()
-  window.addEventListener('resize', updateTableHeight)
+
 })
 
 onBeforeUnmount(() => {
-  window.removeEventListener('resize', updateTableHeight)
+
 })
 </script>
 
@@ -305,46 +293,21 @@ onBeforeUnmount(() => {
   margin-bottom: var(--app-space-5);
 }
 .matrix-wrap {
-  overflow-x: auto;
+  /* 矩阵填满容器,等比例拉伸;无内部滚动 */
+  overflow-x: hidden;
 }
 .matrix-table {
-  min-width: max-content;
+  width: 100%;
 }
-.skill-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 26px;
-  height: 22px;
-  padding: 0 var(--app-space-3);
-  border-radius: var(--app-radius-sm);
-  font-size: var(--app-font-sm);
-  font-weight: 600;
-  color: var(--el-text-color-primary);
+/* 表头强制单行:不换行,超长省略号 */
+.matrix-table :deep(.el-table__header .cell) {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.skill-badge.editable {
+.skill-score {
   cursor: pointer;
-}
-.skill-badge.editable:hover {
-  outline: 2px solid var(--el-color-primary);
-  outline-offset: 1px;
-}
-.skill-badge.empty {
-  color: var(--el-text-color-disabled);
-  background: var(--el-fill-color-light);
-}
-.skill-badge.lv1 {
-  background: var(--app-level-1);
-}
-.skill-badge.lv2 {
-  background: var(--app-level-2);
-}
-.skill-badge.lv3 {
-  background: var(--app-level-3);
-}
-.skill-badge.lv4 {
-  background: var(--app-level-4);
-  color: var(--el-color-white);
+  font-size: var(--app-font-base);
 }
 .legend {
   display: flex;

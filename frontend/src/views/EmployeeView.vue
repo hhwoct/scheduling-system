@@ -1,5 +1,5 @@
 <template>
-  <div>
+  <div class="page">
     <el-card>
       <el-form inline :model="query">
         <el-form-item label="姓名">
@@ -23,40 +23,40 @@
 
       <el-button class="u-mb-5" type="primary" @click="openCreate">新增员工</el-button>
 
-      <el-table :data="list" v-loading="loading" border stripe>
-        <el-table-column prop="employeeNo" label="工号" width="100" />
-        <el-table-column label="姓名" width="140">
-          <template #default="{ row }">{{ row.name }}<el-tag class="u-ml-2" v-if="row.isParttime === 1" type="warning" size="small">兼</el-tag></template>
+      <el-table :data="list" v-loading="loading" border stripe size="small" style="width: 1040px; max-width: 100%" :cell-style="{ textAlign: 'center' }" :header-cell-style="{ textAlign: 'center' }">
+        <el-table-column prop="employeeNo" label="工号" min-width="76" show-overflow-tooltip />
+        <el-table-column label="姓名" min-width="108" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.name }}<el-tag class="u-ml-1" v-if="row.isParttime === 1" type="warning" size="small">兼</el-tag></template>
         </el-table-column>
-        <el-table-column v-if="isSystemAdmin" prop="storeName" label="门店" width="160">
+        <el-table-column v-if="isSystemAdmin" prop="storeName" label="门店" min-width="110" show-overflow-tooltip>
           <template #default="{ row }">{{ row.storeName || '--' }}</template>
         </el-table-column>
-        <el-table-column prop="department" label="部门" width="100" />
-        <el-table-column prop="primaryPosition" label="主岗" />
-        <el-table-column prop="phone" label="手机号" width="140" />
-        <el-table-column label="周工时上限" width="130">
+        <el-table-column prop="department" label="部门" min-width="66" show-overflow-tooltip />
+        <el-table-column prop="primaryPosition" label="主岗" min-width="88" show-overflow-tooltip />
+        <el-table-column prop="phone" label="手机号" min-width="112" show-overflow-tooltip />
+        <el-table-column label="周工时" min-width="92" show-overflow-tooltip>
           <template #default="{ row }">
             {{ row.maxWeeklyHours }}h
-            <el-tag class="u-ml-2" v-if="row.weeklyHoursFollowDefault === 1" size="small" type="info">默认</el-tag>
-            <el-tag class="u-ml-2" v-else size="small" type="warning">自定义</el-tag>
+            <el-tag class="u-ml-1" v-if="row.weeklyHoursFollowDefault === 1" size="small" type="info">默认</el-tag>
+            <el-tag class="u-ml-1" v-else size="small" type="warning">自定</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="状态" width="80">
+        <el-table-column label="状态" min-width="90" show-overflow-tooltip>
           <template #default="{ row }">
             <el-tag :type="row.status === 1 ? 'success' : 'info'">{{ row.status === 1 ? '启用' : '停用' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="是否休假" width="230">
+        <el-table-column label="是否休假" min-width="110" show-overflow-tooltip>
           <template #default="{ row }">
             <template v-if="leavePeriods(row).length">
               <el-tag class="u-mb-1" v-if="onLeaveNow(row)" type="danger" size="small">休假中</el-tag>
-              <div v-for="(p, i) in leavePeriods(row)" :key="i" class="leave-line" :title="p.period">
-                <el-tag v-if="p.earlyReturned" type="warning" size="small" class="early-return-tag">提前返岗</el-tag>{{ p.period }}
+              <div v-for="(p, i) in leavePeriods(row)" :key="i" class="leave-line" :class="{ 'leave-early': p.earlyReturned }" :title="(p.earlyReturned ? '提前返岗 · ' : '') + p.full">
+                {{ p.shortNoSpace }}
               </div>
             </template>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="200" fixed="right">
+        <el-table-column label="操作" min-width="170" fixed="right">
           <template #default="{ row }">
             <el-button :link="true" type="primary" @click="openEdit(row)">编辑</el-button>
             <el-button :link="true" type="primary" @click="openSkills(row)">技能</el-button>
@@ -110,14 +110,14 @@
     </el-dialog>
 
     <el-dialog v-model="skillsVisible" :title="'技能配置 - ' + (currentEmployee?.name || '')" width="600px">
-      <el-table :data="skillRows" v-loading="skillsLoading" border stripe size="small" max-height="480">
-        <el-table-column prop="workstationName" label="工作站" />
-        <el-table-column label="技能分" width="220">
+      <el-table :data="skillRows" v-loading="skillsLoading" border stripe size="small">
+        <el-table-column prop="workstationName" label="工作站" show-overflow-tooltip />
+        <el-table-column label="技能分" min-width="220" show-overflow-tooltip>
           <template #default="{ row }">
             <el-rate v-model="row.skillScore" :max="5" show-score />
           </template>
         </el-table-column>
-        <el-table-column label="主技能" width="100">
+        <el-table-column label="主技能" min-width="100" show-overflow-tooltip>
           <template #default="{ row }">
             <el-switch v-model="row.isPrimarySkill" :active-value="1" :inactive-value="0" @change="onPrimaryChange(row, $event)" />
           </template>
@@ -141,7 +141,8 @@ import { getRules } from '../api/rules'
 import { getStores } from '../api/store'
 
 // 超管:跨全部门店查看员工(不含兼职),带门店筛选
-const isSystemAdmin = computed(() => (localStorage.getItem('shift_role') || '') === 'SYSTEM_ADMIN')
+// 按用户名判定(E001 等店长账号的数据库角色也是 SYSTEM_ADMIN)
+const isSystemAdmin = computed(() => localStorage.getItem('shift_username') === 'admin')
 const stores = ref([])
 
 async function loadStores() {
@@ -230,12 +231,16 @@ function getToday() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-// 该员工的休假时间段（今天及以后），如 "2026-08-20 ~ 2026-08-22"；提前返岗的请假带标记
+// 该员工的休假时间段（今天及以后）；短格式用于单元格,完整格式用于悬停
 function leavePeriods(row) {
   const today = getToday()
   return (leaveMap.value[row.employeeNo] || [])
     .filter(l => l.endDate >= today)
-    .map(l => ({ period: `${l.startDate} ~ ${l.endDate}`, earlyReturned: l.earlyReturned }))
+    .map(l => ({
+      shortNoSpace: `${l.startDate.slice(5)}~${l.endDate.slice(5)}`,
+      full: `${l.startDate} ~ ${l.endDate}`,
+      earlyReturned: l.earlyReturned
+    }))
 }
 
 // 今天是否正处于休假中
@@ -458,6 +463,11 @@ onMounted(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   color: var(--el-text-color-regular);
+}
+/* 提前返岗的请假:橙色文字提示,详情在悬停标题 */
+.leave-early {
+  color: var(--el-color-warning);
+  font-weight: 600;
 }
 .early-return-tag {
   margin-right: var(--app-space-2);

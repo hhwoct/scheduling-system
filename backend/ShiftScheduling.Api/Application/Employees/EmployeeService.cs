@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using ShiftScheduling.Api.Application.Common;
+using ShiftScheduling.Api.Application.RuleConfigs;
 using ShiftScheduling.Api.Infrastructure.Audit;
 using ShiftScheduling.Api.Infrastructure.Persistence;
 using ShiftScheduling.Api.Infrastructure.Persistence.Entities;
@@ -351,11 +352,8 @@ public sealed class EmployeeService : IEmployeeService
     /// </summary>
     private async Task<decimal> GetGlobalMaxWeeklyHoursAsync(long storeId, CancellationToken cancellationToken)
     {
-        var ruleValue = await _dbContext.RuleConfigs
-            .AsNoTracking()
-            .Where(x => x.StoreId == storeId && x.RuleKey == "max_weekly_hours" && x.Status == 1)
-            .Select(x => x.RuleValue)
-            .FirstOrDefaultAsync(cancellationToken);
+        var rules = await RuleConfigQuery.GetEffectiveAsync(_dbContext, storeId, cancellationToken);
+        var ruleValue = rules.GetValueOrDefault("max_weekly_hours");
 
         return decimal.TryParse(ruleValue, System.Globalization.NumberStyles.Number,
                    System.Globalization.CultureInfo.InvariantCulture, out var value) && value > 0

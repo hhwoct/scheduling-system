@@ -303,7 +303,7 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.gantt { border: 1px solid var(--el-border-color-lighter); border-radius: var(--app-radius-sm); overflow-x: auto; }
+.gantt { border: 1px solid var(--el-border-color-lighter); border-radius: var(--app-radius-sm); overflow-x: hidden; }
 .gantt-row { display: flex; border-bottom: 1px solid var(--el-border-color-lighter); min-width: 100%; }
 .gantt-row:last-child { border-bottom: none; }
 .gantt-row-parttime .gantt-emp-col { background: var(--app-parttime-bg); }
@@ -336,7 +336,7 @@ onMounted(async () => {
   justify-content: center;
 }
 .gantt-header .gantt-emp-col { background: var(--el-fill-color-light); z-index: 5; }
-.gantt-day-col { width: 160px; flex-shrink: 0; padding: var(--app-space-2); border-right: 1px solid var(--el-border-color-lighter); box-sizing: border-box; }
+.gantt-day-col { flex: 1; width: 26px; min-width: 26px; padding: var(--app-space-2); border-right: 1px solid var(--el-border-color-lighter); box-sizing: border-box; }
 .gantt-day-col:last-child { border-right: none; }
 .gantt-day-col.weekend { background-color: var(--el-fill-color-lighter); }
 .day-label { font-size: var(--app-font-sm); color: var(--el-text-color-regular); text-align: center; }

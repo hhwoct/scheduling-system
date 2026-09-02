@@ -257,6 +257,37 @@ curl http://localhost:5059/api/health
 | GET | /api/audit-logs | 审计日志查询 |
 | GET | /api/employee/my-schedule | 员工端我的班表（含顶岗记录） |
 | GET | /api/employee/swap-plans | 员工端可换班计划 |
+| GET | /api/schedules/compare | 真实班表 vs 算法排班对比（吻合率/班次差异/逐人逐日明细） |
+
+## 长沙滚滚（CSGG）——真实数据验证算法的新门店
+
+**背景**：用 `长沙滚滚/` 目录下三份真实 9 月排班 Excel（楼面/传送、厨房、民谣吧台），
+在现有多租户系统中新建门店 `CSGG`（store_id=2），用真实班表作为基线验证排班算法贴合度。
+
+**页面（按需求裁剪）**：登录、排班明细（周视图/整月对比/日明细 + 生成重排 + 真实vs算法切换与吻合率）、
+请假/换班申请与审批、通知消息。
+其他门店页面对 CSGG 隐藏（前端菜单/路由 + 后端 storeId 隔离双保险）。
+
+**班次口径（已与门店确认）**：A班 15:00-00:00、B班 18:00-03:00（9 小时，跨午夜）；通班 C 已删除。
+真实表楼面/传送只有「休/空白」未标班次，导入时按 A 班计，对比时这两岗只比「上班/休息」不比班次
+（`rule_configs.real_shift_unmarked_stations = 楼面,传送`）。
+
+**账号**：A001 店长（不参与排班，初始密码 `A001@123456`）、A002~A017 员工（密码 `工号@123456`）。
+
+**建店步骤**：
+
+```bash
+# 1) 幂等 schema（schedule_plans.source 列 + 同周期允许 REAL/ALGO 并存）
+mysql -u root -proot123 shift_mvp < database/migrations/20260901_schedule_plan_source.sql
+# 2) 生成并执行门店+真实班表种子（重复执行 = 重灌该店数据）
+python3 scripts/import_csgg.py        # 依赖 python3 -c "import bcrypt"
+mysql -u root -proot123 shift_mvp < database/migrations/20260901_csgg_seed.sql
+```
+
+导入后 store_id=2 已有：17 账号、16 员工（每岗仅本岗技能 5 分）、4 工作站、2 班次、
+2026-09 日期参数、人数需求（按真实在岗人数：同类型日取中位=最少、最大=最好）、
+真实班表计划（source=REAL，7452 条明细）。随后在「排班明细」页点「生成/重排」即得算法计划并对比。
+当前基线（中位人数需求口径）：上/休吻合率 77.5%、班次吻合率 46.6%、真实与算法上班人·天同为 414。
 
 ## 开发进度
 

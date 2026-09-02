@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using ShiftScheduling.Api.Application.RuleConfigs;
 using ShiftScheduling.Api.Infrastructure.Persistence;
 using ShiftScheduling.Api.Infrastructure.Persistence.Entities;
 
@@ -560,11 +561,11 @@ public sealed class PreferenceService : IPreferenceService
 
     private async Task<decimal> GetWeightAsync(long storeId, CancellationToken cancellationToken)
     {
-        var rule = await _dbContext.RuleConfigs.AsNoTracking()
-            .FirstOrDefaultAsync(x => x.StoreId == storeId && x.RuleKey == RuleKeyWeight, cancellationToken);
-        if (rule is null || !decimal.TryParse(rule.RuleValue, out var w) || w < 0m)
+        var rules = await RuleConfigQuery.GetEffectiveAsync(_dbContext, storeId, cancellationToken);
+        if (!rules.TryGetValue(RuleKeyWeight, out var ruleValue)
+            || !decimal.TryParse(ruleValue, out var w) || w < 0m)
         {
-            return 0m; // 默认关闭（合并后行为与主项目完全一致；开启需将规则设为 > 0）
+            return 0m; // 默认关闭（开启需将规则设为 > 0）
         }
         return Math.Min(w, 1m);
     }

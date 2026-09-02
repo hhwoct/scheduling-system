@@ -327,8 +327,14 @@ api.MapGet("/stores/current", async (ShiftSchedulingDbContext dbContext, ICurren
 }).RequireAuthorization();
 
 // ============ 门店总览(超管:旗下所有门店 + 每店核心指标) ============
-api.MapGet("/stores", async (ShiftSchedulingDbContext dbContext, CancellationToken cancellationToken) =>
+api.MapGet("/stores", async (ShiftSchedulingDbContext dbContext, ICurrentUser currentUser, CancellationToken cancellationToken) =>
 {
+    // 与审计日志/日期参数口径一致:仅超管用户名可访问
+    if (currentUser.Username != superAdminUsername)
+    {
+        throw new BusinessException("无权限", "FORBIDDEN");
+    }
+
     var stores = await dbContext.Stores
         .AsNoTracking()
         .Where(x => x.Status == 1)
@@ -382,7 +388,8 @@ api.MapGet("/employees", async (
     CancellationToken cancellationToken = default) =>
 {
     // 超管跨全部门店查看(员工列表不含兼职),并可按 storeId 筛选;其他角色限定本店
-    var isSystemAdmin = currentUser.Role == "SYSTEM_ADMIN";
+    // 按用户名判定:E001 等店长账号的数据库角色也是 SYSTEM_ADMIN,按角色判定会误伤
+    var isSystemAdmin = currentUser.Username == superAdminUsername;
     var scopeStoreId = isSystemAdmin
         ? (long?)null
         : currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
@@ -664,8 +671,18 @@ api.MapGet("/rules", async (
     IRuleConfigService ruleConfigService,
     CancellationToken cancellationToken) =>
 {
-    var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
-    var result = await ruleConfigService.ListAllAsync(storeId, cancellationToken);
+    // admin 维护全局默认(store_id=0);店长看「全局 + 本店覆盖」的生效合并
+    var isSuperAdmin = currentUser.Username == superAdminUsername;
+    IReadOnlyList<RuleConfigItem> result;
+    if (isSuperAdmin)
+    {
+        result = await ruleConfigService.ListAllAsync(RuleConfigQuery.GlobalStoreId, cancellationToken);
+    }
+    else
+    {
+        var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
+        result = await ruleConfigService.ListEffectiveAsync(storeId, cancellationToken);
+    }
     return ApiResponse.Ok(result, "获取规则配置成功");
 }).RequireAuthorization("AdminOnly");
 
@@ -681,17 +698,38 @@ api.MapPut("/rules/{id:long}", async (
         throw new BusinessException("请求参数不能为空", "INVALID_REQUEST");
     }
 
-    var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
+    // admin 修改全局默认(store_id=0);店长修改本店行(继承行首次修改自动生成覆盖)
+    var isSuperAdmin = currentUser.Username == superAdminUsername;
+    var scopeStoreId = isSuperAdmin
+        ? RuleConfigQuery.GlobalStoreId
+        : currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
     var result = await ruleConfigService.UpdateAsync(
         id,
         request,
-        storeId,
+        scopeStoreId,
         currentUser.UserId ?? 0,
         currentUser.Nickname ?? currentUser.Username ?? "匿名",
         cancellationToken);
 
     return ApiResponse.Ok(result, "保存规则配置成功");
-}).RequireAuthorization("SystemAdminOnly");
+}).RequireAuthorization("AdminOnly");
+
+// 店长恢复继承规则为本店覆盖行的删除入口(恢复全局默认)
+api.MapDelete("/rules/{id:long}", async (
+    long id,
+    ICurrentUser currentUser,
+    IRuleConfigService ruleConfigService,
+    CancellationToken cancellationToken) =>
+{
+    var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
+    await ruleConfigService.DeleteAsync(
+        id,
+        storeId,
+        currentUser.UserId ?? 0,
+        currentUser.Nickname ?? currentUser.Username ?? "匿名",
+        cancellationToken);
+    return ApiResponse.Ok<object?>(null, "已恢复全局默认");
+}).RequireAuthorization("AdminOnly");
 
 // ============ 高峰禁休时段（班中休息禁止与高峰重叠，admin 端增删改查） ============
 api.MapGet("/peak-restricted-hours", async (
@@ -1069,16 +1107,252 @@ api.MapGet("/schedules", async (
     int page = 1,
     int pageSize = 20,
     string? status = null,
+    long? storeId = null,
     CancellationToken cancellationToken = default) =>
 {
-    var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
+    // 超管按用户名判定,可按 storeId 跨店筛选;其余角色限定本店
+    var isSuperAdmin = currentUser.Username == superAdminUsername;
+    var scopeStoreId = isSuperAdmin
+        ? storeId
+        : currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
     if (page < 1 || page > 100000 || pageSize is < 1 or > 100)
     {
         throw new BusinessException("分页参数不正确", "INVALID_PAGINATION");
     }
 
-    var result = await scheduleService.ListPlansAsync(page, pageSize, storeId, status, cancellationToken);
+    var result = await scheduleService.ListPlansAsync(page, pageSize, scopeStoreId, status, cancellationToken);
     return ApiResponse.Ok(result, "获取排班计划列表成功");
+}).RequireAuthorization("AdminOnly");
+
+// ============ 真实班表 vs 算法排班 对比（导入真实数据验证算法贴合度） ============
+// GET /schedules/compare?algoPlanId=xx[&realPlanId=yy]
+// 未指定 realPlanId 时自动取同门店、周期有重叠的 source=REAL 计划作为基线。
+api.MapGet("/schedules/compare", async (
+    long algoPlanId,
+    ICurrentUser currentUser,
+    ShiftSchedulingDbContext dbContext,
+    long? realPlanId = null,
+    CancellationToken cancellationToken = default) =>
+{
+    var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
+
+    var algoPlan = await dbContext.SchedulePlans.AsNoTracking()
+        .FirstOrDefaultAsync(x => x.Id == algoPlanId && x.StoreId == storeId, cancellationToken)
+        ?? throw new NotFoundException("排班计划不存在");
+
+    var realQuery = dbContext.SchedulePlans.AsNoTracking()
+        .Where(x => x.StoreId == storeId && x.Source == "REAL");
+    realQuery = realPlanId is not null
+        ? realQuery.Where(x => x.Id == realPlanId.Value)
+        : realQuery.Where(x => x.StartDate <= algoPlan.EndDate && x.EndDate >= algoPlan.StartDate);
+
+    var realPlan = await realQuery.OrderByDescending(x => x.Id).FirstOrDefaultAsync(cancellationToken)
+        ?? throw new BusinessException("未找到可对比的真实班表（source=REAL）", "REAL_PLAN_NOT_FOUND");
+
+    var start = algoPlan.StartDate > realPlan.StartDate ? algoPlan.StartDate : realPlan.StartDate;
+    var end = algoPlan.EndDate < realPlan.EndDate ? algoPlan.EndDate : realPlan.EndDate;
+    if (start > end)
+    {
+        throw new BusinessException("两份排班周期没有重叠，无法对比", "NO_OVERLAP");
+    }
+
+    var employees = await dbContext.Employees.AsNoTracking()
+        .Where(x => x.StoreId == storeId)
+        .OrderBy(x => x.EmployeeNo)
+        .Select(x => new { x.Id, x.EmployeeNo, x.Name, x.PrimaryPosition })
+        .ToListAsync(cancellationToken);
+    var employeeMap = employees.ToDictionary(x => x.Id);
+
+    var shiftMap = await dbContext.ShiftTemplates.AsNoTracking()
+        .Where(x => x.StoreId == storeId)
+        .ToDictionaryAsync(x => x.Id, x => new { x.Code, x.Name }, cancellationToken);
+
+    // 真实表未标注班次的岗位（如楼面/传送只有"休/空白"）：这些岗位只比"上班/休息"，不比班次
+    var effectiveRules = await RuleConfigQuery.GetEffectiveAsync(dbContext, storeId, cancellationToken);
+    var unmarkedRule = effectiveRules.GetValueOrDefault("real_shift_unmarked_stations") ?? string.Empty;
+    var unmarkedStations = unmarkedRule
+        .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        .ToHashSet();
+
+    async Task<Dictionary<(long, DateOnly), (bool IsRest, long? ShiftId, TimeSpan? StartTime, TimeSpan? EndTime, decimal Hours)>> LoadAsync(long planId)
+    {
+        var rows = await dbContext.ScheduleSummaries.AsNoTracking()
+            .Where(x => x.PlanId == planId && x.WorkDate >= start && x.WorkDate <= end)
+            .Select(x => new { x.EmployeeId, x.WorkDate, x.IsRestDay, x.ShiftTemplateId, x.StartTime, x.EndTime, x.WorkHours })
+            .ToListAsync(cancellationToken);
+        return rows
+            .GroupBy(x => (x.EmployeeId, x.WorkDate))
+            .ToDictionary(
+                g => g.Key,
+                g =>
+                {
+                    var r = g.First();
+                    return (r.IsRestDay == 1, r.ShiftTemplateId, r.StartTime, r.EndTime, r.WorkHours);
+                });
+    }
+
+    var realData = await LoadAsync(realPlan.Id);
+    var algoData = await LoadAsync(algoPlan.Id);
+
+    var dates = new List<DateOnly>();
+    for (var d = start; d <= end; d = d.AddDays(1))
+    {
+        dates.Add(d);
+    }
+
+    var involvedIds = realData.Keys.Select(k => k.Item1)
+        .Concat(algoData.Keys.Select(k => k.Item1))
+        .Distinct()
+        .Where(employeeMap.ContainsKey)
+        .OrderBy(id => employeeMap[id].EmployeeNo)
+        .ToList();
+
+    string? ShiftCode(long? shiftId) => shiftId is not null && shiftMap.TryGetValue(shiftId.Value, out var s) ? s.Code : null;
+
+    var cells = new List<object>();
+    var perEmployee = new List<object>();
+    var perDate = dates.ToDictionary(d => d, _ => new int[4]); // 0=可比单元格 1=上班休息一致 2=真实上班 3=算法上班
+
+    var totalCells = 0;
+    var workRestMatched = 0;
+    var shiftComparable = 0;
+    var shiftMatched = 0;
+    var realWorkTotal = 0;
+    var algoWorkTotal = 0;
+
+    foreach (var empId in involvedIds)
+    {
+        var emp = employeeMap[empId];
+        var station = emp.PrimaryPosition ?? string.Empty;
+        var shiftMarked = !unmarkedStations.Contains(station);
+
+        var eCells = 0;
+        var eMatched = 0;
+        var eShiftComparable = 0;
+        var eShiftMatched = 0;
+        var eRealWork = 0;
+        var eAlgoWork = 0;
+
+        foreach (var d in dates)
+        {
+            var hasReal = realData.TryGetValue((empId, d), out var real);
+            var hasAlgo = algoData.TryGetValue((empId, d), out var algo);
+            if (!hasReal && !hasAlgo)
+            {
+                continue;
+            }
+
+            var realRest = !hasReal || real.IsRest;
+            var algoRest = !hasAlgo || algo.IsRest;
+            var realShift = realRest ? null : ShiftCode(real.ShiftId);
+            var algoShift = algoRest ? null : ShiftCode(algo.ShiftId);
+
+            var sameWorkRest = realRest == algoRest;
+            var state = sameWorkRest
+                ? (realRest ? "SAME_REST" : (shiftMarked && realShift != algoShift ? "SHIFT_DIFF" : "SAME_WORK"))
+                : (realRest ? "REAL_REST_ALGO_WORK" : "REAL_WORK_ALGO_REST");
+
+            eCells++;
+            if (sameWorkRest) eMatched++;
+            if (!realRest) eRealWork++;
+            if (!algoRest) eAlgoWork++;
+            if (shiftMarked && !realRest && !algoRest)
+            {
+                eShiftComparable++;
+                if (realShift == algoShift) eShiftMatched++;
+            }
+
+            var pd = perDate[d];
+            pd[0]++;
+            if (sameWorkRest) pd[1]++;
+            if (!realRest) pd[2]++;
+            if (!algoRest) pd[3]++;
+
+            cells.Add(new
+            {
+                employeeId = empId,
+                employeeNo = emp.EmployeeNo,
+                employeeName = emp.Name,
+                station,
+                workDate = d,
+                realRest,
+                algoRest,
+                realShift,
+                algoShift,
+                realStart = realRest ? null : real.StartTime,
+                realEnd = realRest ? null : real.EndTime,
+                algoStart = algoRest ? null : algo.StartTime,
+                algoEnd = algoRest ? null : algo.EndTime,
+                shiftMarked,
+                state
+            });
+        }
+
+        totalCells += eCells;
+        workRestMatched += eMatched;
+        shiftComparable += eShiftComparable;
+        shiftMatched += eShiftMatched;
+        realWorkTotal += eRealWork;
+        algoWorkTotal += eAlgoWork;
+
+        perEmployee.Add(new
+        {
+            employeeId = empId,
+            employeeNo = emp.EmployeeNo,
+            employeeName = emp.Name,
+            station,
+            shiftMarked,
+            cells = eCells,
+            realWorkDays = eRealWork,
+            algoWorkDays = eAlgoWork,
+            realRestDays = eCells - eRealWork,
+            algoRestDays = eCells - eAlgoWork,
+            matchedCells = eMatched,
+            workRestMatchRate = eCells == 0 ? 0 : Math.Round(eMatched * 100.0 / eCells, 1),
+            shiftComparable = eShiftComparable,
+            shiftMatched = eShiftMatched,
+            shiftMatchRate = eShiftComparable == 0 ? (double?)null : Math.Round(eShiftMatched * 100.0 / eShiftComparable, 1)
+        });
+    }
+
+    var byDate = dates.Select(d =>
+    {
+        var pd = perDate[d];
+        return (object)new
+        {
+            workDate = d,
+            cells = pd[0],
+            matchedCells = pd[1],
+            realWorkCount = pd[2],
+            algoWorkCount = pd[3],
+            workRestMatchRate = pd[0] == 0 ? 0 : Math.Round(pd[1] * 100.0 / pd[0], 1)
+        };
+    }).ToList();
+
+    var result = new
+    {
+        realPlan = new { realPlan.Id, realPlan.PlanName, realPlan.StartDate, realPlan.EndDate, realPlan.Status, realPlan.Source },
+        algoPlan = new { algoPlan.Id, algoPlan.PlanName, algoPlan.StartDate, algoPlan.EndDate, algoPlan.Status, algoPlan.Source },
+        range = new { startDate = start, endDate = end, days = dates.Count },
+        unmarkedStations = unmarkedStations.ToList(),
+        overall = new
+        {
+            employeeCount = involvedIds.Count,
+            cells = totalCells,
+            matchedCells = workRestMatched,
+            workRestMatchRate = totalCells == 0 ? 0 : Math.Round(workRestMatched * 100.0 / totalCells, 1),
+            shiftComparable,
+            shiftMatched,
+            shiftMatchRate = shiftComparable == 0 ? (double?)null : Math.Round(shiftMatched * 100.0 / shiftComparable, 1),
+            realWorkCells = realWorkTotal,
+            algoWorkCells = algoWorkTotal
+        },
+        byEmployee = perEmployee,
+        byDate,
+        cells
+    };
+
+    return ApiResponse.Ok(result, "获取真实/算法排班对比成功");
 }).RequireAuthorization("AdminOnly");
 
 api.MapGet("/schedules/{planId:long}/month-view", async (
@@ -2184,7 +2458,8 @@ api.MapGet("/leave-requests/review", async (
     CancellationToken ct = default) =>
 {
     // 请假审批仅店长账号可用（按用户名判定，与角色无关）
-    if (currentUser.Username != storeManagerUsername)
+    // 多门店:店长账号 E001(配置) + 长沙滚滚店长 A001(后续可改为按角色/配置判定)
+    if (currentUser.Username != storeManagerUsername && currentUser.Username != "A001")
         throw new BusinessException("无权限", "FORBIDDEN");
 
     var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
@@ -2222,7 +2497,8 @@ api.MapPut("/leave-requests/{id:long}/review", async (
     }
 
     // 请假审批仅店长账号可用（按用户名判定，与角色无关）
-    if (currentUser.Username != storeManagerUsername)
+    // 多门店:店长账号 E001(配置) + 长沙滚滚店长 A001(后续可改为按角色/配置判定)
+    if (currentUser.Username != storeManagerUsername && currentUser.Username != "A001")
         throw new BusinessException("无权限", "FORBIDDEN");
 
     var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
@@ -2472,7 +2748,8 @@ api.MapGet("/shift-swaps/review", async (
     CancellationToken ct = default) =>
 {
     // 换班审批仅店长账号可用（按用户名判定，与角色无关）
-    if (currentUser.Username != storeManagerUsername)
+    // 多门店:店长账号 E001(配置) + 长沙滚滚店长 A001(后续可改为按角色/配置判定)
+    if (currentUser.Username != storeManagerUsername && currentUser.Username != "A001")
         throw new BusinessException("无权限", "FORBIDDEN");
 
     var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
@@ -2511,7 +2788,8 @@ api.MapPut("/shift-swaps/{id:long}/review", async (
     }
 
     // 换班审批仅店长账号可用（按用户名判定，与角色无关）
-    if (currentUser.Username != storeManagerUsername)
+    // 多门店:店长账号 E001(配置) + 长沙滚滚店长 A001(后续可改为按角色/配置判定)
+    if (currentUser.Username != storeManagerUsername && currentUser.Username != "A001")
         throw new BusinessException("无权限", "FORBIDDEN");
 
     var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");

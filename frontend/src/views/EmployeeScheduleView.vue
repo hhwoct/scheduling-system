@@ -48,26 +48,26 @@
       <!-- 每个已发布计划一张周表 -->
       <div class="u-mb-7" v-for="plan in plans" :key="plan.id">
         <div class="plan-title">{{ plan.planName }}（{{ plan.startDate }} ~ {{ plan.endDate }}）</div>
-        <el-table :data="plan.days" border stripe size="small" max-height="260">
-          <el-table-column label="日期" width="120">
+        <el-table :data="plan.days" border stripe size="small">
+          <el-table-column label="日期" min-width="120" show-overflow-tooltip>
             <template #default="{ row }">{{ row.workDate }}</template>
           </el-table-column>
-          <el-table-column label="状态" width="80">
+          <el-table-column label="状态" min-width="80" show-overflow-tooltip>
             <template #default="{ row }">
               <el-tag v-if="row.isRestDay === 1" type="danger" size="small">休息</el-tag>
               <el-tag v-else type="success" size="small">上班</el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="shiftCode" label="班次" width="80">
+          <el-table-column prop="shiftCode" label="班次" min-width="80" show-overflow-tooltip>
             <template #default="{ row }">{{ row.isRestDay === 1 ? '--' : (row.shiftCode || '--') }}</template>
           </el-table-column>
-          <el-table-column label="时间" width="150">
+          <el-table-column label="时间" min-width="140" show-overflow-tooltip>
             <template #default="{ row }">{{ row.isRestDay === 1 ? '--' : fmtTime(row.startTime) + ' - ' + fmtTime(row.endTime) }}</template>
           </el-table-column>
-          <el-table-column label="工时(h)" width="90">
+          <el-table-column label="工时(h)" min-width="80" show-overflow-tooltip>
             <template #default="{ row }">{{ row.isRestDay === 1 ? '0' : formatWorkHours(row.workHours) }}</template>
           </el-table-column>
-          <el-table-column label="休息" min-width="170">
+          <el-table-column label="休息" min-width="150" show-overflow-tooltip>
             <template #default="{ row }">
               <span v-if="row.isRestDay === 1 || !row.breakStartTime">--</span>
               <span v-else>
@@ -82,15 +82,15 @@
       <!-- 顶岗记录：独立于具体计划，全局展示 -->
       <div v-if="covers.length" class="cover-list">
         <div class="cover-title">我顶岗的记录</div>
-        <el-table class="u-mt-3" :data="covers" border stripe size="small" max-height="200">
-          <el-table-column prop="workDate" label="日期" width="120" />
-          <el-table-column label="时段" width="130">
+        <el-table class="u-mt-3" :data="covers" border stripe size="small">
+          <el-table-column prop="workDate" label="日期" min-width="120" show-overflow-tooltip />
+          <el-table-column label="时段" min-width="130" show-overflow-tooltip>
             <template #default="{ row }">{{ fmtTime(row.breakStartTime) }}-{{ fmtTime(row.breakEndTime) }}</template>
           </el-table-column>
-          <el-table-column prop="workstationName" label="顶岗岗位" width="120">
+          <el-table-column prop="workstationName" label="顶岗岗位" min-width="120" show-overflow-tooltip>
             <template #default="{ row }">{{ row.workstationName || '--' }}</template>
           </el-table-column>
-          <el-table-column prop="forEmployeeName" label="替谁顶岗" />
+          <el-table-column prop="forEmployeeName" label="替谁顶岗" min-width="120" show-overflow-tooltip />
         </el-table>
       </div>
     </el-card>

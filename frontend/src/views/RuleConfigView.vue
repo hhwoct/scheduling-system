@@ -2,7 +2,7 @@
   <div>
     <el-card>
       <el-table :data="list" v-loading="loading" border stripe :span-method="spanMethod" @header-dragend="onHeaderDragend">
-        <el-table-column label="规则名称" :width="colWidths['规则名称']">
+        <el-table-column label="规则名称" :width="colWidths['规则名称']" show-overflow-tooltip>
           <template #default="{ row }">
             <!-- 单日最大工时：整行合并，默认收起，展开后列出全部岗位直接编辑 -->
             <div v-if="row.ruleKey === 'max_daily_work_hours'" class="daily-hours-row">
@@ -11,12 +11,12 @@
                 <el-button :link="true" type="primary" size="small" @click="dailyHoursExpanded = !dailyHoursExpanded">
                   {{ dailyHoursExpanded ? '收起' : '展开' }}
                 </el-button>
-                <el-button v-if="dailyHoursExpanded" :link="true" size="small" :disabled="!isSystemAdmin" @click="resetDailyHoursCustom">
+                <el-button v-if="dailyHoursExpanded" :link="true" size="small" :disabled="!canEdit" @click="resetDailyHoursCustom">
                   全部跟随默认
                 </el-button>
                 <span class="daily-hours-summary">{{ dailyHoursSummary }}</span>
                 <span class="daily-hours-switch">
-                  <el-switch v-model="dailyHoursRuleStatus" :active-value="1" :inactive-value="0" :disabled="!isSystemAdmin" size="small" />
+                  <el-switch v-model="dailyHoursRuleStatus" :active-value="1" :inactive-value="0" :disabled="!canEdit" size="small" />
                   启用
                 </span>
               </div>
@@ -33,7 +33,7 @@
                     :precision="1"
                     :controls="false"
                     size="small"
-                    :disabled="!isSystemAdmin"
+                    :disabled="!canEdit"
                     style="width: 90px"
                     title="小时/天（0 = 不限制）"
                     @update:model-value="v => setDailyHoursValue(item.key, v)"
@@ -42,11 +42,14 @@
                 </div>
               </div>
             </div>
-            <template v-else>{{ row.ruleName }}</template>
+            <template v-else>
+              {{ row.ruleName }}
+              <el-button v-if="row.source === 'STORE' && !isSystemAdmin" class="u-ml-2" :link="true" size="small" @click="restoreRule(row)">恢复默认</el-button>
+            </template>
           </template>
         </el-table-column>
         <el-table-column prop="ruleKey" label="规则 Key" :width="colWidths['规则 Key']" show-overflow-tooltip />
-        <el-table-column label="值" :width="colWidths['值']" header-align="center">
+        <el-table-column label="值" :width="colWidths['值']" header-align="center" show-overflow-tooltip>
           <template #default="{ row }">
             <!-- 统一 65px 并水平居中 -->
             <div class="u-row-center">
@@ -60,27 +63,36 @@
                 :precision="2"
                 :controls="false"
                 size="small"
-                :disabled="!isSystemAdmin"
+                :disabled="!canEdit"
                 class="center-input"
                 style="width: 65px"
                 title="取值范围 0~1（0 = 只看技能，1 = 完全按店长偏好）"
                 @update:model-value="v => (row.ruleValue = v != null ? String(v) : '')"
               />
-              <el-input v-else v-model="row.ruleValue" size="small" class="center-input" style="width: 65px" :disabled="!isSystemAdmin" />
+              <el-input v-else v-model="row.ruleValue" size="small" class="center-input" style="width: 65px" :disabled="!canEdit" />
             </div>
           </template>
         </el-table-column>
-        <el-table-column prop="remark" label="说明" :width="colWidths['说明']" />
-        <el-table-column label="启用" :width="colWidths['启用']">
+        <el-table-column prop="remark" label="说明" :width="colWidths['说明']" show-overflow-tooltip />
+        <el-table-column label="启用" :width="colWidths['启用']" show-overflow-tooltip>
           <template #default="{ row }">
-            <el-switch v-model="row.status" :active-value="1" :inactive-value="0" :disabled="!isSystemAdmin" />
+            <el-switch v-model="row.status" :active-value="1" :inactive-value="0" :disabled="!canEdit" />
           </template>
         </el-table-column>
       </el-table>
-      <div class="u-mt-6" style="text-align: right">
-        <el-button v-if="isSystemAdmin" type="primary" :loading="saving" @click="handleSave">保存全部</el-button>
-        <el-alert v-else type="info" :closable="false" show-icon title="仅系统管理员可修改排班规则，当前为只读模式" />
+      <el-alert class="u-mt-6" type="info" :closable="false" show-icon
+        :title="isSystemAdmin
+          ? '这里的规则是全部门店的默认值，店长可在此基础上按门店覆盖。'
+          : '门店自定义值覆盖全局默认；修改继承值会生成本店覆盖，「恢复默认」删除本店覆盖回到全局。'" />
+      <div class="u-mt-5" style="text-align: right">
+        <el-button type="primary" :loading="saving" @click="handleSave">保存全部</el-button>
       </div>
+
+      <!-- 高峰禁休时段:门店级设置,从班次管理迁入;仅店长视角显示 -->
+      <template v-if="!isSystemAdmin">
+        <el-divider content-position="left">高峰禁休时段</el-divider>
+        <PeakHoursSection />
+      </template>
     </el-card>
   </div>
 </template>
@@ -89,7 +101,8 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useAuthStore } from '../stores/auth'
-import { getRules, updateRule } from '../api/rules'
+import { getRules, updateRule, deleteRule } from '../api/rules'
+import PeakHoursSection from '../components/PeakHoursSection.vue'
 
 const loading = ref(false)
 const saving = ref(false)
@@ -118,8 +131,9 @@ function onHeaderDragend(newWidth, _oldWidth, column) {
 }
 
 const authStore = useAuthStore()
-// 仅系统管理员（admin）可修改规则；店长（STORE_MANAGER）只读
-const isSystemAdmin = computed(() => authStore.role === 'SYSTEM_ADMIN')
+// admin(用户名 admin)维护全局默认;店长维护本店覆盖。员工端进不了本页。
+const isSystemAdmin = computed(() => authStore.username === 'admin')
+const canEdit = computed(() => authStore.role !== 'EMPLOYEE')
 
 // ============ 单日最大工时（按岗位配置） ============
 // 规则值格式：JSON，如 {"default":12,"保洁":10,"楼面":11}；兼容纯数字（全部岗位同一上限）
@@ -208,6 +222,9 @@ function serializeDailyHoursRule() {
   return JSON.stringify({ ...dailyHoursMap })
 }
 
+// 加载后快照:保存时只提交有变化的行,避免店长「保存全部」把继承行全部变成本店覆盖
+let snapshot = []
+
 async function loadData() {
   loading.value = true
   try {
@@ -217,8 +234,25 @@ async function loadData() {
       parseDailyHoursRule(dailyRule.ruleValue)
       dailyHoursRuleStatus.value = Number(dailyRule.status)
     }
+    snapshot = list.value.map(r => ({ ...r, ruleValue: r.ruleValue, status: Number(r.status) }))
   } finally {
     loading.value = false
+  }
+}
+
+// 店长删除本店覆盖行,恢复继承全局默认
+async function restoreRule(row) {
+  try {
+    await ElMessageBox.confirm('删除本店自定义值,恢复全局默认?', '恢复默认', { type: 'warning' })
+  } catch {
+    return
+  }
+  try {
+    await deleteRule(row.id)
+    ElMessage.success('已恢复全局默认')
+    await loadData()
+  } catch (e) {
+    /* 拦截器已提示 */
   }
 }
 
@@ -230,8 +264,20 @@ async function handleSave() {
   }
   saving.value = true
   try {
+    // 只提交有变化的行
+    const changed = list.value.filter(rule => {
+      const prev = snapshot.find(s => s.id === rule.id)
+      if (!prev) return true
+      const newValue = rule.ruleKey === 'max_daily_work_hours' ? serializeDailyHoursRule() : rule.ruleValue
+      const newStatus = rule.ruleKey === 'max_daily_work_hours' ? dailyHoursRuleStatus.value : rule.status
+      return prev.ruleValue !== newValue || Number(prev.status) !== Number(newStatus)
+    })
+    if (changed.length === 0) {
+      ElMessage.info('没有修改')
+      return
+    }
     const results = await Promise.allSettled(
-      list.value.map(rule =>
+      changed.map(rule =>
         updateRule(rule.id, {
           ruleValue: rule.ruleKey === 'max_daily_work_hours' ? serializeDailyHoursRule() : rule.ruleValue,
           status: rule.ruleKey === 'max_daily_work_hours' ? dailyHoursRuleStatus.value : rule.status
@@ -240,14 +286,14 @@ async function handleSave() {
     )
     const failed = []
     results.forEach((r, i) => {
-      if (r.status === 'rejected') failed.push(list.value[i].ruleName || list.value[i].ruleKey || ('#' + list.value[i].id))
+      if (r.status === 'rejected') failed.push(changed[i].ruleName || changed[i].ruleKey || ('#' + changed[i].id))
     })
     // 保存后重载，回写服务端最新值并对齐本地状态（后端 RuleConfigItem 无 version 字段）
     try {
       await loadData()
     } catch { /* 重载失败不阻断提示 */ }
     if (failed.length === 0) {
-      ElMessage.success(`保存成功（${list.value.length}条）`)
+      ElMessage.success(`保存成功（${changed.length}条）`)
     } else {
       ElMessage.warning(`${failed.length}条保存失败：${failed.join('、')}`)
     }

@@ -23,17 +23,17 @@
       </template>
 
       <el-table :data="list" v-loading="loading" border stripe>
-        <el-table-column label="操作时间" width="200" show-overflow-tooltip>
+        <el-table-column label="操作时间" min-width="200" show-overflow-tooltip>
           <template #default="{ row }">{{ row.createdAt }}</template>
         </el-table-column>
-        <el-table-column prop="operatorName" label="操作人" width="120" />
-        <el-table-column label="操作类型" width="180">
+        <el-table-column prop="operatorName" label="操作人" min-width="120" show-overflow-tooltip />
+        <el-table-column label="操作类型" min-width="180" show-overflow-tooltip>
           <template #default="{ row }">
             <el-tag size="small">{{ actionName(row.actionType) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="targetType" label="操作对象" width="250" />
-        <el-table-column prop="remark" label="备注" min-width="220" />
+        <el-table-column prop="targetType" label="操作对象" min-width="250" show-overflow-tooltip />
+        <el-table-column prop="remark" label="备注" min-width="220" show-overflow-tooltip />
       </el-table>
 
       <el-pagination class="u-mt-6"

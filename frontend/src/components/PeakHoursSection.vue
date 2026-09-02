@@ -1,11 +1,9 @@
 <template>
-  <el-card class="peak-section">
-    <template #header>
-      <div class="u-row-between">
-        <span>高峰禁休时段</span>
-        <el-button type="primary" size="small" @click="openCreate">新增时段</el-button>
-      </div>
-    </template>
+  <section class="peak-section">
+    <div class="u-row-between u-mb-4">
+      <strong>高峰禁休时段</strong>
+      <el-button type="primary" size="small" @click="openCreate">新增时段</el-button>
+    </div>
 
     <el-alert class="u-mb-5"
       type="info"
@@ -16,19 +14,19 @@
     />
 
     <el-table :data="list" v-loading="loading" border stripe size="small">
-      <el-table-column label="开始时间" width="160">
+      <el-table-column label="开始时间" min-width="160" show-overflow-tooltip>
         <template #default="{ row }">{{ fmtTime(row.startTime) }}</template>
       </el-table-column>
-      <el-table-column label="结束时间" width="160">
+      <el-table-column label="结束时间" min-width="160" show-overflow-tooltip>
         <template #default="{ row }">{{ fmtTime(row.endTime) }}</template>
       </el-table-column>
-      <el-table-column label="启用" width="100">
+      <el-table-column label="启用" min-width="100" show-overflow-tooltip>
         <template #default="{ row }">
           <el-tag v-if="row.status === 1" type="success" size="small">启用</el-tag>
           <el-tag v-else type="info" size="small">停用</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="180">
+      <el-table-column label="操作" min-width="180">
         <template #default="{ row }">
           <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
           <el-button link type="danger" :disabled="deleting" @click="handleDelete(row)">删除</el-button>
@@ -67,7 +65,7 @@
         <el-button type="primary" :loading="saving" @click="handleSave">保存</el-button>
       </template>
     </el-dialog>
-  </el-card>
+  </section>
 </template>
 
 <script setup>
@@ -170,6 +168,6 @@ onMounted(loadData)
 
 <style scoped>
 .peak-section {
-  margin-bottom: var(--app-space-6);
+  /* 已迁入规则配置卡片内,不设外边距 */
 }
 </style>

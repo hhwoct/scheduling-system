@@ -26,6 +26,7 @@ export const API_ROUTES = {
     VIEW: '/schedules/view',
     DETAIL: (planId) => `/schedules/${encodeURIComponent(planId)}`,
     ISSUES: (planId) => `/schedules/${encodeURIComponent(planId)}/issues`,
+    COMPARE: '/schedules/compare',
     WEEK_VIEW: (planId) => `/schedules/${encodeURIComponent(planId)}/week-view`,
     MONTH_VIEW: (planId) => `/schedules/${encodeURIComponent(planId)}/month-view`,
     DAILY_VIEW: (planId) => `/schedules/${encodeURIComponent(planId)}/daily-view`,
