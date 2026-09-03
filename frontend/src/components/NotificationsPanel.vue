@@ -145,9 +145,13 @@ onUnmounted(() => window.removeEventListener('notifications-changed', onChanged)
 <style scoped>
 .notif-bell {
   cursor: pointer;
+  padding: 6px;
+  border-radius: var(--app-radius-full);
   color: var(--el-text-color-regular);
+  transition: background-color var(--app-duration-fast) ease, color var(--app-duration-fast) ease;
 }
 .notif-bell:hover {
+  background-color: rgba(0, 0, 0, 0.05);
   color: var(--el-color-primary);
 }
 .notif-list {

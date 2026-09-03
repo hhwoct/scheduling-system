@@ -69,6 +69,8 @@ public sealed class SchedulingEngine
         var workstationAssignmentsFinal = workstationAssignments.ToList();
         var residualTemplates = new List<ShiftTemplateInput>();
         var remainingResidual = ResidualGapFiller.Fill(effectiveInput, effectiveRestDays, shiftAssignmentsFinal, workstationAssignmentsFinal, residualTemplates);
+        // 全员满班：正式员工非休息日必须都有班（高优先级约束，不受需求余量限制）
+        ResidualGapFiller.FillToFullMonth(effectiveInput, effectiveRestDays, shiftAssignmentsFinal, workstationAssignmentsFinal, residualTemplates);
         // 缺口报告以兜底填充后的最终状态为准
         var staffingGaps = ResidualGapFiller.BuildGapIssues(effectiveInput, remainingResidual);
         var summaryInput = residualTemplates.Count == 0

@@ -112,12 +112,14 @@ public sealed class ShiftAllocator
                     .Where(e => RespectsMinDailyHours(e, shift, assignedToday, input))
                     .OrderBy(e => e.IsParttime)  // 全职优先，兼职靠后
                     .ThenByDescending(e => e.IsParttime == 1 ? periodHours.GetValueOrDefault(e.Id) : 0m)
+                    // 高优先级约束：正式员工按周工时升序轮转（谁上的少谁优先），
+                    // 保证每人每月约休 4 天、平均每周 1 天；技能分/偏好作为次级键
+                    .ThenBy(e => e.IsParttime == 1 ? 0m : weeklyHours.GetValueOrDefault(e.Id))
                     .ThenByDescending(e => PreferenceScoring.EffectiveScore(
                         TotalSkillScore(e.Id, shift, skillsByEmployee),
                         PreferenceScoring.ForShift(e.Id, shift, date.DayType, input),
                         input.PreferenceWeight,
                         shift.WorkstationIds.Count * PreferenceScoring.SingleStationSkillMax))  // 0-1 连续权重：技能分×(1−w) + 偏好归一化分×w
-                    .ThenBy(e => e.IsParttime == 1 ? 0m : weeklyHours.GetValueOrDefault(e.Id))
                     .ToList();
 
                 var toAssign = Math.Min(required, candidates.Count);
@@ -514,10 +516,12 @@ public sealed class ShiftAllocator
                     .Where(e => RespectsMinDailyHours(e, template, assignedToday, input))
                     .OrderBy(e => e.IsParttime)
                     .ThenByDescending(e => e.IsParttime == 1 ? periodHours.GetValueOrDefault(e.Id) : 0m)
+                    // 高优先级约束：正式员工按周工时升序轮转（谁上的少谁优先），
+                    // 保证每人每月约休 4 天、平均每周 1 天；技能分作为次级键
+                    .ThenBy(e => e.IsParttime == 1 ? 0m : weeklyHours.GetValueOrDefault(e.Id))
                     .ThenByDescending(e => skillsByEmployee.TryGetValue(e.Id, out var s)
                         ? s.GetValueOrDefault(targetWorkstationId)
                         : 0)
-                    .ThenBy(e => e.IsParttime == 1 ? 0m : weeklyHours.GetValueOrDefault(e.Id))
                     .ToList();
 
                 // 选第一个「选得到工作站且不超过该时段最好人数上限」的候选人，避免整块因上限被放弃

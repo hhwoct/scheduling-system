@@ -1,12 +1,11 @@
 <template>
   <div class="login-page">
-    <el-card class="login-card">
-      <template #header>
-        <div class="login-title">排班系统管理端</div>
-      </template>
+    <div class="login-card">
+      <div class="login-title">排班系统</div>
+      <div class="login-sub">门店排班 · 员工协作</div>
       <el-form ref="formRef" :model="form" :rules="rules" label-width="0" size="large">
         <el-form-item prop="username">
-          <el-input v-model="form.username" placeholder="用户名" :prefix-icon="User" />
+          <el-input v-model="form.username" placeholder="用户名" :prefix-icon="User" inputmode="latin" />
         </el-form-item>
         <el-form-item prop="password">
           <el-input
@@ -15,11 +14,12 @@
             placeholder="密码"
             show-password
             :prefix-icon="Lock"
+            inputmode="latin"
             @keyup.enter="handleLogin"
           />
         </el-form-item>
         <el-form-item>
-          <el-button type="primary" class="login-btn" :loading="loading" :disabled="cooldown > 0" @click="handleLogin">
+          <el-button type="primary" round class="login-btn" :loading="loading" :disabled="cooldown > 0" @click="handleLogin">
             {{ cooldown > 0 ? `${cooldown}s 后可重试` : '登录' }}
           </el-button>
         </el-form-item>
@@ -28,7 +28,7 @@
           <el-link type="primary" :underline="false" @click="openForgot">忘记密码？</el-link>
         </div>
       </el-form>
-    </el-card>
+    </div>
 
     <!-- 忘记密码弹窗 -->
     <el-dialog v-model="forgotVisible" title="重置密码" width="420px">
@@ -198,22 +198,47 @@ async function handleForgotPassword() {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, var(--app-brand-gradient-from) 0%, var(--app-brand-gradient-to) 100%);
+  padding: 16px;
+  /* 深蓝品牌渐变打底,叠加两团 aurora 增加深度 */
+  background:
+    radial-gradient(900px 500px at 12% 8%, rgba(0, 122, 255, 0.4), transparent 60%),
+    radial-gradient(800px 480px at 92% 94%, rgba(0, 58, 112, 0.6), transparent 62%),
+    linear-gradient(135deg, var(--app-brand-gradient-from) 0%, var(--app-brand-gradient-to) 100%);
 }
+/* 毛玻璃卡片:白半透明 + 强模糊 + 高光大阴影 */
 .login-card {
-  width: 380px;
+  width: 400px;
+  max-width: 100%;
+  padding: 40px 36px 32px;
+  border-radius: 20px;
+  background-color: var(--app-card-glass-bg);
+  -webkit-backdrop-filter: var(--app-glass-blur-strong);
+  backdrop-filter: var(--app-glass-blur-strong);
+  border: 1px solid var(--app-card-glass-border);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.3);
 }
 .login-title {
   text-align: center;
-  font-size: var(--app-font-xl);
-  font-weight: 600;
+  font-size: var(--app-font-display);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--app-text-primary);
+}
+.login-sub {
+  margin-top: 6px;
+  margin-bottom: 28px;
+  text-align: center;
+  font-size: var(--app-font-md);
+  color: var(--el-text-color-secondary);
 }
 .login-btn {
   width: 100%;
+  height: 42px;
+  font-size: var(--app-font-lg);
 }
 .forgot-password {
   text-align: right;
-  margin-top: -8px;
+  margin-top: -4px;
 }
 .cooldown-tip {
   margin-top: -4px;
@@ -221,5 +246,13 @@ async function handleForgotPassword() {
   font-size: var(--app-font-sm);
   color: var(--el-color-warning);
   text-align: center;
+}
+@media (max-width: 640px) {
+  .login-card {
+    padding: 32px 24px 24px;
+  }
+  .login-title {
+    font-size: var(--app-font-2xl);
+  }
 }
 </style>

@@ -34,7 +34,7 @@
         <div v-loading="loading || plansLoading">
           <template v-if="rows.length">
             <!-- 员工 × 日期 排班表（样式同「排班查看 · 周视图」） -->
-            <div class="gantt">
+            <div class="gantt" ref="ganttRef" @scroll="onGanttScroll">
               <div class="gantt-row gantt-header">
                 <div class="gantt-emp-col">员工</div>
                 <div v-for="d in dayList" :key="d.date" class="gantt-day-col" :class="{ weekend: d.weekend }">
@@ -105,6 +105,16 @@ import { getWorkstations } from '../api/workstations'
 
 const planId = ref('')
 const plans = ref([])
+const ganttRef = ref(null)
+
+// 员工列吸附:sticky 在部分环境下失效,改用滚动时手动平移
+function onGanttScroll() {
+  const el = ganttRef.value
+  if (!el) return
+  el.querySelectorAll('.gantt-emp-col').forEach(col => {
+    col.style.transform = `translateX(${el.scrollLeft}px)`
+  })
+}
 const plansLoading = ref(false)
 const loading = ref(false)
 const exporting = ref(false)
@@ -257,6 +267,8 @@ async function exportCsv() {
       days.sort((a, b) => (a.workDate < b.workDate ? -1 : a.workDate > b.workDate ? 1 : 0))
       for (const d of days) {
         const work = d.isRestDay !== 1
+        // 兼职员工不计入休息统计:只有排到了班次的日子才导出
+        if (Number(row.isParttime) === 1 && !work) continue
         csv.push([
           csvEscape(row.employeeNo),
           csvEscape(row.employeeName),
@@ -303,7 +315,7 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.gantt { border: 1px solid var(--el-border-color-lighter); border-radius: var(--app-radius-sm); overflow-x: hidden; }
+.gantt { border: 1px solid var(--el-border-color-lighter); border-radius: var(--app-radius-sm); overflow-x: auto; }
 .gantt-row { display: flex; border-bottom: 1px solid var(--el-border-color-lighter); min-width: 100%; }
 .gantt-row:last-child { border-bottom: none; }
 .gantt-row-parttime .gantt-emp-col { background: var(--app-parttime-bg); }
@@ -324,19 +336,20 @@ onMounted(async () => {
 .gantt-header { background: var(--el-fill-color-light); font-weight: 600; position: sticky; top: 0; z-index: 4; }
 .gantt-emp-col {
   width: 150px;
+  min-width: 150px;
   flex-shrink: 0;
   padding: var(--app-space-3) var(--app-space-4);
   border-right: 1px solid var(--el-border-color-lighter);
-  position: sticky;
-  left: 0;
   background: var(--el-bg-color);
   z-index: 3;
+  will-change: transform;
   display: flex;
   flex-direction: column;
   justify-content: center;
+  box-shadow: 2px 0 6px rgba(0, 0, 0, 0.08);
 }
 .gantt-header .gantt-emp-col { background: var(--el-fill-color-light); z-index: 5; }
-.gantt-day-col { flex: 1; width: 26px; min-width: 26px; padding: var(--app-space-2); border-right: 1px solid var(--el-border-color-lighter); box-sizing: border-box; }
+.gantt-day-col { width: 200px; min-width: 200px; flex-shrink: 0; padding: var(--app-space-2); border-right: 1px solid var(--el-border-color-lighter); box-sizing: border-box; }
 .gantt-day-col:last-child { border-right: none; }
 .gantt-day-col.weekend { background-color: var(--el-fill-color-lighter); }
 .day-label { font-size: var(--app-font-sm); color: var(--el-text-color-regular); text-align: center; }

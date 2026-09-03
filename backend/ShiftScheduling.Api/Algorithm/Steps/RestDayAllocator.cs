@@ -62,6 +62,8 @@ public sealed class RestDayAllocator
         var restDayCounts = new Dictionary<long, int>();
         // 每天每部门已休息的部门集合
         var restedDeptsByDate = new Dictionary<DateOnly, HashSet<string>>();
+        // 高优先级约束：每人每周最多休 1 天（4 天月休分散到 4 个自然周，平均每周 1 天）
+        var restedWeeksByEmp = new Dictionary<long, HashSet<DateOnly>>();
 
         // 按日期顺序，为每天都尽量凑满配额
         foreach (var day in allDays)
@@ -79,10 +81,12 @@ public sealed class RestDayAllocator
 
             var restrictedDepts = restedDeptsByDate[day.WorkDate];
 
-            // 候选：未达到休息天数上限；高峰日仅行政员工可休；当天每部门不超1人
+            // 候选：未达到休息天数上限；高峰日仅行政员工可休；当天每部门不超1人；
+            // 每周最多休 1 天（休息分散到各周，避免一周休多次、其他周连上）
             var orderedEmployees = schedulableEmployees
                 .Where(e => restDayCounts.GetValueOrDefault(e.Id, 0) < restDaysTarget)
                 .Where(e => !isPeakDay || CanRestOnPeakDay(e.Department))
+                .Where(e => !HasRestedInWeek(e.Id, day.WorkDate, restedWeeksByEmp))
                 .OrderBy(e => restDayCounts.GetValueOrDefault(e.Id, 0))
                 // 偏好学习（feature/schedule-pref-learning）：店长习惯让谁在该类型日休息则优先。
                 // 休息偏好保持次级键（不参与连续权重：休息分配无技能分竞争，加权无意义）。
@@ -103,6 +107,7 @@ public sealed class RestDayAllocator
             {
                 assignments.Add(new RestDayAssignment(employee.Id, day.WorkDate));
                 restDayCounts[employee.Id] = restDayCounts.GetValueOrDefault(employee.Id, 0) + 1;
+                MarkRestedWeek(employee.Id, day.WorkDate, restedWeeksByEmp);
             }
         }
 
@@ -117,6 +122,7 @@ public sealed class RestDayAllocator
 
             var best = allDays
                 .Where(d => CanRestOnPeakDay(employee.Department) || !IsPeakDay(d))
+                .Where(d => !HasRestedInWeek(employee.Id, d.WorkDate, restedWeeksByEmp))
                 // 偏好学习：候选休息日排序中偏好作为次级键（休息无技能分，不参与连续权重）
                 .OrderBy(d => restCountByDate.GetValueOrDefault(d.WorkDate))
                 .ThenByDescending(d => PreferenceScoring.ForRest(employee.Id, d.DayType, input))
@@ -129,6 +135,7 @@ public sealed class RestDayAllocator
                 assignments.Add(new RestDayAssignment(employee.Id, best.WorkDate));
                 restDayCounts[employee.Id] = restDayCounts.GetValueOrDefault(employee.Id, 0) + 1;
                 restCountByDate[best.WorkDate] = restCountByDate.GetValueOrDefault(best.WorkDate) + 1;
+                MarkRestedWeek(employee.Id, best.WorkDate, restedWeeksByEmp);
             }
         }
 
@@ -174,15 +181,18 @@ public sealed class RestDayAllocator
                     if (streak >= maxConsecutive && i + 1 < allDays.Count)
                     {
                         var nextDay = allDays[i + 1];
-                        // 若下一天是高峰日且员工高峰日不能休，则该段无法强制打断（现实约束）
+                        // 若下一天是高峰日且员工高峰日不能休，则该段无法强制打断（现实约束）；
+                        // 且不违反"每周最多休 1 天"
                         if (CanRestOnPeakDay(employee.Department) || !IsPeakDay(nextDay))
                         {
-                            if (!restSet.Contains(nextDay.WorkDate))
+                            if (!restSet.Contains(nextDay.WorkDate)
+                                && !HasRestedInWeek(employee.Id, nextDay.WorkDate, restedWeeksByEmp))
                             {
                                 assignments.Add(new RestDayAssignment(employee.Id, nextDay.WorkDate));
                                 restSet.Add(nextDay.WorkDate);
                                 restDayCounts[employee.Id] = restDayCounts.GetValueOrDefault(employee.Id) + 1;
                                 restCountByDate[nextDay.WorkDate] = restCountByDate.GetValueOrDefault(nextDay.WorkDate) + 1;
+                                MarkRestedWeek(employee.Id, nextDay.WorkDate, restedWeeksByEmp);
                                 // 跳到下下天继续
                                 streak = 0;
                                 streakStart = null;
@@ -201,6 +211,33 @@ public sealed class RestDayAllocator
     /// <summary>周五(MySQL DAYOFWEEK=6) / 周六(7) 视为营业高峰日。</summary>
     private static bool IsPeakDay(DateParameterInput day)
         => day.WeekDay == 6 || day.WeekDay == 7;
+
+    /// <summary>自然周周一（与工时超限检查口径一致：周一~周日为一周）。</summary>
+    private static DateOnly GetWeekStart(DateOnly date)
+    {
+        var dayOffset = ((int)date.DayOfWeek + 6) % 7;
+        return date.AddDays(-dayOffset);
+    }
+
+    /// <summary>该员工本周（周一~周日）是否已安排过休息。</summary>
+    private static bool HasRestedInWeek(
+        long employeeId,
+        DateOnly date,
+        IReadOnlyDictionary<long, HashSet<DateOnly>> restedWeeksByEmp)
+        => restedWeeksByEmp.TryGetValue(employeeId, out var weeks) && weeks.Contains(GetWeekStart(date));
+
+    private static void MarkRestedWeek(
+        long employeeId,
+        DateOnly date,
+        Dictionary<long, HashSet<DateOnly>> restedWeeksByEmp)
+    {
+        if (!restedWeeksByEmp.TryGetValue(employeeId, out var weeks))
+        {
+            weeks = new HashSet<DateOnly>();
+            restedWeeksByEmp[employeeId] = weeks;
+        }
+        weeks.Add(GetWeekStart(date));
+    }
 
     /// <summary>部门 + 星期偏好排序：越小越优先。
     /// 行政员工：周六 > 周五 > 周日 > 平日（行政周末休、周五周六可休）；

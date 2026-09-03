@@ -4,6 +4,11 @@
  * 命名规则:--app-<类别>-<语义>
  * Element Plus 自带的 --el-* 变量不在这里重复定义,直接用即可;
  * 只有 Element 没有覆盖到的业务语义色才落到这里。
+ *
+ * Apple 风格改造(2026-10):
+ *   - 交互主色切换为 iOS 蓝 --app-accent #007AFF(品牌深蓝只保留在骨架/侧边栏)
+ *   - 新增系统字体栈、Apple 灰阶文字、#f5f5f7 背景、毛玻璃素材
+ *   - 圆角/阴影整体放大并柔和,信息密集页(矩阵/甘特)仍依赖小档圆角
  */
 
 :root {
@@ -16,12 +21,49 @@
   --app-brand-gradient-from: #001529;
   --app-brand-gradient-to: #003a70;
 
-  /* ===== 侧边栏 ===== */
+  /* ===== 交互主色(iOS 蓝) ===== */
+  /* 按钮/链接/焦点等一切交互高亮走这里;骨架仍用上方品牌深蓝 */
+  --app-accent: #007aff;
+  --app-accent-hover: #3395ff;
+  --app-accent-active: #0066d9;
+  /* 焦点环 */
+  --app-focus-ring: rgba(0, 122, 255, 0.16);
+
+  /* ===== 字体 ===== */
+  /* Apple 系统字体栈:苹方/微软雅黑回退,中文渲染质感最接近 SF Pro */
+  --app-font-family: -apple-system, BlinkMacSystemFont, 'SF Pro SC', 'SF Pro Text',
+    'PingFang SC', 'Hiragino Sans GB', 'Helvetica Neue', 'Microsoft YaHei',
+    'Segoe UI', sans-serif;
+
+  /* ===== Apple 灰阶 ===== */
+  /* 文字:近黑/次要/占位;背景:页面灰/卡片白 */
+  --app-text-primary: #1d1d1f;
+  --app-text-regular: #3a3a3c;
+  --app-text-secondary: #6e6e73;
+  --app-text-placeholder: #a1a1a6;
+  --app-text-disabled: #c7c7cc;
+  --app-bg: #f5f5f7;
+  --app-bg-elevated: #ffffff;
+
+  /* ===== 毛玻璃素材 ===== */
+  /* 侧边栏:深蓝半透明;header/登录卡片:白半透明 */
+  --app-glass-blur: blur(24px) saturate(180%);
+  --app-glass-blur-strong: blur(40px) saturate(160%);
+  --app-sidebar-glass-bg: rgba(15, 52, 96, 0.72);
+  --app-sidebar-glass-border: rgba(255, 255, 255, 0.1);
+  --app-header-glass-bg: rgba(255, 255, 255, 0.72);
+  --app-card-glass-bg: rgba(255, 255, 255, 0.72);
+  --app-card-glass-border: rgba(255, 255, 255, 0.55);
+  /* 极淡的头发丝分割线,替代 1px 实线边框 */
+  --app-hairline: rgba(60, 60, 67, 0.1);
+
+  /* ===== 侧边栏(实色回退,布局中默认走毛玻璃) ===== */
   --app-sidebar-bg: var(--app-brand);
-  --app-sidebar-text: rgba(255, 255, 255, 0.65);
+  --app-sidebar-text: rgba(255, 255, 255, 0.72);
   --app-sidebar-text-active: #ffffff;
   --app-sidebar-border: rgba(255, 255, 255, 0.08);
-  --app-sidebar-hover-bg: rgba(255, 255, 255, 0.06);
+  --app-sidebar-hover-bg: rgba(255, 255, 255, 0.08);
+  --app-sidebar-active-bg: rgba(255, 255, 255, 0.14);
   --app-sidebar-width: 220px;
   /* el-menu 原先由 background-color prop 经 TinyColor shade(20) 派生,
      现改为显式声明;取值用 tinycolor 实算得到,与原行为一致 */
@@ -66,7 +108,7 @@
   --app-space-7: 24px;
 
   /* ===== 字号 ===== */
-  /* 原有 13 个离散值(9~32px)收敛为 8 档 */
+  /* 原有 13 个离散值(9~32px)收敛为 8 档;Apple 风标题略微放大 */
   --app-font-micro: 10px;
   --app-font-xs: 11px;
   --app-font-sm: 12px;
@@ -74,20 +116,24 @@
   --app-font-md: 14px;
   --app-font-lg: 16px;
   --app-font-xl: 18px;
-  --app-font-2xl: 22px;
+  --app-font-2xl: 24px;
   --app-font-display: 28px;
 
   /* ===== 圆角 ===== */
-  /* 原有 6 个值(2/3/4/6/8/10px)收敛为 3 档 */
-  --app-radius-sm: 3px;
-  --app-radius-md: 6px;
-  --app-radius-lg: 10px;
+  /* 整体上移一档贴近 Apple 圆润感;矩阵小格子的 sm 档保持克制 */
+  --app-radius-sm: 6px;
+  --app-radius-md: 10px;
+  --app-radius-lg: 16px;
+  /* 胶囊:标签/药丸按钮 */
+  --app-radius-full: 999px;
 
   /* ===== 阴影 ===== */
-  /* 半透明阴影而非实线边框,层级更自然 */
-  --app-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
-  --app-shadow-md: 0 2px 8px rgba(0, 0, 0, 0.08);
-  --app-shadow-lg: 0 6px 24px rgba(0, 0, 0, 0.12);
+  /* 半透明阴影而非实线边框,层级更自然;比旧版更柔和、扩散更大 */
+  --app-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.05);
+  --app-shadow-md: 0 4px 16px rgba(0, 0, 0, 0.08);
+  --app-shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.14);
+  /* 卡片默认悬浮阴影(Apple 卡片质感) */
+  --app-shadow-card: 0 2px 12px rgba(0, 0, 0, 0.06);
 
   /* ===== 图表色板 ===== */
   /* 与 constants/palette.js 保持一致;ECharts/SVG 走 JS,CSS 侧走这里 */
@@ -102,6 +148,8 @@
 
   /* ===== 动效 ===== */
   --app-ease: cubic-bezier(0.32, 0.72, 0, 1);
+  /* 轻微回弹,用于弹窗/胶囊等小元素的进入 */
+  --app-ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
   --app-duration-fast: 120ms;
   --app-duration: 200ms;
   --app-duration-slow: 280ms;

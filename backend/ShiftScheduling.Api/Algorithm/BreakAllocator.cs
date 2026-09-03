@@ -171,17 +171,10 @@ public sealed class BreakAllocator
 
                 if (candidates.Count == 0)
                 {
-                    // 高峰把整个可休窗口挤没了：休息安排在窗口起点，告警交人工
+                    // 高峰把整个可休窗口挤没了：休息安排在窗口起点
+                    // （无人顶岗不视为问题：人数需求本为区间，不再生成告警）
                     var forced = (startMin + MinAfterStartMinutes) % 1440;
                     breaks.Add(new BreakAssignment(employeeId, date.WorkDate, TimeSpan.FromMinutes(forced), null, false, hasWs ? mainWs : null));
-                    issueCollector?.Add(new ScheduleIssueOutput(
-                        "BREAK_UNCOVERED",
-                        "WARN",
-                        BreakCalendarDate(forced, template.StartTime, date.WorkDate),
-                        TimeSpan.FromMinutes(forced),
-                        employeeId,
-                        hasWs ? mainWs : null,
-                        $"员工 {EmpName(employeeId)} 无合规休息窗口（高峰禁休与上班2小时/下班1小时规则冲突），休息被迫安排在 {Fmt(forced)}，请人工调整"));
                     continue;
                 }
 
@@ -281,14 +274,7 @@ public sealed class BreakAllocator
                     else
                     {
                         ApplyBreak(employeeId, date.WorkDate, best.BreakDate, best.Abs, null, false, hasWs ? mainWs : 0, hasWs);
-                        issueCollector?.Add(new ScheduleIssueOutput(
-                            "BREAK_UNCOVERED",
-                            "WARN",
-                            best.BreakDate,
-                            TimeSpan.FromMinutes(best.Abs),
-                            employeeId,
-                            hasWs ? mainWs : null,
-                            $"员工 {EmpName(employeeId)} 在 {Fmt(best.Abs)} 休息无人顶岗，该岗位缺人，请人工处理"));
+                        // 无人顶岗不视为问题（人数需求本为区间），不再生成 BREAK_UNCOVERED 告警
                     }
                 }
             }

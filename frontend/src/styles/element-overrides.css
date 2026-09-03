@@ -3,13 +3,77 @@
  *
  * 让组件库跟随本项目的 token,避免「组件是一套尺度、业务样式是另一套」。
  * 业务代码里不应再出现 Element 调色板或尺度的字面量。
+ *
+ * Apple 风格改造(2026-10):
+ *   - 语义色整体切换到 iOS 系统色板(蓝/绿/橙/红)
+ *   - 文字切换到 Apple 灰阶,圆角/阴影放大柔和
+ *   - 按钮=浅灰填充次按钮+蓝主按钮,标签=胶囊,表格=透明表头+细发丝线
+ *   - 输入框焦点加浅蓝光环,弹层无边框大阴影
  */
 
 :root {
+  /* ===== iOS 语义色板 ===== */
+  --el-color-primary: var(--app-accent);
+  --el-color-primary-light-3: #3395ff;
+  --el-color-primary-light-5: #66b0ff;
+  --el-color-primary-light-7: #99cbff;
+  --el-color-primary-light-8: #b3d7ff;
+  --el-color-primary-light-9: #e6f2ff;
+  --el-color-primary-dark-2: #0066d9;
+
+  --el-color-success: #34c759;
+  --el-color-success-light-3: #63d684;
+  --el-color-success-light-5: #8fe2a7;
+  --el-color-success-light-7: #bceec9;
+  --el-color-success-light-8: #d2f3db;
+  --el-color-success-light-9: #ebfaef;
+  --el-color-success-dark-2: #2ab24e;
+
+  --el-color-warning: #ff9500;
+  --el-color-warning-light-3: #ffad33;
+  --el-color-warning-light-5: #ffc266;
+  --el-color-warning-light-7: #ffd699;
+  --el-color-warning-light-8: #ffe0b3;
+  --el-color-warning-light-9: #fff4e5;
+  --el-color-warning-dark-2: #e68600;
+
+  --el-color-danger: #ff3b30;
+  --el-color-danger-light-3: #ff665d;
+  --el-color-danger-light-5: #ff918a;
+  --el-color-danger-light-7: #ffb5b0;
+  --el-color-danger-light-8: #ffcbc8;
+  --el-color-danger-light-9: #ffecea;
+  --el-color-danger-dark-2: #e63226;
+
+  /* ===== Apple 灰阶文字 ===== */
+  --el-text-color-primary: var(--app-text-primary);
+  --el-text-color-regular: var(--app-text-regular);
+  --el-text-color-secondary: var(--app-text-secondary);
+  --el-text-color-placeholder: var(--app-text-placeholder);
+  --el-text-color-disabled: var(--app-text-disabled);
+
+  /* ===== 边框:冷灰发丝线 ===== */
+  --el-border-color: #d8d8de;
+  --el-border-color-light: #e3e3e8;
+  --el-border-color-lighter: #ececf0;
+  --el-border-color-extra-light: #f5f5f7;
+  --el-border-color-hover: #c0c4cc;
+
+  /* ===== 背景:页面灰 + 卡片白 ===== */
+  --el-bg-color: #ffffff;
+  --el-bg-color-overlay: #ffffff;
+  --el-fill-color: #f5f5f7;
+  --el-fill-color-light: #f5f5f7;
+  --el-fill-color-lighter: #f7f7f9;
+  --el-fill-color-extra-light: #fafafa;
+  --el-fill-color-dark: #f2f2f5;
+  --el-mask-color: rgba(0, 0, 0, 0.45);
+
   /* ===== 圆角 ===== */
-  /* 与业务侧同一套刻度:base 4->6,small 2->3 */
+  /* 与业务侧同一套刻度:base 4->10,small 2->6,胶囊拉满 */
   --el-border-radius-base: var(--app-radius-md);
   --el-border-radius-small: var(--app-radius-sm);
+  --el-border-radius-round: var(--app-radius-full);
 
   /* ===== 字号 ===== */
   --el-font-size-extra-small: var(--app-font-sm);
@@ -18,28 +82,188 @@
   --el-font-size-medium: var(--app-font-lg);
   --el-font-size-large: var(--app-font-xl);
 
+  /* ===== 字体 ===== */
+  --el-font-family: var(--app-font-family);
+
   /* ===== 阴影 ===== */
+  --el-box-shadow-lighter: 0 1px 2px rgba(0, 0, 0, 0.04);
   --el-box-shadow-light: var(--app-shadow-sm);
   --el-box-shadow: var(--app-shadow-md);
+  --el-box-shadow-dark: var(--app-shadow-lg);
 }
 
 /* ===== 卡片 ===== */
 /* 用半透明阴影表达层级,而不是实线边框 —— 边框会把密集页面切得很碎 */
 .el-card {
   border: none;
-  box-shadow: var(--app-shadow-sm);
+  border-radius: var(--app-radius-lg);
+  box-shadow: var(--app-shadow-card);
 }
 
 .el-card.is-hover-shadow:hover {
   box-shadow: var(--app-shadow-md);
 }
 
-/* ===== 表格 ===== */
-/* 全站 165 处 el-table,表头需要足够区分度才能在长表里定位 */
-.el-table thead th.el-table__cell {
-  background-color: var(--el-fill-color-light);
-  color: var(--el-text-color-primary);
+/* 卡片头:去掉下边框,只靠留白分层(Apple 卡片惯例) */
+.el-card__header {
+  border-bottom: none;
+  padding: 20px 20px 14px;
+  font-size: 15px;
   font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+
+/* ===== 按钮 ===== */
+.el-button {
+  border-radius: var(--app-radius-md);
+  font-weight: 500;
+}
+
+/* 默认按钮=Apple 浅灰次按钮(无边框),彩色系按钮走 Element 自身变量 */
+.el-button:not(.is-plain):not(.is-text):not(.is-link):not(.el-button--primary):not(.el-button--success):not(.el-button--warning):not(.el-button--danger):not(.el-button--info) {
+  background-color: #f2f2f7;
+  border-color: transparent;
+  color: var(--app-text-primary);
+}
+
+.el-button:not(.is-plain):not(.is-text):not(.is-link):not(.el-button--primary):not(.el-button--success):not(.el-button--warning):not(.el-button--danger):not(.el-button--info):hover {
+  background-color: #e8e8ed;
+  border-color: transparent;
+  color: var(--app-text-primary);
+}
+
+.el-button:not(.is-plain):not(.is-text):not(.is-link):not(.el-button--primary):not(.el-button--success):not(.el-button--warning):not(.el-button--danger):not(.el-button--info):active {
+  background-color: #dcdce2;
+  border-color: transparent;
+  color: var(--app-text-primary);
+}
+
+/* 主按钮:蓝底 + 浅蓝投影,像 iOS 的 CTA */
+.el-button--primary:not(.is-plain):not(.is-text):not(.is-link) {
+  box-shadow: 0 2px 8px rgba(0, 122, 255, 0.25);
+}
+
+/* 彩色 plain 按钮去掉边框,保留浅色底(Apple 胶囊按钮质感) */
+.el-button.is-plain:not(.is-text):not(.is-link) {
+  border-color: transparent;
+}
+
+/* ===== 输入框 ===== */
+/* 聚焦时:主色描边 + 浅蓝光环 */
+.el-input__wrapper.is-focus,
+.el-select__wrapper.is-focused,
+.el-textarea__inner:focus {
+  box-shadow: 0 0 0 1px var(--el-color-primary) inset, 0 0 0 3px var(--app-focus-ring) !important;
+}
+
+.el-textarea__inner {
+  border-radius: var(--app-radius-md);
+}
+
+/* ===== 表格 ===== */
+/* 表头:透明底、次级文字、细发丝线;行 hover 用浅灰 */
+.el-table {
+  --el-table-border-color: var(--el-border-color-lighter);
+  --el-table-row-hover-bg-color: #f2f2f5;
+  --el-table-header-bg-color: transparent;
+}
+
+.el-table thead th.el-table__cell {
+  background-color: transparent;
+  color: var(--el-text-color-secondary);
+  font-weight: 600;
+  font-size: var(--app-font-sm);
+}
+
+/* ===== 标签:胶囊 ===== */
+.el-tag {
+  border-radius: var(--app-radius-full);
+  border-color: transparent;
+  padding: 0 10px;
+}
+
+/* ===== 弹窗 ===== */
+.el-dialog {
+  border-radius: var(--app-radius-lg);
+  box-shadow: var(--app-shadow-lg);
+}
+
+.el-dialog__header {
+  padding: 22px 24px 14px;
+}
+
+.el-dialog__title {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--el-text-color-primary);
+}
+
+.el-dialog__body {
+  padding: 8px 24px 24px;
+}
+
+.el-dialog__footer {
+  padding: 0 24px 20px;
+}
+
+.el-message-box {
+  border-radius: var(--app-radius-lg);
+  box-shadow: var(--app-shadow-lg);
+  padding: 22px 24px;
+}
+
+/* ===== 浮层(下拉/日期面板/菜单):无边框大阴影 ===== */
+.el-popper.is-light {
+  border: none;
+}
+
+.el-select__popper.el-popper,
+.el-dropdown__popper.el-popper,
+.el-picker__popper.el-popper,
+.el-popover.el-popper {
+  border-radius: var(--app-radius-md);
+  box-shadow: var(--app-shadow-lg);
+}
+
+/* 下拉菜单项:圆角 hover 高亮 */
+.el-dropdown-menu {
+  padding: 6px;
+}
+
+.el-dropdown-menu__item {
+  border-radius: var(--app-radius-sm);
+}
+
+/* ===== 分段控件(radio-button):圆角容器 ===== */
+.el-radio-group:has(.el-radio-button) {
+  border-radius: var(--app-radius-md);
+  overflow: hidden;
+}
+
+.el-radio-button__inner {
+  border-radius: 0;
+}
+
+.el-radio-button__original-radio:checked + .el-radio-button__inner {
+  box-shadow: none;
+}
+
+/* ===== 提示条 ===== */
+.el-alert {
+  border: none;
+  border-radius: var(--app-radius-md);
+}
+
+/* ===== 消息 toast ===== */
+.el-message {
+  border: none;
+  border-radius: var(--app-radius-md);
+  box-shadow: var(--app-shadow-lg);
+}
+
+/* ===== 加载遮罩 ===== */
+.el-loading-mask {
+  background-color: rgba(255, 255, 255, 0.65);
 }
 
 /* ===== 按压反馈 ===== */
@@ -47,7 +271,8 @@
 .el-button {
   transition: transform var(--app-duration-fast) ease-out,
     background-color var(--app-duration-fast) ease-out,
-    border-color var(--app-duration-fast) ease-out;
+    border-color var(--app-duration-fast) ease-out,
+    box-shadow var(--app-duration-fast) ease-out;
 }
 
 .el-button:not(.is-disabled):active {

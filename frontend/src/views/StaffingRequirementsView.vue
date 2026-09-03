@@ -1391,7 +1391,7 @@ onBeforeUnmount(() => {
   content: '';
   position: absolute;
   inset: 0;
-  background: rgba(64, 158, 255, 0.35);
+  background: rgba(0, 122, 255, 0.35);
   pointer-events: none;
 }
 .gantt-cell.has-remark::before {

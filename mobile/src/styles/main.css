@@ -1,0 +1,90 @@
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: #f2f2f7;
+  font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', 'PingFang SC',
+    'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#app {
+  min-height: 100vh;
+}
+
+/* ===== 全局形状约定：胶囊/椭圆统一改圆 ===== */
+
+/* 大按钮：胶囊改为小圆角方块（正圆在几何上不可行，统一 6px） */
+.van-button--round {
+  border-radius: 6px;
+}
+
+/* 状态标签（van-tag）：全圆角胶囊，贴近圆形 */
+.van-tag,
+.van-tag--plain,
+.van-tag--round {
+  border-radius: 999px;
+}
+
+/* 徽标（未读数等）保持正圆胶囊 */
+.van-badge {
+  border-radius: 999px;
+}
+
+/* 登录页 */
+.login-page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: #f7f8fa;
+}
+
+.login-page .brand {
+  text-align: center;
+  padding: 72px 0 48px;
+}
+
+.login-page .brand-title {
+  font-size: 28px;
+  font-weight: 600;
+  color: #323233;
+}
+
+.login-page .brand-sub {
+  margin-top: 8px;
+  font-size: 14px;
+  color: #969799;
+}
+
+.login-page .login-actions {
+  margin: 24px 16px 0;
+}
+
+.login-page .login-links {
+  margin: 16px 0;
+  text-align: center;
+}
+
+.login-page .login-links a {
+  font-size: 14px;
+  color: #1989fa;
+  text-decoration: none;
+}
+
+/* 通用占位页 */
+.home-page .welcome {
+  padding: 20px 16px;
+}
+
+.home-page .welcome-name {
+  font-size: 20px;
+  font-weight: 600;
+  color: #323233;
+}
+
+.home-page .welcome-sub {
+  margin-top: 6px;
+  font-size: 13px;
+  color: #969799;
+}

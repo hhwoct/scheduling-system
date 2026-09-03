@@ -1,6 +1,7 @@
 <template>
-  <el-container class="emp-layout">
-    <el-aside :width="collapsed ? '0px' : '220px'" class="emp-aside">
+  <div class="emp-layout">
+    <!-- 固定深蓝毛玻璃侧边栏 -->
+    <aside class="emp-aside" :class="{ collapsed }" :style="{ width: collapsed ? '0px' : 'var(--app-sidebar-width)' }">
       <div class="logo">排班系统 · 员工端</div>
       <el-menu
         :default-active="$route.path"
@@ -33,18 +34,23 @@
         <el-icon><ArrowLeft /></el-icon>
         <span>返回管理端</span>
       </div>
-    </el-aside>
-    <!-- 书签样式按钮：常驻左边缘；展开时显示「收起」，收起时显示「展开」 -->
-    <button class="sidebar-tab" :class="{ expanded: !collapsed }" :title="collapsed ? '展开侧边栏' : '收起侧边栏'" @click="collapsed = !collapsed">
-      <el-icon :size="16"><Expand v-if="collapsed" /><Fold v-else /></el-icon>
-      <span>{{ collapsed ? '展开' : '收起' }}</span>
-    </button>
-    <el-container>
-      <el-header class="emp-header">
+    </aside>
+    <div class="layout-body" :class="{ collapsed }">
+      <!-- sticky 毛玻璃 header -->
+      <header class="emp-header">
         <div class="header-left">
+          <!-- 侧边栏收起/展开:header 左上角圆形图标按钮 -->
+          <button
+            class="sidebar-toggle"
+            :title="collapsed ? '展开侧边栏' : '收起侧边栏'"
+            aria-label="切换侧边栏"
+            @click="collapsed = !collapsed"
+          >
+            <el-icon :size="18"><Expand v-if="collapsed" /><Fold v-else /></el-icon>
+          </button>
           <div class="header-title">{{ $route.meta.title }}</div>
         </div>
-        <div class="u-row u-gap-6">
+        <div class="u-row u-gap-5">
           <NotificationsPanel
             v-if="authStore.role === 'EMPLOYEE'"
             view-all-path="/employee/notifications"
@@ -63,12 +69,16 @@
           </el-dropdown>
           <ChangePasswordDialog v-model="changePwdVisible" />
         </div>
-      </el-header>
-      <el-main class="emp-content" :class="{ collapsed }">
-        <router-view :key="$route.path" />
-      </el-main>
-    </el-container>
-  </el-container>
+      </header>
+      <main class="emp-content" :class="{ collapsed }">
+        <router-view v-slot="{ Component }">
+          <transition name="page" mode="out-in">
+            <component :is="Component" :key="$route.path" />
+          </transition>
+        </router-view>
+      </main>
+    </div>
+  </div>
 </template>
 
 <script setup>
@@ -83,11 +93,11 @@ import NotificationsPanel from '../components/NotificationsPanel.vue'
 const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
-// 侧边栏收起状态：与员工端独立持久化，刷新后保持
-const collapsed = ref(localStorage.getItem('emp-sidebar-collapsed') === '1')
-watch(collapsed, v => localStorage.setItem('emp-sidebar-collapsed', v ? '1' : '0'))
 
-// 菜单切换（预览员工参数由「我的班表」页面自行管理）
+// 侧边栏收起状态：本地持久化，刷新后保持
+const collapsed = ref(localStorage.getItem('sidebar-collapsed') === '1')
+watch(collapsed, v => localStorage.setItem('sidebar-collapsed', v ? '1' : '0'))
+
 function handleMenuSelect(index) {
   router.push(index)
 }
@@ -136,137 +146,215 @@ async function handleCommand(command) {
 
 <style scoped>
 .emp-layout {
+  position: relative;
   height: 100%;
 }
+
+/* 极淡的品牌 aurora 底:给毛玻璃侧边栏提供可被模糊的层次 */
+.emp-layout::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(1100px 520px at 0% 0%, rgba(0, 46, 90, 0.14), transparent 62%),
+    radial-gradient(900px 480px at 100% 100%, rgba(0, 122, 255, 0.1), transparent 60%);
+}
+
+/* ===== 侧边栏:固定 + 深蓝毛玻璃 ===== */
 .emp-aside {
-  background-color: var(--app-brand);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  transition: width 0.25s ease;
-}
-.logo {
-  height: 60px;
-  line-height: 60px;
-  text-align: center;
-  color: var(--el-color-white);
-  font-size: var(--app-font-lg);
-  font-weight: 600;
-}
-/* 书签样式按钮：常驻左边缘；收起时贴屏幕左缘，展开时贴 sidebar 右边界内侧（translate 保证贴边） */
-.sidebar-tab {
   position: fixed;
   left: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  z-index: 100;
+  top: 0;
+  bottom: 0;
+  z-index: 110;
   display: flex;
   flex-direction: column;
+  background-color: var(--app-sidebar-glass-bg);
+  -webkit-backdrop-filter: var(--app-glass-blur);
+  backdrop-filter: var(--app-glass-blur);
+  border-right: 1px solid var(--app-sidebar-glass-border);
+  box-shadow: 4px 0 24px rgba(0, 0, 0, 0.16);
+  overflow: hidden;
+  transition: width var(--app-duration-slow) var(--app-ease);
+}
+
+.emp-aside.collapsed {
+  border-right: none;
+  box-shadow: none;
+}
+
+.logo {
+  height: 64px;
+  display: flex;
   align-items: center;
-  gap: var(--app-space-4);
-  padding: var(--app-space-6) 7px;
-  background-color: var(--app-brand);
-  color: rgba(255, 255, 255, 0.75);
-  border: none;
-  border-radius: 0 var(--app-radius-lg) var(--app-radius-lg) 0;
-  cursor: pointer;
-  font-size: var(--app-font-sm);
-  box-shadow: 2px 0 8px rgba(0, 0, 0, 0.25);
-  transition: color 0.2s, background-color 0.2s, left 0.25s ease, transform 0.25s ease;
-  user-select: none;
+  justify-content: center;
+  color: #ffffff;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
 }
-.sidebar-tab span {
-  writing-mode: vertical-lr;
-  letter-spacing: 2px;
-}
-.sidebar-tab.expanded {
-  left: 220px;
-  transform: translate(-100%, -50%);
-}
-.sidebar-tab:hover {
-  color: var(--el-color-white);
-  background-color: var(--app-brand-hover);
-}
-/* 原先用 el-menu 的 background-color/text-color/active-text-color prop,
-   那三个 prop 已废弃且要走 TinyColor 派生,无法消费 token,故改为直接给变量 */
+
+/* ===== 菜单:胶囊高亮 ===== */
 .emp-aside :deep(.el-menu) {
-  --el-menu-bg-color: var(--app-sidebar-bg);
+  --el-menu-bg-color: transparent;
   --el-menu-text-color: var(--app-sidebar-text);
   --el-menu-active-color: var(--app-sidebar-text-active);
-  --el-menu-hover-bg-color: var(--app-menu-hover-bg);
-  --el-menu-item-hover-fill: var(--app-menu-hover-bg);
+  --el-menu-hover-bg-color: transparent;
+  --el-menu-item-hover-fill: transparent;
   border-right: none;
   flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 8px;
 }
-/* 选中菜单项加深背景，突出当前页面 */
+
+.emp-aside :deep(.el-menu-item) {
+  height: 40px;
+  line-height: 40px;
+  border-radius: var(--app-radius-md);
+  margin: 2px 0;
+  padding: 0 12px !important;
+  transition: background-color var(--app-duration-fast) ease, color var(--app-duration-fast) ease;
+}
+
+.emp-aside :deep(.el-menu-item:hover) {
+  background-color: var(--app-sidebar-hover-bg);
+}
+
 .emp-aside :deep(.el-menu-item.is-active),
 .emp-aside :deep(.el-menu-item.is-active:hover) {
-  background-color: var(--app-brand-active);
+  background-color: var(--app-sidebar-active-bg);
+  color: var(--app-sidebar-text-active);
+  font-weight: 600;
 }
+
 .emp-aside-footer {
   display: flex;
   align-items: center;
   gap: var(--app-space-4);
-  padding: 14px 20px;
-  color: rgba(255, 255, 255, 0.65);
+  margin: 8px;
+  padding: 10px 12px;
+  border-radius: var(--app-radius-md);
+  color: rgba(255, 255, 255, 0.72);
   cursor: pointer;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
   transition: color 0.2s, background-color 0.2s;
   user-select: none;
+  flex-shrink: 0;
 }
 .emp-aside-footer:hover {
   color: var(--el-color-white);
-  background-color: rgba(255, 255, 255, 0.06);
+  background-color: rgba(255, 255, 255, 0.08);
 }
 .preview-tip {
   padding: var(--app-space-3) var(--app-space-5);
-  color: var(--el-color-success);
+  color: #7ee29a;
   font-size: var(--app-font-sm);
-  border-top: 1px solid rgba(255,255,255,0.1);
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
   margin-top: var(--app-space-2);
-  opacity: 0.85;
+  opacity: 0.9;
 }
+
+/* ===== 右侧主体:随侧边栏留出左边距 ===== */
+.layout-body {
+  position: relative;
+  z-index: 1;
+  height: 100%;
+  overflow-y: auto;
+  padding-left: var(--app-sidebar-width);
+  transition: padding-left var(--app-duration-slow) var(--app-ease);
+}
+
+.layout-body.collapsed {
+  padding-left: 0;
+}
+
+/* ===== header:sticky 白毛玻璃 ===== */
 .emp-header {
+  position: sticky;
+  top: 0;
+  z-index: 90;
+  height: 60px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background-color: var(--el-bg-color);
-  border-bottom: 1px solid var(--el-border-color-light);
+  padding: 0 24px;
+  background-color: var(--app-header-glass-bg);
+  -webkit-backdrop-filter: var(--app-glass-blur);
+  backdrop-filter: var(--app-glass-blur);
+  border-bottom: 1px solid var(--app-hairline);
 }
+
 .header-left {
   display: flex;
   align-items: center;
-  gap: var(--app-space-5);
+  gap: var(--app-space-4);
 }
-.collapse-btn {
-  cursor: pointer;
-  padding: var(--app-space-3);
-  border-radius: var(--app-radius-sm);
+
+/* 圆形图标按钮:按下有回弹,悬停浅灰底 */
+.sidebar-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  border-radius: var(--app-radius-full);
   color: var(--el-text-color-regular);
-  transition: background-color 0.2s, color 0.2s;
+  cursor: pointer;
+  transition: background-color var(--app-duration-fast) ease, color var(--app-duration-fast) ease,
+    transform var(--app-duration-fast) ease-out;
 }
-.collapse-btn:hover {
+.sidebar-toggle:hover {
   background-color: rgba(0, 0, 0, 0.06);
-  color: var(--el-color-primary);
+  color: var(--el-text-color-primary);
 }
+.sidebar-toggle:active {
+  transform: scale(0.92);
+}
+
 .header-title {
-  font-size: var(--app-font-lg);
-  font-weight: 600;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
 }
+
 .user-info {
   cursor: pointer;
   display: flex;
   align-items: center;
   gap: var(--app-space-2);
+  padding: 6px 10px;
+  border-radius: var(--app-radius-full);
+  font-size: var(--app-font-md);
+  transition: background-color var(--app-duration-fast) ease;
 }
+.user-info:hover {
+  background-color: rgba(0, 0, 0, 0.05);
+}
+
 .emp-content {
-  overflow-y: auto;
+  padding: 24px;
 }
+
 /* 收起侧边栏后页面内容水平居中 */
 .emp-content.collapsed :deep(> *) {
   max-width: 1400px;
   margin: 0 auto;
   width: 100%;
 }
-/* 表格不再限高:内容多长表格多长,整页滚动,避免表格内嵌套滚动条 */
+
+/* 窄屏收紧内容边距 */
+@media (max-width: 640px) {
+  .emp-content {
+    padding: 16px;
+  }
+
+  .emp-header {
+    padding: 0 16px;
+  }
+}
 </style>

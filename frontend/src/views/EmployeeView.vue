@@ -76,12 +76,23 @@
     </el-card>
 
     <el-dialog v-model="dialogVisible" :title="editing ? '编辑员工' : '新增员工'" width="500px">
-      <el-form ref="formRef" :model="form" :rules="rules" label-width="90px">
+      <el-form ref="formRef" :model="form" :rules="rules" label-width="100px" class="dialog-form">
         <el-form-item label="工号" prop="employeeNo">
           <el-input v-model="form.employeeNo" />
         </el-form-item>
         <el-form-item label="姓名" prop="name">
           <el-input v-model="form.name" />
+        </el-form-item>
+        <el-form-item v-if="isSystemAdmin" label="门店" prop="storeId">
+          <el-select
+            class="u-w-full"
+            v-model="form.storeId"
+            placeholder="请选择门店"
+            :disabled="editing"
+            :title="editing ? '员工所属门店创建后不可修改' : ''"
+          >
+            <el-option v-for="s in stores" :key="s.id" :label="s.name" :value="s.id" />
+          </el-select>
         </el-form-item>
         <el-form-item label="部门" prop="department">
           <el-select class="u-w-full" v-model="form.department">
@@ -263,23 +274,26 @@ const form = reactive({
   employeeNo: '',
   name: '',
   phone: '',
+  storeId: null,
   department: '',
   primaryPosition: '',
   maxWeeklyHours: 48,
   weeklyHoursFollowDefault: 1
 })
-const rules = {
+const rules = computed(() => ({
   employeeNo: [{ required: true, message: '请输入工号', trigger: 'blur' }],
   name: [{ required: true, message: '请输入姓名', trigger: 'blur' }],
   department: [{ required: true, message: '请选择部门', trigger: 'change' }],
+  storeId: isSystemAdmin.value ? [{ required: true, message: '请选择门店', trigger: 'change' }] : [],
   maxWeeklyHours: [{ required: true, message: '请输入周工时上限', trigger: 'blur' }]
-}
+}))
 
 // P3-28: 重置表单并清除验证状态
 function resetForm() {
   form.employeeNo = ''
   form.name = ''
   form.phone = ''
+  form.storeId = null
   form.department = ''
   form.primaryPosition = ''
   form.maxWeeklyHours = globalMaxWeeklyHours.value
@@ -301,6 +315,7 @@ function openEdit(row) {
   form.employeeNo = row.employeeNo
   form.name = row.name
   form.phone = row.phone || ''
+  form.storeId = row.storeId ?? null
   form.department = row.department
   form.primaryPosition = row.primaryPosition || ''
   form.maxWeeklyHours = Number(row.maxWeeklyHours)
@@ -451,6 +466,10 @@ onMounted(() => {
 </script>
 
 <style scoped>
+/* 表单标签永远单行(「周工时上限」等 5 字标签不换行) */
+.dialog-form :deep(.el-form-item__label) {
+  white-space: nowrap;
+}
 .follow-hint {
   margin-left: var(--app-space-4);
   color: var(--el-text-color-secondary);

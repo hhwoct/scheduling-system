@@ -38,7 +38,9 @@ public sealed record EmployeeUpsertRequest(
     DateTime? HireDate,
     string? PrimaryPosition,
     decimal MaxWeeklyHours,
-    int WeeklyHoursFollowDefault = 1);
+    int WeeklyHoursFollowDefault = 1,
+    // 超管新增员工时指定归属门店;非超管传入会被忽略(以后端登录态为准)
+    long? StoreId = null);
 
 public sealed record EmployeeQueryRequest(
     int Page = 1,

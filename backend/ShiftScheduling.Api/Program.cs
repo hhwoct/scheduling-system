@@ -79,9 +79,9 @@ if (string.IsNullOrWhiteSpace(jwtOptions.SigningKey) || Encoding.UTF8.GetByteCou
     throw new InvalidOperationException("Jwt:SigningKey 至少需要 32 字节，请通过 User Secrets 或环境变量配置");
 }
 
-if (jwtOptions.ExpireMinutes is < 5 or > 1440)
+if (jwtOptions.ExpireMinutes is < 5 or > 10080)
 {
-    throw new InvalidOperationException("Jwt:ExpireMinutes 必须在 5 到 1440 分钟之间");
+    throw new InvalidOperationException("Jwt:ExpireMinutes 必须在 5 到 10080 分钟之间（最长 7 天）");
 }
 
 // 超管账号用户名（仅该账号可查看审计日志等敏感数据）：
@@ -422,6 +422,7 @@ api.MapPost("/employees", async (
     EmployeeUpsertRequest request,
     ICurrentUser currentUser,
     IEmployeeService employeeService,
+    ShiftSchedulingDbContext dbContext,
     CancellationToken cancellationToken) =>
 {
     if (request is null)
@@ -429,7 +430,19 @@ api.MapPost("/employees", async (
         throw new BusinessException("请求参数不能为空", "INVALID_REQUEST");
     }
 
-    var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
+    // 超管可选择门店创建员工;其他角色强制归入自己门店(请求中的 storeId 忽略)
+    var isSystemAdmin = currentUser.Username == superAdminUsername;
+    var storeId = (isSystemAdmin && request.StoreId.HasValue)
+        ? request.StoreId.Value
+        : currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
+
+    // 超管传入的门店必须真实存在,否则外键约束报 500,提前转成友好错误
+    if (isSystemAdmin && request.StoreId.HasValue &&
+        !await dbContext.Stores.AnyAsync(x => x.Id == request.StoreId.Value, cancellationToken))
+    {
+        throw new BusinessException("所选门店不存在", "STORE_NOT_FOUND");
+    }
+
     var result = await employeeService.CreateAsync(
         request,
         storeId,
@@ -2188,6 +2201,24 @@ api.MapGet("/employee/my-schedule", async (
             .Where(x => coverIds.Contains(x.Id))
             .ToDictionaryAsync(x => x.Id, x => x.Name, cancellationToken);
 
+    // 工作站名称映射（手机端「今日卡片」需展示岗位名称；CoveredWorkstations 存的是逗号分隔的工作站 ID）
+    var wsIdTexts = summaries
+        .Where(x => !string.IsNullOrWhiteSpace(x.CoveredWorkstations))
+        .SelectMany(x => x.CoveredWorkstations!.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        .Distinct()
+        .ToList();
+    var wsIds = wsIdTexts
+        .Where(x => long.TryParse(x, out _))
+        .Select(long.Parse)
+        .Distinct()
+        .ToList();
+    var wsNames = wsIds.Count == 0
+        ? new Dictionary<long, string>()
+        : await dbContext.Workstations
+            .AsNoTracking()
+            .Where(x => x.StoreId == employee.StoreId && wsIds.Contains(x.Id))
+            .ToDictionaryAsync(x => x.Id, x => x.Name, cancellationToken);
+
     var byPlan = summaries
         .GroupBy(x => x.PlanId)
         .ToDictionary(g => g.Key, g => g.ToList());
@@ -2209,7 +2240,14 @@ api.MapGet("/employee/my-schedule", async (
                 s.WorkHours,
                 s.BreakStartTime,
                 s.BreakEndTime,
-                CoverEmployeeName = s.BreakCoverEmployeeId is null ? null : coverNames.GetValueOrDefault(s.BreakCoverEmployeeId.Value)
+                CoverEmployeeName = s.BreakCoverEmployeeId is null ? null : coverNames.GetValueOrDefault(s.BreakCoverEmployeeId.Value),
+                WorkstationNames = s.CoveredWorkstations == null
+                    ? null
+                    : string.Join("、", s.CoveredWorkstations
+                        .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                        .Where(x => long.TryParse(x, out _))
+                        .Select(x => wsNames.GetValueOrDefault(long.Parse(x)))
+                        .Where(n => n is not null))
             })
             .ToList()
     }).ToList();
@@ -3010,7 +3048,7 @@ api.MapGet("/schedules/{planId:long}/issues", async (
 
     var issues = await dbContext.ScheduleIssues
         .AsNoTracking()
-        .Where(x => x.PlanId == planId && x.StoreId == storeId)
+        .Where(x => x.PlanId == planId && x.StoreId == storeId && x.IssueType != "BREAK_UNCOVERED")
         .OrderBy(x => x.WorkDate)
         .ThenBy(x => x.TimeSlot)
         .Select(x => new
