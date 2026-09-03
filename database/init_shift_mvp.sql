@@ -186,9 +186,11 @@ CREATE TABLE staffing_requirements (
   UNIQUE KEY uk_staffing_req (store_id, day_type, workstation_id, time_slot),
   INDEX idx_staffing_req_store_type_slot (store_id, day_type, time_slot),
   CONSTRAINT fk_staffing_req_store FOREIGN KEY (store_id) REFERENCES stores(id),
-  CONSTRAINT fk_staffing_req_workstation FOREIGN KEY (workstation_id) REFERENCES workstations(id),
-  CONSTRAINT chk_ideal_ge_required CHECK (ideal_count >= required_count)
+  CONSTRAINT fk_staffing_req_workstation FOREIGN KEY (workstation_id) REFERENCES workstations(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+-- 注意：CHECK (ideal_count >= required_count) 不能在建表时声明——种子 INSERT 只写 required_count
+-- （ideal_count 落 DEFAULT 0），MySQL 8.0.16+ 会在 INSERT 时即抛 ERROR 3819 中断整个 init。
+-- 该约束在本文件种子回填之后统一 ADD CONSTRAINT（见下方 chk_ideal_ge_required）。
 
 CREATE TABLE schedule_plans (
   id BIGINT PRIMARY KEY AUTO_INCREMENT,
@@ -593,6 +595,9 @@ WHERE w.store_id = 1;
 
 -- 历史语义：最好人数 = 最少人数（20260819 起支持 (最少,最好) 两档）
 UPDATE staffing_requirements SET ideal_count = required_count WHERE ideal_count = 0;
+
+-- 回填完成后才加约束（与 20260819_add_ideal_count.sql「先加列→回填→再加 CHECK」顺序一致）
+ALTER TABLE staffing_requirements ADD CONSTRAINT chk_ideal_ge_required CHECK (ideal_count >= required_count);
 
 INSERT INTO audit_logs (store_id, operator_user_id, operator_name, action_type, target_type, target_id, after_content, remark)
 VALUES (1, NULL, '系统管理员', 'INIT_DATABASE', 'DATABASE', NULL, '初始化 shift_mvp 数据库、核心表和模拟数据', '数据库初始化脚本执行完成');

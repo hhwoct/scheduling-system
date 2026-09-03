@@ -26,7 +26,9 @@ BEGIN
 
     START TRANSACTION;
 
-    -- 1. 为已存在的账号设置独立 bcrypt 哈希
+    -- 1. 为已存在的账号设置独立 bcrypt 哈希。
+    --    20260824 安全加固：仅当哈希为占位/非法（NULL、长度≠60、非 $2 前缀）时才替换——
+    --    用户事后改过的合法哈希不被覆盖，迁移重跑安全（幂等）。
     UPDATE users
     SET password_hash = CASE username
         WHEN 'admin'   THEN '$2b$12$9p9nWbNUcDdJk9wAvqapge0GCFfX4quD8OH6XTJJVn9WPB2xORj12'
@@ -58,7 +60,8 @@ BEGIN
       END,
       updated_at = CURRENT_TIMESTAMP
     WHERE username IN ('admin', 'manager', 'E001','E002','E003','E004','E005','E006','E007','E008','E009','E010',
-                       'E011','E012','E013','E014','E015','E016','E017','E018','E019','E020','E021','E022','E023');
+                       'E011','E012','E013','E014','E015','E016','E017','E018','E019','E020','E021','E022','E023')
+      AND (password_hash IS NULL OR LENGTH(password_hash) <> 60 OR password_hash NOT LIKE '$2%');
 
     -- 1b. 审查修复（P1-1）：新版 init 不再预插 admin/manager，新装路径执行本迁移时
     --      兜底补建（初始密码与上方 CASE 一致），避免第 2 步 24 账号校验 SIGNAL 中断。

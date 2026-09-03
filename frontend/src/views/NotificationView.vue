@@ -75,7 +75,8 @@ function typeName(t) {
     LEAVE_APPROVED: '请假审批',
     LEAVE_REJECTED: '请假驳回',
     SWAP_APPROVED: '换班批准',
-    SWAP_REJECTED: '换班驳回'
+    SWAP_REJECTED: '换班驳回',
+    PASSWORD_RESET: '密码重置'
   }[t] || t
 }
 

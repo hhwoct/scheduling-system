@@ -4,6 +4,7 @@ using ShiftScheduling.Api.Application.Common;
 using ShiftScheduling.Api.Application.Security;
 using ShiftScheduling.Api.Infrastructure.Audit;
 using ShiftScheduling.Api.Infrastructure.Persistence;
+using ShiftScheduling.Api.Infrastructure.Persistence.Entities;
 
 namespace ShiftScheduling.Api.Application.Auth;
 
@@ -153,6 +154,24 @@ public sealed class AuthService : IAuthService
         // 限流 + 锁定检查（按姓名维度 + IP 限流，防暴力尝试）
         _passwordResetService.CheckRateLimit(name, clientIp);
 
+        // 审查修复（20260824 安全）：失败路径统一 1 秒固定时延，防止「姓名+手机号」时序枚举
+        static async Task Fail(IPasswordResetService resetService, string failName, string? ip, CancellationToken ct)
+        {
+            resetService.RecordFailure(failName, ip);
+            await Task.Delay(TimeSpan.FromSeconds(1), ct);
+            throw new InvalidCredentialsException("姓名或验证信息不正确");
+        }
+
+        // 审查修复（20260824 安全）：手机号被多人在职共用的（种子占位号 12312341234 全员同号），
+        // 无法证明请求者即本人，禁止自助重置，提示联系管理员——堵住「知道姓名+占位号即可接管」路径
+        var phoneShareCount = await _dbContext.Employees
+            .AsNoTracking()
+            .CountAsync(x => x.Phone == phone && x.Status == 1, cancellationToken);
+        if (phoneShareCount > 1)
+        {
+            await Fail(_passwordResetService, name, clientIp, cancellationToken);
+        }
+
         // 按「姓名 + 手机号」定位员工（姓名与手机号必须同时匹配，防枚举统一报错）
         var matched = await _dbContext.Employees
             .AsNoTracking()
@@ -160,8 +179,7 @@ public sealed class AuthService : IAuthService
             .ToListAsync(cancellationToken);
         if (matched.Count != 1)
         {
-            _passwordResetService.RecordFailure(name, clientIp);
-            throw new InvalidCredentialsException("姓名或验证信息不正确");
+            await Fail(_passwordResetService, name, clientIp, cancellationToken);
         }
         var employee = matched[0];
 
@@ -169,16 +187,14 @@ public sealed class AuthService : IAuthService
             .FirstOrDefaultAsync(x => x.Username == employee.EmployeeNo && x.StoreId == employee.StoreId && x.Status == 1, cancellationToken);
         if (user is null)
         {
-            _passwordResetService.RecordFailure(name, clientIp);
-            throw new InvalidCredentialsException("姓名或验证信息不正确");
+            await Fail(_passwordResetService, name, clientIp, cancellationToken);
         }
 
         // 角色白名单：仅支持具备员工档案的角色（EMPLOYEE/STORE_MANAGER/SYSTEM_ADMIN，
         // 如 E001 店长）；admin/manager 无员工档案，天然无法通过姓名+手机号匹配
         if (user.Role is not ("EMPLOYEE" or "STORE_MANAGER" or "SYSTEM_ADMIN"))
         {
-            _passwordResetService.RecordFailure(name, clientIp);
-            throw new InvalidCredentialsException("姓名或验证信息不正确");
+            await Fail(_passwordResetService, name, clientIp, cancellationToken);
         }
 
         // 审查修复（P2）：与改密口径一致，禁止重置为当前密码
@@ -187,16 +203,14 @@ public sealed class AuthService : IAuthService
             throw new BusinessException("新密码不能与当前密码相同", "SAME_PASSWORD");
         }
 
-        // 无验证码：姓名+手机号匹配即视为身份验证通过（限流/锁定由 PasswordResetService 兜底）
+        // 身份验证通过（限流/锁定由 PasswordResetService 兜底；共用手机号已在前面拒绝）
         user.PasswordHash = _passwordService.Hash(request.NewPassword);
         user.UpdatedAt = DateTime.UtcNow;
         user.PasswordVersion++;  // 使旧 JWT 令牌失效
 
-        await _dbContext.SaveChangesAsync(cancellationToken);
-
-        _passwordResetService.RecordSuccess(name, clientIp);
-
-        await _auditLogService.WriteAsync(
+        // 审计与业务同事务提交；站内通知告知本人密码已被重置（可溯源）
+        _auditLogService.AddAuditEntity(
+            _dbContext,
             user.StoreId ?? 1,
             user.Id,
             user.Nickname,
@@ -206,7 +220,21 @@ public sealed class AuthService : IAuthService
             null,
             $"用户 {user.Username} 通过忘记密码流程（姓名+手机号验证）重置了密码（来源 IP：{clientIp ?? "未知"}）",
             "重置密码",
-            cancellationToken);
+            DateTime.UtcNow);
+        _dbContext.Notifications.Add(new NotificationEntity
+        {
+            StoreId = user.StoreId ?? 1,
+            ReceiverEmployeeId = employee.Id,
+            NotificationType = "PASSWORD_RESET",
+            Title = "密码已重置",
+            Content = "您的密码已通过「忘记密码」流程重置。若非本人操作，请立即联系管理员。",
+            IsRead = 0,
+            CreatedAt = DateTime.UtcNow
+        });
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        _passwordResetService.RecordSuccess(name, clientIp);
     }
 
     /// <summary>
