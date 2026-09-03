@@ -235,7 +235,8 @@ public sealed class ScheduleService : IScheduleService
             output.ShiftAssignments.Count,
             output.WorkstationAssignments.Count,
             output.DaySummaries.Count,
-            output.Issues.Count,
+            // 问题数不计岗位缺口（缺口按"岗位缺口"单独统计/展示）
+            output.Issues.Count(x => x.IssueType != "STAFFING_GAP"),
             output.Issues.GroupBy(x => x.IssueType).Select(g => g.Key).ToList(),
             output.DemandCoverage.DemandMinHours,
             output.DemandCoverage.DemandIdealHours,
@@ -284,9 +285,12 @@ public sealed class ScheduleService : IScheduleService
             .Select(g => new { PlanId = g.Key, Count = g.Select(s => s.EmployeeId).Distinct().Count() })
             .ToDictionaryAsync(x => x.PlanId, x => x.Count, cancellationToken);
 
+        // 问题数不计岗位缺口（STAFFING_GAP 与 BREAK_UNCOVERED 均不计入）
         var issueCounts = await _dbContext.ScheduleIssues
             .AsNoTracking()
-            .Where(x => planIds.Contains(x.PlanId))
+            .Where(x => planIds.Contains(x.PlanId)
+                        && x.IssueType != "BREAK_UNCOVERED"
+                        && x.IssueType != "STAFFING_GAP")
             .GroupBy(x => x.PlanId)
             .Select(g => new { PlanId = g.Key, Count = g.Count() })
             .ToDictionaryAsync(x => x.PlanId, x => x.Count, cancellationToken);
@@ -564,7 +568,7 @@ public sealed class ScheduleService : IScheduleService
             summaries.Count(x => x.IsRestDay == 0),
             summaries.Where(x => x.IsRestDay == 0).Sum(x => x.WorkHours),
             issues.Count(x => x.IssueType == "STAFFING_GAP"),
-            issues.Count(x => x.Severity == "WARN"),
+            issues.Count(x => x.Severity == "WARN" && x.IssueType != "BREAK_UNCOVERED"),
             issues.Count(x => x.Severity == "ERROR"));
     }
 
@@ -1819,6 +1823,9 @@ public sealed class ScheduleService : IScheduleService
 
         await transaction.CommitAsync(cancellationToken);
 
+        // 实时重算受影响日历日的岗位缺口：加人后「缺」标记/兼职替补色块即时消失
+        await RecalculateGapIssuesAsync(planId, storeId, request.WorkDate, cancellationToken);
+
         return request;
     }
 
@@ -1930,6 +1937,96 @@ public sealed class ScheduleService : IScheduleService
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         await transaction.CommitAsync(cancellationToken);
+
+        // 实时重算受影响日历日的岗位缺口：撤加人后缺口按最新实际人数恢复
+        await RecalculateGapIssuesAsync(planId, storeId, request.WorkDate, cancellationToken);
+    }
+
+    /// <summary>
+    /// 实时重算受影响日历日的岗位缺口（STAFFING_GAP），替换生成时的缺口快照：
+    /// 空位加人/撤加人后，前端「缺」标记与周视图兼职替补色块按最新实际人数即时刷新。
+    /// 营业日口径：日历日 00:00-05:30 的缺口归属上一营业日（按前一天类型取需求），
+    /// 实际覆盖同时统计「前一天班次回绕」与「当天 00:00 起班次」两种记录。
+    /// </summary>
+    private async Task RecalculateGapIssuesAsync(
+        long planId,
+        long storeId,
+        DateOnly workDate,
+        CancellationToken cancellationToken)
+    {
+        // 加人/撤加人写 WorkDate=营业日：营业日 06:00-23:30 属当天日历日，
+        // 00:00-05:30 属次一日历日 → 重算当天与次日两个日历日
+        var affectedDates = new[] { workDate, workDate.AddDays(1) };
+
+        await _dbContext.ScheduleIssues
+            .Where(x => x.PlanId == planId && x.IssueType == "STAFFING_GAP" && x.WorkDate != null &&
+                        (x.WorkDate == workDate || x.WorkDate == workDate.AddDays(1)))
+            .ExecuteDeleteAsync(cancellationToken);
+
+        var dateParams = await _dbContext.DateParameters.AsNoTracking()
+            .Where(x => x.StoreId == storeId &&
+                        (x.WorkDate == workDate.AddDays(-1) || x.WorkDate == workDate || x.WorkDate == workDate.AddDays(1)))
+            .ToDictionaryAsync(x => x.WorkDate, x => x.DayType, cancellationToken);
+
+        var lowSkill = (await _dbContext.Workstations.AsNoTracking()
+                .Where(x => x.StoreId == storeId)
+                .Select(x => new { x.Id, x.IsLowSkill })
+                .ToListAsync(cancellationToken))
+            .ToDictionary(x => x.Id, x => x.IsLowSkill == 1);
+
+        foreach (var date in affectedDates)
+        {
+            var dayType = dateParams.GetValueOrDefault(date) ?? "WORKDAY";
+            var prevType = dateParams.GetValueOrDefault(date.AddDays(-1)) ?? dayType;
+
+            var reqs = await _dbContext.StaffingRequirements.AsNoTracking()
+                .Where(x => x.StoreId == storeId && (x.DayType == dayType || x.DayType == prevType) && x.RequiredCount > 0)
+                .Select(x => new { x.WorkstationId, x.TimeSlot, x.RequiredCount, x.DayType })
+                .ToListAsync(cancellationToken);
+
+            foreach (var req in reqs)
+            {
+                var expectedType = req.TimeSlot < TimeSpan.FromHours(6) ? prevType : dayType;
+                if (req.DayType != expectedType)
+                {
+                    continue;
+                }
+
+                // 凌晨时段（<06:00）的实际覆盖 = 前一天班次的回绕部分 + 当天 00:00 起的班次
+                var actual = await _dbContext.ScheduleResults.AsNoTracking()
+                    .CountAsync(x => x.PlanId == planId && x.WorkstationId == req.WorkstationId && x.TimeSlot == req.TimeSlot &&
+                                     (x.WorkDate == date || (req.TimeSlot < TimeSpan.FromHours(6) && x.WorkDate == date.AddDays(-1))),
+                        cancellationToken);
+
+                var shortfall = req.RequiredCount - actual;
+                if (shortfall <= 0)
+                {
+                    continue;
+                }
+
+                var isLowSkill = lowSkill.GetValueOrDefault(req.WorkstationId);
+                var description = $"{req.TimeSlot:hh\\:mm} 工作站 {req.WorkstationId} 缺 {shortfall} 人（需求 {req.RequiredCount}，实际 {actual}）";
+                if (isLowSkill)
+                {
+                    description += "。该岗位技术含量低，建议寻找兼职人员临时填补";
+                }
+                var severity = shortfall >= 3 && !isLowSkill ? "ERROR" : "WARN";
+                _dbContext.ScheduleIssues.Add(new ScheduleIssueEntity
+                {
+                    PlanId = planId,
+                    StoreId = storeId,
+                    IssueType = "STAFFING_GAP",
+                    Severity = severity,
+                    WorkDate = date,
+                    TimeSlot = req.TimeSlot,
+                    Description = description,
+                    Status = "OPEN",
+                    CreatedAt = DateTime.UtcNow
+                });
+            }
+        }
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
     }
 
     /// <summary>空位加人候选：具备工作站技能、当天未排班、无已批准请假；兼职仅限低技能岗位。</summary>

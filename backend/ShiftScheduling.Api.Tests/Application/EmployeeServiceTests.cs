@@ -241,7 +241,7 @@ public sealed class EmployeeServiceTests
         await db.SaveChangesAsync();
 
         var service = CreateService();
-        var result = await service.QueryAsync(new EmployeeQueryRequest(Name: "张"), 1, CancellationToken.None);
+        var result = await service.QueryAsync(new EmployeeQueryRequest(Name: "张"), 1, false, CancellationToken.None);
 
         // 只查门店 1 的张三
         Assert.Equal(1, result.Total);
@@ -258,7 +258,7 @@ public sealed class EmployeeServiceTests
         await db.SaveChangesAsync();
 
         var service = CreateService();
-        var result = await service.QueryAsync(new EmployeeQueryRequest(), 1, CancellationToken.None);
+        var result = await service.QueryAsync(new EmployeeQueryRequest(), 1, false, CancellationToken.None);
 
         Assert.Equal(1, result.Total);
         Assert.Equal("E001", result.Items[0].EmployeeNo);

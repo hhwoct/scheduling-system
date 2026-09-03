@@ -210,7 +210,7 @@
           <el-button size="small" :icon="Close" @click="closeIssues">返回排班视图</el-button>
         </div>
         <el-row class="u-mb-6" :gutter="16">
-          <el-col :span="6"><el-card shadow="hover"><div class="stat-num">{{ issuesList.length }}</div><div class="stat-label">问题总数</div></el-card></el-col>
+          <el-col :span="6"><el-card shadow="hover"><div class="stat-num">{{ nonGapIssues.length }}</div><div class="stat-label">问题总数</div></el-card></el-col>
           <el-col :span="6"><el-card shadow="hover"><div class="stat-num" style="color: var(--el-color-danger)">{{ issueStats.gapCount }}</div><div class="stat-label">岗位缺口</div></el-card></el-col>
           <el-col :span="6"><el-card shadow="hover"><div class="stat-num" style="color: var(--el-color-warning)">{{ issueStats.warnCount }}</div><div class="stat-label">警告级别</div></el-card></el-col>
           <el-col :span="6"><el-card shadow="hover"><div class="stat-num" style="color: var(--el-color-success)">{{ issueStats.daysCount }}</div><div class="stat-label">影响天数</div></el-card></el-col>
@@ -223,7 +223,7 @@
                   <svg viewBox="0 0 200 200" width="220" height="220">
                     <circle class="u-clickable" v-for="(slice, i) in typePieData" :key="i" :cx="100" :cy="100" :r="80" fill="none" :stroke="slice.color" stroke-width="30" :stroke-dasharray="`${slice.pct * 502.65} ${(1 - slice.pct) * 502.65}`" :stroke-dashoffset="(typePieOffset[i])" transform="rotate(-90 100 100)" @click="filterTableByType(slice.key)" />
                     <text v-for="(slice, i) in typePieLabels" :key="'tlbl'+i" :x="slice.x" :y="slice.y" text-anchor="middle" font-size="11" fill="var(--el-color-white)" font-weight="bold" pointer-events="none">{{ slice.count }}</text>
-                    <text x="100" y="95" text-anchor="middle" font-size="15" fill="var(--el-text-color-primary)" font-weight="bold">{{ issuesList.length }} 条</text>
+                    <text x="100" y="95" text-anchor="middle" font-size="15" fill="var(--el-text-color-primary)" font-weight="bold">{{ nonGapIssues.length }} 条</text>
                     <text x="100" y="114" text-anchor="middle" font-size="11" fill="var(--el-text-color-secondary)">类型分布</text>
                     <text class="u-clickable" v-if="typeFilter" x="100" y="128" text-anchor="middle" font-size="9" fill="var(--el-color-primary)" @click="typeFilter=''">✕ 清除</text>
                   </svg>
@@ -821,6 +821,7 @@ async function handleUndo() {
     }
     ElMessage.success('已撤销')
     await loadDay(selectedDate.value || dayDate.value)
+    if (viewMode.value === 'week') loadWeek()  // 周视图兼职替补色块按最新缺口刷新
   } catch {
     // 撤销失败：拦截器已提示，保留后续撤销机会
   }
@@ -1698,6 +1699,7 @@ async function submitAddSlot() {
     clearRangeSel()
     // 刷新日明细与缺口标记
     await loadDay(addSlotDialog.workDate)
+    if (viewMode.value === 'week') loadWeek()  // 周视图兼职替补色块按最新缺口刷新
   } catch (e) {
     /* 拦截器已提示 */
   } finally {
@@ -1812,8 +1814,11 @@ const issueStats = computed(() => {
   return { gapCount: list.filter(i => i.issueType === 'STAFFING_GAP').length, warnCount: list.filter(i => i.severity === 'WARN').length, daysCount: new Set(list.map(i => i.workDate).filter(Boolean)).size }
 })
 
+// 问题总数不计岗位缺口（岗位缺口以"岗位缺口"卡片与缺口分布图单独展示）
+const nonGapIssues = computed(() => issuesList.value.filter(i => i.issueType !== 'STAFFING_GAP'))
+
 const typePieData = computed(() => {
-  const map = {}; issuesList.value.forEach(i => { map[i.issueType] = (map[i.issueType] || 0) + 1 })
+  const map = {}; nonGapIssues.value.forEach(i => { map[i.issueType] = (map[i.issueType] || 0) + 1 })
   const entries = Object.entries(map); const total = entries.reduce((s, [,c]) => s + c, 0) || 1
   return entries.map(([k, c], idx) => ({ key: k, label: k === 'STAFFING_GAP' ? '岗位缺口' : k === 'SKILL_MISMATCH' ? '技能不匹配' : k === 'OVERTIME' ? '工时超限' : k === 'CONSECUTIVE_WORK' ? '连续工作超限' : k, count: c, pct: c / total, color: SEVERITY_COLORS[idx % SEVERITY_COLORS.length] }))
 })
@@ -1894,7 +1899,7 @@ function renderRationalityChart() {
       symbolSize: 8,
       lineStyle: { width: 3, color: SEVERITY_COLORS[2] },
       itemStyle: { color: SEVERITY_COLORS[2], borderColor: CHART_INK.onColor, borderWidth: 2 },
-      areaStyle: { color: 'rgba(64,158,255,0.15)' },
+      areaStyle: { color: 'rgba(0,122,255,0.15)' },
       label: { show: true, fontSize: 12, fontWeight: 'bold', color: CHART_INK.primary, formatter: '{c}%' }
     }]
   })
@@ -1977,9 +1982,9 @@ onBeforeUnmount(() => {
 .m-slot-col:last-child { border-right: none; }
 /* P3 空位加人：空格子可点击，悬停显示 + 提示；滑动选择多时段 */
 .m-slot-col.is-empty { cursor: pointer; }
-.m-slot-col.is-empty:hover { background: rgba(64, 158, 255, 0.08); }
+.m-slot-col.is-empty:hover { background: rgba(0, 122, 255, 0.08); }
 .m-slot-col.is-empty:hover::after { content: '+'; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: var(--el-color-primary); font-size: var(--app-font-lg); font-weight: 600; pointer-events: none; }
-.m-slot-col.range-selected { background: rgba(64, 158, 255, 0.18); outline: 1px solid var(--el-color-primary); outline-offset: -1px; }
+.m-slot-col.range-selected { background: rgba(0, 122, 255, 0.18); outline: 1px solid var(--el-color-primary); outline-offset: -1px; }
 .range-hint { position: absolute; top: 6px; left: 6px; z-index: 20; background: var(--el-color-primary); color: var(--el-color-white); font-size: var(--app-font-sm); padding: var(--app-space-2) var(--app-space-5); border-radius: var(--app-radius-sm); width: fit-content; pointer-events: none; }
 .range-toolbar { position: absolute; top: 6px; left: 6px; z-index: 25; display: flex; align-items: center; gap: var(--app-space-4); background: var(--el-bg-color); border: 1px solid var(--el-color-primary); border-radius: var(--app-radius-md); padding: var(--app-space-3) 10px; box-shadow: 0 2px 12px rgba(0,0,0,0.15); }
 .range-toolbar .rt-info { font-size: var(--app-font-sm); color: var(--el-color-primary); font-weight: 600; white-space: nowrap; }
@@ -2037,7 +2042,7 @@ onBeforeUnmount(() => {
   position: fixed;
   z-index: 3000;
   pointer-events: none;
-  background: rgba(64, 158, 255, 0.78);
+  background: rgba(0, 122, 255, 0.78);
   color: var(--el-color-white);
   border: 1px dashed var(--el-color-white);
   border-radius: var(--app-radius-sm);
@@ -2052,7 +2057,7 @@ onBeforeUnmount(() => {
 .m-slot-col.snap-target {
   outline: 2px dashed var(--el-color-primary);
   outline-offset: -2px;
-  background: rgba(64, 158, 255, 0.14) !important;
+  background: rgba(0, 122, 255, 0.14) !important;
 }
 
 .ds-info { font-size: var(--app-font-base); color: var(--el-text-color-primary); }
