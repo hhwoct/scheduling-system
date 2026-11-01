@@ -334,8 +334,27 @@ MySQL 安装时设置的 root 密码要记住；Windows 服务名一般是 `MySQ
 
 ### 3. 两条系统共用的初始化
 
+**推荐：直接用仓库里的跨平台脚本**（已按正确顺序处理 init + 全部迁移）
+
 ```bash
-# ① 建库建表 + 模拟数据（会 DROP 同名表，慎用于已有库）
+# macOS / Linux / Git Bash / WSL
+./scripts/setup-db.sh --reset          # 删库重建；不带 --reset 则只在库不存在时初始化
+./scripts/setup-db.sh -u root -p root123 -h 127.0.0.1 -P 3306
+```
+
+```powershell
+# Windows PowerShell
+.\scripts\setup-db.ps1 -Reset
+.\scripts\setup-db.ps1 -DbUser root -DbPassword root123
+```
+
+> 两个脚本都支持 `--seed-users` / `-SeedUsers <文件>` 额外导入账号 SQL；
+> 都需要 PATH 里能找到 `mysql` 客户端。
+
+**或者手动执行**（`--reset` 会 DROP 同名表，慎用于已有库）：
+
+```bash
+# ① 建库建表 + 模拟数据
 mysql -u root -p < database/init_shift_mvp.sql
 
 # ② 按文件名顺序补跑 20260825 及之后的增量迁移
@@ -362,6 +381,7 @@ cd ../../frontend && npm install && npm run dev                       # 5173
 | 复制环境变量文件 | `cp .env.example .env` | `Copy-Item .env.example .env` |
 | 设临时环境变量 | `export Jwt__SigningKey=xxx` | `$env:Jwt__SigningKey="xxx"` |
 | 生成 32+ 字节密钥 | `openssl rand -base64 48` | `-join ((1..64) \| ForEach-Object { '{0:x}' -f (Get-Random -Max 16) })` |
+| 初始化数据库 | `./scripts/setup-db.sh --reset` | `.\scripts\setup-db.ps1 -Reset` |
 | 执行单个 SQL 文件 | `mysql -u root -p shift_mvp < a.sql` | `cmd /c "mysql -u root -p shift_mvp < a.sql"` |
 | 批量跑迁移 | `for f in database/migrations/2026*.sql; do mysql … < "$f"; done` | `Get-ChildItem database/migrations/2026*.sql \| ForEach-Object { cmd /c "mysql -u root -p shift_mvp < $_" }` |
 | 看端口占用 | `lsof -ti:5059` | `netstat -ano \| findstr :5059` |
@@ -376,8 +396,10 @@ cd ../../frontend && npm install && npm run dev                       # 5173
    - 否则库里的中文会变成 `æ˜†æ˜Žæ»šæ»š` 这种双重编码，且很难回滚。
 2. **文件名含中文**
    - Windows 建议用 Git Bash 或 WSL 操作仓库，PowerShell 处理中文路径容易出编码问题。
-3. **仓库自带的 `setup-db.sh` / `dev.sh` 是 bash 脚本**
-   - 只能在 macOS / Linux 上跑；Windows 用 Git Bash / WSL，或按上面第 3 节手动执行。
+3. **仓库自带的脚本**
+   - `scripts/setup-db.sh`（bash）用于 macOS / Linux / Git Bash / WSL；
+     `scripts/setup-db.ps1`（PowerShell 5.1+ / 7+）用于 Windows，命令行用 `.\scripts\setup-db.ps1 -Reset`。
+   - 若 PowerShell 执行策略报错，先运行 `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`。
 4. **后端启动报 `缺少 JWT 配置` 或 `缺少数据库连接字符串`**
    - 说明 `appsettings.Development.json` 没建、或 `SigningKey` 不足 32 字节。
 5. **`npm install` 报 `Invalid Version:`**
