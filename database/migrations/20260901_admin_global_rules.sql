@@ -21,9 +21,4 @@ WHERE store_id = 1 AND name LIKE '%岗%';
 UPDATE staffing_requirements SET required_count = 0, ideal_count = 0, updated_at = NOW()
 WHERE store_id = 1 AND time_slot = '04:00:00';
 
--- 5) 店2 日期参数按店1补齐(节假日/周末日历两店通用)
-INSERT INTO date_parameters (store_id, work_date, week_day, day_type, is_legal_holiday, is_holiday_eve, created_at)
-SELECT 2, d.work_date, d.week_day, d.day_type, d.is_legal_holiday, d.is_holiday_eve, NOW()
-FROM date_parameters d
-WHERE d.store_id = 1
-  AND NOT EXISTS (SELECT 1 FROM date_parameters d2 WHERE d2.store_id = 2 AND d2.work_date = d.work_date);
+-- 5) 店2 日期参数补齐：门店 2 已于 2026-11-01 删除，本段移除（单门店部署无需跨店同步日历）

@@ -233,7 +233,7 @@ public sealed class ShiftAllocatorTests
     /// <summary>
     /// 复现：保洁岗（S9，16:00-04:00 跨天 10h）需求每天 2 人，存在全职保洁 2 人（5 分）
     /// + 兼职保洁 1 人（4 分）。按「全职优先」全职应被优先排班；兼职仅作补充。
-    /// 用于定位生产环境「周保洁/赵保洁整月几乎无班、兼保洁A天天顶班」的现象。
+    /// 用于定位生产环境「周保洁/赵保洁整月几乎无班、吕保洁天天顶班」的现象。
     /// </summary>
     [Fact]
     public void Allocate_PrefersFulltimeOverParttime_ForCleaningS9()
@@ -245,7 +245,7 @@ public sealed class ShiftAllocatorTests
             {
                 AlgorithmTestData.Employee(1, "E007", "周保洁", "保洁", "保洁岗", maxWeeklyHours: 60), // 全职保洁 5 分
                 AlgorithmTestData.Employee(2, "E023", "赵保洁", "保洁", "保洁岗", maxWeeklyHours: 60), // 全职保洁 5 分
-                AlgorithmTestData.Employee(3, "E101", "兼保洁A", "兼职", "保洁岗", maxWeeklyHours: 60, isParttime: 1) // 兼职保洁 4 分
+                AlgorithmTestData.Employee(3, "E101", "吕保洁", "兼职", "保洁岗", maxWeeklyHours: 60, isParttime: 1) // 兼职保洁 4 分
             },
             new List<SkillInput>
             {

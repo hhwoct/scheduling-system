@@ -134,8 +134,8 @@ const router = useRouter()
 const authStore = useAuthStore()
 
 // 店长判定:按「角色或店长用户名」双条件
-// (E001/A001 的数据库角色可能是 SYSTEM_ADMIN,按角色判定会失效)
-const isStoreManager = computed(() => authStore.role === 'STORE_MANAGER' || authStore.username === STORE_MANAGER_USERNAME || authStore.username === 'A001')
+// (店长账号的数据库角色可能是 SYSTEM_ADMIN,按角色判定会失效)
+const isStoreManager = computed(() => authStore.role === 'STORE_MANAGER' || authStore.username === STORE_MANAGER_USERNAME)
 
 // 侧边栏收起状态：本地持久化，刷新后保持
 const collapsed = ref(localStorage.getItem('sidebar-collapsed') === '1')
@@ -151,11 +151,11 @@ onMounted(async () => {
   }
 })
 
-// 管理员进入员工端时默认选择第一个员工（昆明 E001 / 长沙 A002）预览
+// 管理员进入员工端时默认用店长账号的工号预览
 function handleMenuSelect(index) {
   if (index === '/employee/schedule') {
-    // 预览员工端:各门店店长默认看自己门店第一个全职员工
-    router.push({ path: index, query: { employeeNo: authStore.storeId === '2' ? 'A002' : 'E001' } })
+    // 预览员工端:默认看店长 E001 的班表
+    router.push({ path: index, query: { employeeNo: 'E001' } })
   } else {
     router.push(index)
   }

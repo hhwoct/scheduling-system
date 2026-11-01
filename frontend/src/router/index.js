@@ -106,7 +106,7 @@ const routes = [
         meta: { title: '排班查看' }
       },
       {
-        // 长沙滚滚专用：排班明细（周/整月/日明细 + 生成重排 + 真实vs算法对比）
+        // 排班明细页（周视图/整月对比/日明细 + 生成重排 + 真实vs算法对比）
         path: 'schedules/detail',
         name: 'ScheduleDetail',
         component: () => import('../views/ScheduleDetailView.vue'),
@@ -205,7 +205,7 @@ router.beforeEach((to) => {
   // (与角色无关——店长账号的数据库角色可能是 SYSTEM_ADMIN)
   if (to.meta?.storeManagerOnly) {
     const username = localStorage.getItem('shift_username') || ''
-    if (username !== STORE_MANAGER_USERNAME && username !== 'A001') {
+    if (username !== STORE_MANAGER_USERNAME) {
       return { path: '/dashboard' }
     }
   }

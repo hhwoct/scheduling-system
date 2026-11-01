@@ -5,7 +5,7 @@ namespace ShiftScheduling.Api.Tests.Algorithm;
 
 /// <summary>
 /// 兼职集中度回归测试：算法应尽量复用同一名兼职（少用兼职人员）。
-/// 例如连续 6 天的传送需求应全部由兼传送A承担，而不是 A 三天、B 三天。
+/// 例如连续 6 天的传送需求应全部由严传送承担，而不是 A 三天、B 三天。
 /// </summary>
 public sealed class ShiftAllocatorPartTimeTests
 {
@@ -16,8 +16,8 @@ public sealed class ShiftAllocatorPartTimeTests
         var employees = new List<EmployeeInput>
         {
             new(1, "E001", "全职无技能", "楼面", "服务岗", 48m, 0),
-            new(101, "E101", "兼传送A", "兼职", "传送岗", 70m, 1),
-            new(102, "E102", "兼传送B", "兼职", "传送岗", 70m, 1)
+            new(101, "E101", "严传送", "兼职", "传送岗", 70m, 1),
+            new(102, "E102", "华传送", "兼职", "传送岗", 70m, 1)
         };
 
         var skills = new List<SkillInput>

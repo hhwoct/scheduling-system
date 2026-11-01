@@ -2496,8 +2496,7 @@ api.MapGet("/leave-requests/review", async (
     CancellationToken ct = default) =>
 {
     // 请假审批仅店长账号可用（按用户名判定，与角色无关）
-    // 多门店:店长账号 E001(配置) + 长沙滚滚店长 A001(后续可改为按角色/配置判定)
-    if (currentUser.Username != storeManagerUsername && currentUser.Username != "A001")
+    if (currentUser.Username != storeManagerUsername)
         throw new BusinessException("无权限", "FORBIDDEN");
 
     var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
@@ -2535,8 +2534,7 @@ api.MapPut("/leave-requests/{id:long}/review", async (
     }
 
     // 请假审批仅店长账号可用（按用户名判定，与角色无关）
-    // 多门店:店长账号 E001(配置) + 长沙滚滚店长 A001(后续可改为按角色/配置判定)
-    if (currentUser.Username != storeManagerUsername && currentUser.Username != "A001")
+    if (currentUser.Username != storeManagerUsername)
         throw new BusinessException("无权限", "FORBIDDEN");
 
     var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
@@ -2786,8 +2784,7 @@ api.MapGet("/shift-swaps/review", async (
     CancellationToken ct = default) =>
 {
     // 换班审批仅店长账号可用（按用户名判定，与角色无关）
-    // 多门店:店长账号 E001(配置) + 长沙滚滚店长 A001(后续可改为按角色/配置判定)
-    if (currentUser.Username != storeManagerUsername && currentUser.Username != "A001")
+    if (currentUser.Username != storeManagerUsername)
         throw new BusinessException("无权限", "FORBIDDEN");
 
     var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");
@@ -2826,8 +2823,7 @@ api.MapPut("/shift-swaps/{id:long}/review", async (
     }
 
     // 换班审批仅店长账号可用（按用户名判定，与角色无关）
-    // 多门店:店长账号 E001(配置) + 长沙滚滚店长 A001(后续可改为按角色/配置判定)
-    if (currentUser.Username != storeManagerUsername && currentUser.Username != "A001")
+    if (currentUser.Username != storeManagerUsername)
         throw new BusinessException("无权限", "FORBIDDEN");
 
     var storeId = currentUser.StoreId ?? throw new UnauthorizedBusinessException("当前用户未关联门店");

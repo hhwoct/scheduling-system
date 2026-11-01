@@ -1,0 +1,20 @@
+{
+  "//": "后端本地开发配置模板：复制为 appsettings.Development.json 后填入真实值（该文件已被 .gitignore 忽略）",
+  "ConnectionStrings": {
+    "ShiftMvp": "Server=127.0.0.1;Port=3306;Database=shift_mvp;User=root;Password=<数据库密码>;CharSet=utf8mb4;"
+  },
+  "Jwt": {
+    "Issuer": "ShiftScheduling.Api",
+    "Audience": "ShiftScheduling.Admin",
+    "SigningKey": "<至少 32 字节的随机字符串，可用 openssl rand -base64 48 生成>",
+    "ExpireMinutes": 1440
+  },
+  "SuperAdminUsername": "admin",
+  "StoreManagerUsername": "E001",
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "Microsoft.AspNetCore": "Warning"
+    }
+  }
+}
