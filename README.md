@@ -82,6 +82,8 @@ EOF
 - **.NET 10.0 SDK**
 - **Node.js 18+**
 
+> 各系统的安装命令、命令差异与常见坑，见文末 [环境要求（Windows / macOS）](#环境要求windows--macos)。
+
 > 若 MySQL 密码不同，请修改上面连接串中的 Password。
 
 ### 1. 初始化数据库
@@ -276,3 +278,110 @@ curl http://localhost:5059/api/health
 - [x] 步骤 16（08-24/25）：排班偏好学习（店长习惯学习，默认关闭、0-1 连续权重）+ 排班调整交互 P0~P2（撤销条/Ctrl+Z、发布前调整摘要、调整明细落库、需求联动建议、复制上周、批量改休、偏好角标）+ 范围操作接口（add/remove/replace-slot、move/clear-range）+ 取消发布 + 侧边栏可收起
 - [x] 步骤 17（08-25）：自助修改密码（安全审查 P1-1，旧 Token 全失效）+ 忘记密码改「姓名+手机号」双验证 + 员工初始密码统一 `工号@123456` + 第三/四轮全项目审查修复（234 测试全绿 + E2E）
 - [x] 步骤 18（08-27）：日明细员工泳道对齐 + 满员行加人 + 通知「一键已读」口径修复（read-all）+ 06:00 幽灵时段修复（引擎输入净化 + 迁移清理，235 测试全绿）+ 全量测试报告（234 单测 + 34 接口冒烟 + 56 浏览器 E2E 全部通过）
+
+## 环境要求（Windows / macOS）
+
+### 0. 版本总览（两端一致）
+
+| 组件 | 要求 | 本机验证版本 | 用途 / 说明 |
+|---|---|---|---|
+| **.NET SDK** | **10.0**（后端 `TargetFramework=net10.0`，低于 10 无法编译） | 10.0.403 | 后端 API + 单元测试，自带 ASP.NET Core 10.0.14 运行时 |
+| **MySQL Server** | **8.0**（≥ 8.0.30） | 8.0.46 | 业务库 `shift_mvp`，字符集 `utf8mb4` / `utf8mb4_unicode_ci` |
+| **Node.js** | **18+**，建议 20 或 22 LTS | 22.23.4 | 管理端 `frontend/`、手机端 `mobile/`（Vite 6） |
+| **npm** | 9+ | 10.9.9 | 依赖安装，`xlsx` 依赖来自 `cdn.sheetjs.com`（需联网） |
+| Python | 3.9+（**可选**） | 3.9.6 | 仅 `scripts/` 用；`xlsx_dump.py` 纯标准库，`import` 相关脚本需 `bcrypt` |
+
+**端口占用**：`3306` MySQL、`5059` 后端 API、`5173` 管理端、`5180` 手机端。
+
+### 1. macOS
+
+推荐用 Homebrew 安装（无 Homebrew 可用官网安装包）：
+
+```bash
+# 1) .NET 10 SDK（.pkg 安装包，装完 dotnet --version 应为 10.x）
+brew install --cask dotnet-sdk
+
+# 2) MySQL 8.0（brew 会提示初始化与启动服务）
+brew install mysql@8.0
+brew services start mysql@8.0
+
+# 3) Node 22 LTS
+brew install node@22
+```
+
+Apple 芯片（arm64）与 Intel 都适用；`mysql@8.0` 安装后若命令找不到，把
+`$(brew --prefix mysql@8.0)/bin` 加进 `PATH`。
+
+### 2. Windows
+
+推荐用 winget（Windows 10/11 自带），或去官网下安装包：
+
+```powershell
+# 1) .NET 10 SDK
+winget install Microsoft.DotNet.SDK.10
+
+# 2) MySQL 8.0（也可用官网 MySQL Installer，勾选 Server + Workbench）
+winget install Oracle.MySQL
+
+# 3) Node.js LTS（含 npm）
+winget install OpenJS.NodeJS.LTS
+```
+
+安装完**新开一个终端**再验证：`dotnet --version`、`mysql --version`、`node -v`。
+
+MySQL 安装时设置的 root 密码要记住；Windows 服务名一般是 `MySQL80`，用
+`net start MySQL80`（管理员 PowerShell）启动。
+
+### 3. 两条系统共用的初始化
+
+```bash
+# ① 建库建表 + 模拟数据（会 DROP 同名表，慎用于已有库）
+mysql -u root -p < database/init_shift_mvp.sql
+
+# ② 按文件名顺序补跑 20260825 及之后的增量迁移
+#    注意：20260901 只有 schedule_plan_source.sql 和 admin_global_rules.sql 两个
+mysql -u root -p shift_mvp < database/migrations/20260825_add_admin_station_skill.sql
+#    … 其余同理，逐个执行
+
+# ③ 后端配置（appsettings.Development.json 不在仓库里，需自己建）
+#    模板见 backend/ShiftScheduling.Api/appsettings.Development.json.example
+
+# ④ 前端环境变量
+cd frontend && cp .env.example .env
+cd ../mobile && cp .env.example .env
+
+# ⑤ 装依赖 + 启动
+cd ../backend/ShiftScheduling.Api && dotnet restore && dotnet run     # 5059
+cd ../../frontend && npm install && npm run dev                       # 5173
+```
+
+### 4. 常用命令对照（macOS ↔ Windows）
+
+| 操作 | macOS（zsh / bash） | Windows（PowerShell） |
+|---|---|---|
+| 复制环境变量文件 | `cp .env.example .env` | `Copy-Item .env.example .env` |
+| 设临时环境变量 | `export Jwt__SigningKey=xxx` | `$env:Jwt__SigningKey="xxx"` |
+| 生成 32+ 字节密钥 | `openssl rand -base64 48` | `-join ((1..64) \| ForEach-Object { '{0:x}' -f (Get-Random -Max 16) })` |
+| 执行单个 SQL 文件 | `mysql -u root -p shift_mvp < a.sql` | `cmd /c "mysql -u root -p shift_mvp < a.sql"` |
+| 批量跑迁移 | `for f in database/migrations/2026*.sql; do mysql … < "$f"; done` | `Get-ChildItem database/migrations/2026*.sql \| ForEach-Object { cmd /c "mysql -u root -p shift_mvp < $_" }` |
+| 看端口占用 | `lsof -ti:5059` | `netstat -ano \| findstr :5059` |
+| 杀占用进程 | `kill $(lsof -ti:5059)` | `taskkill /PID <pid> /F` |
+| 启动后端 | `dotnet run` | `dotnet run` |
+| 启动前端 | `npm run dev` | `npm run dev` |
+
+### 5. 两端都要注意的坑
+
+1. **中文乱码**
+   - Windows 控制台先执行 `chcp 65001`；导入 SQL 时给 mysql 加 `--default-character-set=utf8mb4`。
+   - 否则库里的中文会变成 `æ˜†æ˜Žæ»šæ»š` 这种双重编码，且很难回滚。
+2. **文件名含中文**
+   - Windows 建议用 Git Bash 或 WSL 操作仓库，PowerShell 处理中文路径容易出编码问题。
+3. **仓库自带的 `setup-db.sh` / `dev.sh` 是 bash 脚本**
+   - 只能在 macOS / Linux 上跑；Windows 用 Git Bash / WSL，或按上面第 3 节手动执行。
+4. **后端启动报 `缺少 JWT 配置` 或 `缺少数据库连接字符串`**
+   - 说明 `appsettings.Development.json` 没建、或 `SigningKey` 不足 32 字节。
+5. **`npm install` 报 `Invalid Version:`**
+   - 这是历史 lockfile 问题，已在 `GroupWork` 分支修复；若在旧分支遇到，删掉 `node_modules` 后
+     重新 `npm install`，或先更新到该分支。
+6. **`dotnet` 命令版本不对**
+   - 多个 SDK 并存时用 `dotnet --list-sdks` 确认，必要时在仓库根加 `global.json` 锁定 10.0。
