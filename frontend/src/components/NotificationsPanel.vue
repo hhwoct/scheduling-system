@@ -72,10 +72,14 @@ function typeName(t) {
     SCHEDULE_PUBLISHED: '排班发布',
     SCHEDULE_UNPUBLISHED: '排班取消',
     SCHEDULE_CHANGED: '排班变更',
-    LEAVE_APPROVED: '请假审批',
+    NEW_LEAVE: '新请假申请',
+    LEAVE_APPROVED: '请假批准',
     LEAVE_REJECTED: '请假驳回',
+    LEAVE_EARLY_RETURN: '提前返岗',
+    NEW_SWAP: '新换班申请',
     SWAP_APPROVED: '换班批准',
-    SWAP_REJECTED: '换班驳回'
+    SWAP_REJECTED: '换班驳回',
+    PASSWORD_RESET: '密码重置'
   }[t] || t
 }
 
